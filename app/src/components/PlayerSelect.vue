@@ -56,10 +56,8 @@ function clear(e) {
 const POS_ORDER = { GK: 0, D: 1, DF: 1, M: 2, MF: 2, F: 3, FW: 3 }
 const POS_LABEL = { GK: 'Goalkeepers', D: 'Defenders', DF: 'Defenders', M: 'Midfielders', MF: 'Midfielders', F: 'Forwards', FW: 'Forwards' }
 
-const normalize = s => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
-
 const groupedPlayers = computed(() => {
-  const q = normalize(search.value.trim())
+  const q = search.value.toLowerCase().trim()
   let pool = []
 
   if (country.value && ROSTERS[country.value]) {
@@ -67,7 +65,7 @@ const groupedPlayers = computed(() => {
   } else if (q.length >= 2) {
     for (const [c, players] of Object.entries(ROSTERS)) {
       for (const p of players) {
-        if (normalize(p.name).includes(q)) pool.push({ ...p, team: c })
+        if (p.name.toLowerCase().includes(q)) pool.push({ ...p, team: c })
         if (pool.length >= 40) break
       }
       if (pool.length >= 40) break
@@ -77,7 +75,7 @@ const groupedPlayers = computed(() => {
   }
 
   if (q && country.value) {
-    pool = pool.filter(p => normalize(p.name).includes(q))
+    pool = pool.filter(p => p.name.toLowerCase().includes(q))
   }
 
   // Sort by position then group
