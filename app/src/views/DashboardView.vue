@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 const appVersion = __APP_VERSION__
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import PicksHeader from '../components/PicksHeader.vue'
@@ -55,7 +55,104 @@ async function fetchData() {
   }
 }
 
+// ── Sticky group overlay ───────────────────────────────────────────────
+const PAIR_ROWS = []
+for (let i = 0; i < GROUPS.length; i += 2) PAIR_ROWS.push(GROUPS.slice(i, i + 2))
+
+const groupCardRefs = reactive({})
+const overlayRef = ref(null)
+const overlayCollapsed = ref(false)
+const overlayContentVisible = ref(false)
+const overlayGridRef = ref(null)
+const overlayTickerRef = ref(null)
+const picksHeaderRef = ref(null)
+const propsSectionRef = ref(null)
+const pinnedGroups = ref([])
+let lastExpandedOverlayHeight = 0
+
+function getHeaderBottom() {
+  const el = picksHeaderRef.value?.headerEl
+  return el ? el.getBoundingClientRect().bottom : 60
+}
+
+function animateOverlayHeight(el, from, to, clearAfter, onDone) {
+  el.style.height = from + 'px'
+  el.offsetHeight
+  el.style.transition = 'height 280ms cubic-bezier(0.4, 0, 0.2, 1)'
+  el.style.height = to + 'px'
+  el.addEventListener('transitionend', () => {
+    el.style.transition = ''
+    if (clearAfter) el.style.height = ''
+    onDone?.()
+  }, { once: true })
+}
+
+function setOverlayCollapsed(val) {
+  if (overlayCollapsed.value === val) return
+  const el = overlayRef.value
+  if (!el) return
+  if (val) {
+    const from = el.offsetHeight
+    overlayCollapsed.value = true
+    animateOverlayHeight(el, from, 36, false, () => { overlayContentVisible.value = true })
+  } else {
+    overlayContentVisible.value = false
+    nextTick(() => {
+      const from = parseFloat(el.style.height) || el.offsetHeight
+      overlayCollapsed.value = false
+      nextTick(() => {
+        const to = overlayGridRef.value?.offsetHeight ?? from
+        animateOverlayHeight(el, from, to, true, null)
+      })
+    })
+  }
+}
+
+function updatePinned() {
+  if (!submission.value) return
+  const headerBottom = getHeaderBottom()
+  const rowCount = Math.ceil(pinnedGroups.value.length / 2)
+  const rowHeight = (overlayRef.value && rowCount > 0 && !overlayCollapsed.value)
+    ? overlayRef.value.getBoundingClientRect().height / rowCount
+    : 40
+
+  const newRows = []
+  for (const row of PAIR_ROWS) {
+    const el = groupCardRefs[row[0]]
+    if (!el) break
+    const r = el.getBoundingClientRect()
+    const threshold = headerBottom + (newRows.length + 1) * rowHeight
+    if ((r.top + r.bottom) / 2 < threshold) newRows.push(row)
+    else break
+  }
+  pinnedGroups.value = newRows.flat()
+
+  if (!overlayRef.value) return
+  const overlayRect = overlayRef.value.getBoundingClientRect()
+  if (!overlayCollapsed.value) lastExpandedOverlayHeight = overlayRect.height
+
+  if (propsSectionRef.value) {
+    const pr = propsSectionRef.value.getBoundingClientRect()
+    const mid = (pr.top + pr.bottom) / 2
+    if (!overlayCollapsed.value && overlayRect.bottom >= mid) {
+      setOverlayCollapsed(true)
+    }
+    if (overlayCollapsed.value && lastExpandedOverlayHeight) {
+      const expandedBottom = overlayRect.top + lastExpandedOverlayHeight
+      if (mid > expandedBottom) setOverlayCollapsed(false)
+    }
+  }
+}
+
 onMounted(fetchData)
+onMounted(() => {
+  window.addEventListener('scroll', updatePinned, { passive: true })
+  window.addEventListener('resize', updatePinned, { passive: true })
+})
+onUnmounted(() => {
+  window.removeEventListener('scroll', updatePinned)
+  window.removeEventListener('resize', updatePinned)
+})
 
 function onNameSaved() {
   showProfile.value = false
@@ -104,7 +201,58 @@ function fmtDate(ts) {
 
     <ProfileModal v-if="showProfile" :user="user" :edit-name="editNameMode" @close="showProfile = false; editNameMode = false" @name-saved="onNameSaved" />
 
-    <PicksHeader :user="user" :locked="false" @profile="showProfile = true" />
+    <PicksHeader ref="picksHeaderRef" :user="user" :locked="false" @profile="showProfile = true" />
+
+    <!-- Sticky group overlay (mobile) -->
+    <div
+      ref="overlayRef"
+      v-if="pinnedGroups.length"
+      class="min-[964px]:hidden fixed top-16 left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
+    >
+      <div class="relative">
+        <!-- expanded: 2-col grid -->
+        <div ref="overlayGridRef">
+          <div class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
+               :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'">
+            <div
+              v-for="group in pinnedGroups" :key="group"
+              class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
+            >
+              <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500 w-4 shrink-0">{{ group }}</span>
+              <div class="flex gap-1 items-center">
+                <span
+                  v-for="(team, i) in submission?.groups[group]" :key="team"
+                  class="text-xl leading-none transition-opacity"
+                  :class="(i >= 2 && !submission?.wildcards?.includes(group)) || i >= 3 ? 'opacity-30' : ''"
+                >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- collapsed: ticker -->
+        <div
+          ref="overlayTickerRef"
+          class="absolute top-0 overflow-hidden transition-opacity duration-200 flex items-center"
+          style="height: 36px; left: -1rem; right: -1rem;"
+          :class="overlayContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'"
+        >
+          <div class="shelf-ticker flex gap-5 w-max" :style="{ animationDuration: `${pinnedGroups.length * 2.5}s` }">
+            <template v-for="pass in 2" :key="pass">
+              <div v-for="group in pinnedGroups" :key="`${pass}-${group}`" class="flex items-center gap-1.5 shrink-0">
+                <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500">{{ group }}</span>
+                <div class="flex gap-0.5 items-center">
+                  <span
+                    v-for="(team, i) in submission?.groups[group]" :key="team"
+                    class="text-lg leading-none transition-opacity"
+                    :class="(i >= 2 && !submission?.wildcards?.includes(group)) || i >= 3 ? 'opacity-30' : ''"
+                  >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Loading -->
     <div v-if="loading" class="flex justify-center py-20">
@@ -255,10 +403,9 @@ function fmtDate(ts) {
           <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
             <div class="flex items-baseline justify-between mb-4">
               <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase">Group Standings</div>
-              <span class="text-[10px] text-zinc-400 font-mono tabular-nums">3 · 3 · 1 · 1 pts</span>
             </div>
             <div class="grid grid-cols-2 gap-x-5 gap-y-4">
-              <div v-for="g in GROUPS" :key="g">
+              <div v-for="g in GROUPS" :key="g" :ref="el => { if (el) groupCardRefs[g] = el }">
                 <div class="text-[10px] font-black tracking-[0.15em] text-emerald-400 mb-1.5">GROUP {{ g }}</div>
                 <div class="space-y-0.5">
                   <div
@@ -282,7 +429,7 @@ function fmtDate(ts) {
           </div>
 
           <!-- Wildcards -->
-          <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
+          <div ref="propsSectionRef" class="bg-court-800 border border-court-700 rounded-2xl p-4">
             <div class="flex items-baseline justify-between mb-3">
               <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase">Best 3rd-Place Teams</div>
               <span class="text-[10px] text-zinc-400 font-mono">2 pts each</span>
@@ -330,7 +477,7 @@ function fmtDate(ts) {
 
     </template>
 
-    <div class="text-center py-4">
+    <div v-if="!loading" class="text-center py-4">
       <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
     </div>
 

@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted, watch, nextTick } from 'vue'
 const appVersion = __APP_VERSION__
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
@@ -193,6 +193,48 @@ async function submit() {
 const groupCardRefs = reactive({})
 const overlayRef = ref(null)
 const overlayCollapsed = ref(false)
+const overlayContentVisible = ref(false) // true = ticker visible, false = grid visible
+const overlayGridRef = ref(null)
+const overlayTickerRef = ref(null)
+
+function animateOverlayHeight(el, from, to, clearAfter, onDone) {
+  el.style.height = from + 'px'
+  el.offsetHeight
+  el.style.transition = 'height 280ms cubic-bezier(0.4, 0, 0.2, 1)'
+  el.style.height = to + 'px'
+  el.addEventListener('transitionend', () => {
+    el.style.transition = ''
+    if (clearAfter) el.style.height = ''
+    onDone?.()
+  }, { once: true })
+}
+
+function setOverlayCollapsed(val) {
+  if (overlayCollapsed.value === val) return
+  const el = overlayRef.value
+  if (!el) return
+
+  if (val) {
+    // COLLAPSE: animate height down, keep it pinned, then fade swap to ticker
+    const from = el.offsetHeight
+    const to = 36
+    overlayCollapsed.value = true
+    animateOverlayHeight(el, from, to, false, () => {
+      overlayContentVisible.value = true
+    })
+  } else {
+    // EXPAND: fade swap to grid, animate height up, then clear inline height
+    overlayContentVisible.value = false
+    nextTick(() => {
+      const from = parseFloat(el.style.height) || el.offsetHeight
+      overlayCollapsed.value = false
+      nextTick(() => {
+        const to = overlayGridRef.value?.offsetHeight ?? from
+        animateOverlayHeight(el, from, to, true, null)
+      })
+    })
+  }
+}
 const pinnedGroups = ref([])
 const leftPinnedGroups = computed(() => pinnedGroups.value.slice(0, 6))
 const rightPinnedGroups = computed(() => pinnedGroups.value.slice(6))
@@ -240,7 +282,7 @@ function updatePinned() {
   if (!overlayCollapsed.value && firstWildcardRef) {
     const r = firstWildcardRef.getBoundingClientRect()
     if ((r.top + r.bottom) / 2 < overlayRect.bottom) {
-      overlayCollapsed.value = true
+      setOverlayCollapsed(true)
     }
   }
 
@@ -248,7 +290,7 @@ function updatePinned() {
   if (overlayCollapsed.value && wildcardsSectionRef.value && lastExpandedOverlayHeight) {
     const expandedBottom = overlayRect.top + lastExpandedOverlayHeight
     if (wildcardsSectionRef.value.getBoundingClientRect().top > expandedBottom) {
-      overlayCollapsed.value = false
+      setOverlayCollapsed(false)
     }
   }
 }
@@ -376,35 +418,14 @@ const POS_COLORS = [
     <div
       ref="overlayRef"
       v-if="pinnedGroups.length"
-      class="min-[964px]:hidden fixed top-[56px] left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60"
-      @click="overlayCollapsed && pinnedGroups.length > 1 && (overlayCollapsed = false)"
-      :class="overlayCollapsed && pinnedGroups.length > 1 ? 'cursor-pointer' : ''"
+      class="min-[964px]:hidden fixed top-16 left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
     >
-      <!-- collapsed: horizontal ticker -->
-      <div v-if="overlayCollapsed && pinnedGroups.length > 1" class="overflow-hidden py-1.5">
-        <div
-          class="shelf-ticker flex gap-5 w-max"
-          :style="{ animationDuration: `${pinnedGroups.length * 2.5}s` }"
-        >
-          <template v-for="pass in 2" :key="pass">
-            <div v-for="group in pinnedGroups" :key="`${pass}-${group}`" class="flex items-center gap-1.5 shrink-0">
-              <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500">{{ group }}</span>
-              <div class="flex gap-0.5 items-center">
-                <span
-                  v-for="(team, i) in order[group]" :key="team"
-                  class="text-lg leading-none transition-opacity"
-                  :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
-                >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
-              </div>
-            </div>
-          </template>
-        </div>
-      </div>
-
-      <!-- expanded: grid + collapse button -->
-      <div v-else class="flex items-end gap-1">
-        <div class="flex-1">
-          <div class="grid gap-x-2" style="grid-template-columns: repeat(auto-fill, minmax(calc(4 * 1.25rem + 3 * 0.25rem + 1rem + 1.25rem + 0.5rem), 1fr))">
+      <!-- layer wrapper: grid sits in flow to drive height; ticker overlays on top -->
+      <div class="relative">
+        <!-- expanded: centered grid — always in flow for height measurement -->
+        <div ref="overlayGridRef">
+          <div class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
+               :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'">
             <TransitionGroup name="pin" tag="div" class="contents">
               <div
                 v-for="group in pinnedGroups" :key="group"
@@ -429,17 +450,32 @@ const POS_COLORS = [
             </TransitionGroup>
           </div>
         </div>
-        <button
-          v-if="pinnedGroups.length > 1"
-          type="button"
-          @click.stop="overlayCollapsed = !overlayCollapsed"
-          class="box-content shrink-0 w-5 h-6 py-1.5 px-1 flex items-center justify-center text-zinc-400 hover:text-zinc-400 transition-colors"
-          :aria-label="'Collapse group preview'"
+
+        <!-- collapsed: horizontal ticker — absolutely overlaid, fades in after height collapse -->
+        <div
+          ref="overlayTickerRef"
+          class="absolute top-0 overflow-hidden transition-opacity duration-200 flex items-center"
+          style="height: 36px; left: -1rem; right: -1rem;"
+          :class="overlayContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'"
         >
-          <svg class="w-3 h-3" viewBox="0 0 12 8" fill="none">
-            <path d="M1 6.5L6 1.5L11 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </button>
+          <div
+            class="shelf-ticker flex gap-5 w-max"
+            :style="{ animationDuration: `${pinnedGroups.length * 2.5}s` }"
+          >
+            <template v-for="pass in 2" :key="pass">
+              <div v-for="group in pinnedGroups" :key="`${pass}-${group}`" class="flex items-center gap-1.5 shrink-0">
+                <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500">{{ group }}</span>
+                <div class="flex gap-0.5 items-center">
+                  <span
+                    v-for="(team, i) in order[group]" :key="team"
+                    class="text-lg leading-none transition-opacity"
+                    :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
+                  >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -447,7 +483,7 @@ const POS_COLORS = [
       <!-- wide: single left panel, 2 cols -->
       <div
         v-if="pinnedGroups.length"
-        class="hidden min-[1248px]:block fixed top-16 z-[60]"
+        class="hidden min-[1248px]:block fixed top-16 z-[60] mt-4"
         style="right: calc(50% + 340px); width: min(312px, calc(50vw - 348px))"
       >
         <TransitionGroup name="pin" tag="div" class="grid gap-2" style="grid-template-columns: repeat(auto-fill, calc(4 * 1.5rem + 3 * 0.25rem + 2 * 0.75rem + 2px)); justify-content: end">
@@ -472,7 +508,7 @@ const POS_COLORS = [
       <template v-if="pinnedGroups.length">
         <div
           v-if="leftPinnedGroups.length"
-          class="hidden min-[964px]:block min-[1248px]:hidden fixed top-16 z-[60]"
+          class="hidden min-[964px]:block min-[1248px]:hidden fixed top-16 z-[60] mt-4"
           style="right: calc(50% + 348px)"
         >
           <TransitionGroup name="pin" tag="div" class="grid gap-2" style="grid-template-columns: calc(4 * 1.5rem + 3 * 0.25rem + 2 * 0.75rem + 2px)">
@@ -491,7 +527,7 @@ const POS_COLORS = [
         </div>
         <div
           v-if="rightPinnedGroups.length"
-          class="hidden min-[964px]:block min-[1248px]:hidden fixed top-16 z-[60]"
+          class="hidden min-[964px]:block min-[1248px]:hidden fixed top-16 z-[60] mt-4"
           style="left: calc(50% + 348px)"
         >
           <TransitionGroup name="pin" tag="div" class="grid gap-2" style="grid-template-columns: calc(4 * 1.5rem + 3 * 0.25rem + 2 * 0.75rem + 2px)">
@@ -743,7 +779,7 @@ const POS_COLORS = [
 
     </template><!-- end v-else edit view -->
 
-    <div class="text-center py-4">
+    <div v-if="loaded" class="text-center py-4">
       <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
     </div>
 
