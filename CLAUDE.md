@@ -60,3 +60,18 @@ Every feature follows two feedback loops before merging.
 - Never merge without completing both feedback loops
 - Keep PRs focused on a single feature
 - The preview URL should be confirmed working before starting Loop 2
+
+---
+
+### PR Status Format
+
+When asked for PR status, always display a markdown table with this exact structure:
+
+- Columns: `CI | PR | Date | Description`
+- **CI column**: all check run statuses as icons (✅ success, 🔄 in progress) followed by a linked 🔗 emoji to the Firebase preview URL — all in one cell, no header label needed but keep the column
+- **PR column**: two lines — `#N PR Title` on line 1, `` `branch-name` `` on line 2 (use `<br>`)
+- **Date column**: two lines — opened date/time on line 1, last updated date/time on line 2 (use `<br>`); 12-hour AM/PM format, e.g. `2026-06-11 10:56 PM`
+- **Description column**: concise one-liner, no forced line breaks
+
+Example row:
+| ✅✅[🔗](https://preview-url) | #3 Fix forgot password for Google accounts<br>`feature/forgot-password` | 2026-06-11 10:56 PM<br>2026-06-11 11:40 PM | Calls `sendPasswordResetEmail` directly; updates success message for Google accounts |
