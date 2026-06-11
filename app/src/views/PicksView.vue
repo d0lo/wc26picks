@@ -2,7 +2,7 @@
 import { reactive, ref, computed, onMounted } from 'vue'
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG } from '../data.js'
+import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING } from '../data.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
 
@@ -10,12 +10,12 @@ const props = defineProps({ user: Object })
 const emit = defineEmits(['submitted'])
 
 // ── State ──────────────────────────────────────────────────────────────
-// rankings[group][team] = position 1–4 | null
-const rankings = reactive(
-  Object.fromEntries(
-    GROUPS.map(g => [g, Object.fromEntries(GROUP_TEAMS[g].map(t => [t, null]))])
-  )
-)
+// order[group] = [1st, 2nd, 3rd, 4th] — default sorted by FIFA ranking
+function fifaOrder(group) {
+  return [...GROUP_TEAMS[group]].sort((a, b) => (FIFA_RANKING[a] ?? 999) - (FIFA_RANKING[b] ?? 999))
+}
+
+const order = reactive(Object.fromEntries(GROUPS.map(g => [g, fifaOrder(g)])))
 const wildcards = ref([])
 const propAnswers = reactive(Object.fromEntries(PROPS.map(p => [p.key, ''])))
 const submitting = ref(false)
@@ -35,62 +35,61 @@ onMounted(async () => {
   const data = snap.data()
   if (data.groups) {
     for (const [g, arr] of Object.entries(data.groups)) {
-      arr.forEach((team, i) => {
-        if (team && rankings[g]?.[team] !== undefined) rankings[g][team] = i + 1
-      })
+      if (arr && arr.length === 4 && order[g]) order[g] = [...arr]
     }
   }
   if (data.wildcards) wildcards.value = [...data.wildcards]
   if (data.props) Object.assign(propAnswers, data.props)
 })
 
-// ── Group matrix logic ─────────────────────────────────────────────────
-function selectPos(group, team, pos) {
-  if (rankings[group][team] === pos) {
-    rankings[group][team] = null
-    if (pos === 3) wildcards.value = wildcards.value.filter(g => g !== group)
-    return
-  }
-  if (GROUP_TEAMS[group].some(t => rankings[group][t] === pos && t !== team)) return
-  if (rankings[group][team] === 3) wildcards.value = wildcards.value.filter(g => g !== group)
-  rankings[group][team] = pos
+// ── Drag and drop ──────────────────────────────────────────────────────
+const drag = reactive({ group: null, item: null })
+
+function onDragStart(e, group, team) {
+  drag.group = group
+  drag.item = team
+  e.dataTransfer.effectAllowed = 'move'
 }
 
-function isPosTaken(group, pos, team) {
-  return GROUP_TEAMS[group].some(t => rankings[group][t] === pos && t !== team)
+function onDragOver(e, group, idx) {
+  e.preventDefault()
+  if (drag.group !== group || !drag.item) return
+  const arr = order[group]
+  const from = arr.indexOf(drag.item)
+  if (from === idx) return
+  arr.splice(from, 1)
+  arr.splice(idx, 0, drag.item)
 }
 
-function groupDone(group) {
-  return GROUP_TEAMS[group].every(t => rankings[group][t] !== null)
+function onDragEnd() {
+  drag.group = null
+  drag.item = null
 }
 
 function resetGroup(group) {
-  GROUP_TEAMS[group].forEach(t => { rankings[group][t] = null })
+  order[group] = fifaOrder(group)
   wildcards.value = wildcards.value.filter(g => g !== group)
 }
 
 // ── Wildcard logic ─────────────────────────────────────────────────────
 function thirdOf(group) {
-  return GROUP_TEAMS[group].find(t => rankings[group][t] === 3) ?? null
+  return order[group][2] ?? null
 }
 
 function toggleWildcard(group) {
-  if (!thirdOf(group)) return
   const i = wildcards.value.indexOf(group)
   if (i >= 0) wildcards.value.splice(i, 1)
   else if (wildcards.value.length < 8) wildcards.value.push(group)
 }
 
 function wcDisabled(group) {
-  if (!thirdOf(group)) return true
   return wildcards.value.length >= 8 && !wildcards.value.includes(group)
 }
 
 // ── Progress ───────────────────────────────────────────────────────────
-const doneGroups = computed(() => GROUPS.filter(g => groupDone(g)).length)
 const doneProps = computed(() => PROPS.filter(p => propAnswers[p.key] !== '').length)
 const canSubmit = computed(
-  () => doneGroups.value === 12 && wildcards.value.length === 8 && doneProps.value === PROPS.length
+  () => wildcards.value.length === 8 && doneProps.value === PROPS.length
 )
 
 // ── Submit ─────────────────────────────────────────────────────────────
@@ -98,20 +97,13 @@ async function submit() {
   if (!canSubmit.value || submitting.value) return
   submitting.value = true
   submitError.value = ''
-  const groupsData = Object.fromEntries(
-    GROUPS.map(g => {
-      const arr = new Array(4).fill(null)
-      Object.entries(rankings[g]).forEach(([team, pos]) => { if (pos) arr[pos - 1] = team })
-      return [g, arr]
-    })
-  )
   try {
     await setDoc(doc(db, 'submissions', props.user.uid), {
       name: props.user.displayName,
       uid: props.user.uid,
       photoURL: props.user.photoURL ?? null,
       submittedAt: serverTimestamp(),
-      groups: groupsData,
+      groups: Object.fromEntries(GROUPS.map(g => [g, [...order[g]]])),
       wildcards: wildcards.value,
       props: Object.fromEntries(
         PROPS.map(p => [p.key, p.type === 'number' ? Number(propAnswers[p.key]) : propAnswers[p.key]])
@@ -124,24 +116,41 @@ async function submit() {
   }
 }
 
-// ── Position button styles ─────────────────────────────────────────────
-const POS_ACTIVE = {
-  1: 'bg-amber-400 border-amber-400 text-slate-900',
-  2: 'bg-slate-200 border-slate-200 text-slate-900',
-  3: 'bg-amber-700 border-amber-700 text-amber-100',
-  4: 'bg-slate-700 border-slate-600 text-white',
-}
-const POS_LABEL = ['1st', '2nd', '3rd', '4th']
-const POS_LABEL_COLORS = ['text-amber-400', 'text-slate-400', 'text-amber-700', 'text-slate-600']
+// ── Sticky group preview ───────────────────────────────────────────────
+const groupCardRefs = reactive({})
+const overlayRef = ref(null)
+const pinnedGroups = ref([])
 
-function btnCls(group, team, pos) {
-  const sel = rankings[group][team] === pos
-  const taken = isPosTaken(group, pos, team)
-  const base = 'w-8 h-8 rounded-full border text-[11px] font-bold transition-all duration-100 flex items-center justify-center shrink-0'
-  if (sel) return `${base} ${POS_ACTIVE[pos]}`
-  if (taken) return `${base} border-court-600 text-court-600 cursor-not-allowed`
-  return `${base} border-slate-700/80 text-slate-600 hover:border-sky-400 hover:text-sky-300 cursor-pointer`
+function updatePinned() {
+  // On desktop, threshold is just the sticky header (~60px)
+  // On mobile, use the bottom of the overlay stack
+  const isMobile = window.innerWidth < 640
+  const threshold = (isMobile && overlayRef.value)
+    ? overlayRef.value.getBoundingClientRect().bottom
+    : 60
+  pinnedGroups.value = GROUPS.filter(g => {
+    const el = groupCardRefs[g]
+    return el && el.getBoundingClientRect().bottom < threshold
+  })
 }
+
+onMounted(() => {
+  updatePinned()
+  window.addEventListener('scroll', updatePinned, { passive: true })
+  window.addEventListener('resize', updatePinned, { passive: true })
+  return () => {
+    window.removeEventListener('scroll', updatePinned)
+    window.removeEventListener('resize', updatePinned)
+  }
+})
+
+// ── Position styles ────────────────────────────────────────────────────
+const POS_COLORS = [
+  'bg-amber-400 text-slate-900',
+  'bg-slate-300 text-slate-900',
+  'bg-amber-700 text-amber-100',
+  'bg-slate-700 text-slate-300',
+]
 </script>
 
 <template>
@@ -157,19 +166,67 @@ function btnCls(group, team, pos) {
         <div class="flex items-center gap-1.5 shrink-0">
           <div
             class="border rounded-full px-2 py-0.5 text-[11px] font-mono transition-colors"
-            :class="doneGroups === 12 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-court-700 text-slate-500 border-court-600'"
-          >{{ doneGroups }}/12</div>
-          <div
-            class="border rounded-full px-2 py-0.5 text-[11px] font-mono transition-colors"
             :class="wildcards.length === 8 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-court-700 text-slate-500 border-court-600'"
-          >{{ wildcards.length }}/8</div>
+          >{{ wildcards.length }}/8 WC</div>
           <div
             class="border rounded-full px-2 py-0.5 text-[11px] font-mono transition-colors"
-            :class="doneProps === 10 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-court-700 text-slate-500 border-court-600'"
-          >{{ doneProps }}/10</div>
+            :class="doneProps === PROPS.length ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-court-700 text-slate-500 border-court-600'"
+          >{{ doneProps }}/{{ PROPS.length }} props</div>
         </div>
       </div>
     </header>
+
+    <!-- ── Mobile: sticky top rows ── -->
+    <div
+      ref="overlayRef"
+      v-if="pinnedGroups.length"
+      class="sm:hidden sticky top-[56px] z-40 -mx-4 px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60"
+    >
+      <div class="grid grid-cols-2 gap-x-2 py-2">
+        <TransitionGroup name="pin" tag="div" class="contents">
+          <div
+            v-for="group in pinnedGroups" :key="group"
+            class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
+          >
+            <span class="text-[11px] font-black tracking-[0.18em] text-sky-500 w-4 shrink-0">{{ group }}</span>
+            <div class="flex gap-1 items-center">
+              <span
+                v-for="(team, i) in order[group]" :key="team"
+                class="text-xl leading-none transition-opacity"
+                :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
+                :title="`${i + 1}. ${team}`"
+              >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+            </div>
+          </div>
+        </TransitionGroup>
+      </div>
+    </div>
+
+    <!-- ── Desktop: fixed left panel ── -->
+    <Transition name="panel">
+      <div
+        v-if="pinnedGroups.length"
+        class="hidden sm:block fixed top-24 z-40"
+        style="right: calc(50% + 340px)"
+      >
+        <TransitionGroup name="pin" tag="div" class="grid grid-cols-2 gap-2">
+          <div
+            v-for="group in pinnedGroups" :key="group"
+            class="flex flex-col gap-0.5 bg-court-800/80 backdrop-blur-sm border border-court-700/60 rounded-xl px-3 py-2"
+          >
+            <span class="text-[10px] font-black tracking-[0.2em] text-sky-500">{{ group }}</span>
+            <div class="flex gap-1">
+              <span
+                v-for="(team, i) in order[group]" :key="team"
+                class="text-2xl leading-none transition-opacity"
+                :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
+                :title="`${i + 1}. ${team}`"
+              >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+            </div>
+          </div>
+        </TransitionGroup>
+      </div>
+    </Transition>
 
     <!-- ── SECTION 1: Group Standings ── -->
     <section class="mt-8 mb-10">
@@ -177,56 +234,61 @@ function btnCls(group, team, pos) {
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Group Standings</h2>
         <span class="text-[10px] text-slate-600 font-mono tabular-nums">3 · 3 · 1 · 1 pts</span>
       </div>
-      <p class="text-[11px] text-slate-600 mb-5">Rank all 4 teams per group. Taken positions lock automatically.</p>
+      <p class="text-[11px] text-slate-600 mb-5">Drag teams to set your predicted finish order.</p>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div
           v-for="group in GROUPS" :key="group"
-          class="rounded-2xl border p-4 transition-colors duration-200"
-          :class="groupDone(group) ? 'bg-court-800 border-emerald-500/20' : 'bg-court-800 border-court-700'"
+          :ref="el => { if (el) groupCardRefs[group] = el }"
+          :data-group="group"
+          class="rounded-2xl border p-4 bg-court-800 border-court-700"
         >
           <!-- Group card header -->
           <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center gap-2">
-              <span class="text-[11px] font-black tracking-[0.2em] text-sky-400">GROUP {{ group }}</span>
-              <span v-if="groupDone(group)" class="text-emerald-400 text-sm leading-none">✓</span>
-            </div>
+            <span class="text-[11px] font-black tracking-[0.2em] text-sky-400">GROUP {{ group }}</span>
             <button
               @click="resetGroup(group)"
-              class="text-[10px] text-slate-700 hover:text-red-400 transition-colors font-medium leading-none"
-            >clear</button>
+              class="text-[10px] text-slate-700 hover:text-red-400 transition-colors font-medium"
+            >reset</button>
           </div>
 
-          <!-- Column position labels -->
-          <div class="grid items-center mb-1.5" style="grid-template-columns: 1fr repeat(4, 2rem); gap: 0 4px">
-            <div></div>
+          <!-- Draggable team rows -->
+          <TransitionGroup tag="div" name="drag-list" class="space-y-1">
             <div
-              v-for="(label, i) in POS_LABEL" :key="label"
-              class="text-center text-[10px] font-bold"
-              :class="POS_LABEL_COLORS[i]"
-            >{{ label }}</div>
-          </div>
-
-          <!-- Team rows -->
-          <div
-            v-for="team in GROUP_TEAMS[group]" :key="team"
-            class="grid items-center py-1.5 border-t border-court-700/50"
-            style="grid-template-columns: 1fr repeat(4, 2rem); gap: 0 4px"
-          >
-            <div
-              class="text-xs font-medium truncate pr-2 transition-colors duration-100"
-              :class="rankings[group][team] ? 'text-white' : 'text-slate-500'"
-            >{{ team }}</div>
-            <button
-              v-for="pos in [1,2,3,4]" :key="pos"
-              type="button"
-              :class="btnCls(group, team, pos)"
-              :disabled="isPosTaken(group, pos, team)"
-              @click="selectPos(group, team, pos)"
+              v-for="(team, idx) in order[group]" :key="team"
+              draggable="true"
+              @dragstart="onDragStart($event, group, team)"
+              @dragover="onDragOver($event, group, idx)"
+              @dragend="onDragEnd"
+              class="flex items-center gap-2 px-2 py-1.5 rounded-xl cursor-grab active:cursor-grabbing select-none border"
+              :class="drag.group === group && drag.item === team
+                ? 'opacity-30 bg-court-750 border-transparent'
+                : 'bg-court-750 border-transparent hover:border-court-600'"
             >
-              <span v-if="rankings[group][team] === pos">{{ pos }}</span>
-            </button>
-          </div>
+              <!-- Position badge -->
+              <div
+                class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
+                :class="POS_COLORS[idx]"
+              >{{ idx + 1 }}</div>
+
+              <!-- Flag -->
+              <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+
+              <!-- Team name -->
+              <span class="text-xs font-medium text-white flex-1 truncate">{{ team }}</span>
+
+              <!-- FIFA rank -->
+              <span class="text-[10px] text-slate-600 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
+
+              <!-- Drag handle -->
+              <svg class="w-3 h-3 text-slate-700 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+                <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
+                <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
+                <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
+                <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
+              </svg>
+            </div>
+          </TransitionGroup>
         </div>
       </div>
     </section>
@@ -238,7 +300,7 @@ function btnCls(group, team, pos) {
         <span class="text-[10px] text-slate-600 font-mono">2 pts each</span>
       </div>
       <p class="text-[11px] text-slate-600 mb-5">
-        Pick 8 groups whose 3rd-place team advances. Assign group standings first to unlock.
+        Pick 8 groups whose 3rd-place team advances.
         <span
           class="font-mono ml-1 transition-colors"
           :class="wildcards.length === 8 ? 'text-emerald-400' : 'text-slate-500'"
@@ -260,16 +322,18 @@ function btnCls(group, team, pos) {
                 : 'bg-court-800 border-court-700 hover:border-slate-600 cursor-pointer active:scale-[0.98]',
           ]"
         >
-          <div
-            class="text-[10px] font-black tracking-[0.2em] mb-0.5"
-            :class="wildcards.includes(group) ? 'text-sky-400' : 'text-slate-600'"
-          >GRP {{ group }}</div>
+          <div class="flex items-center gap-1.5 mb-0.5">
+            <span class="text-sm leading-none">{{ TEAM_FLAG[thirdOf(group)] ?? '🏳️' }}</span>
+            <div
+              class="text-[10px] font-black tracking-[0.2em]"
+              :class="wildcards.includes(group) ? 'text-sky-400' : 'text-slate-600'"
+            >GRP {{ group }}</div>
+          </div>
           <div
             class="text-xs font-semibold truncate"
-            :class="wildcards.includes(group) ? 'text-white' : thirdOf(group) ? 'text-slate-300' : 'text-slate-600'"
-          >{{ thirdOf(group) ?? '3rd TBD' }}</div>
+            :class="wildcards.includes(group) ? 'text-white' : 'text-slate-300'"
+          >{{ thirdOf(group) }}</div>
 
-          <!-- Check mark when selected -->
           <div
             v-if="wildcards.includes(group)"
             class="absolute top-2 right-2 w-3.5 h-3.5 bg-sky-400 rounded-full flex items-center justify-center"
@@ -309,12 +373,10 @@ function btnCls(group, team, pos) {
             v-if="prop.type === 'team'"
             v-model="propAnswers[prop.key]"
           />
-
           <PlayerSelect
             v-else-if="prop.type === 'player'"
             v-model="propAnswers[prop.key]"
           />
-
           <input
             v-else
             v-model="propAnswers[prop.key]"
@@ -350,14 +412,27 @@ function btnCls(group, team, pos) {
           <span v-else>{{ isUpdate ? 'Update My Picks' : 'Lock In My Picks' }}</span>
         </button>
         <p v-if="!canSubmit && !submitting" class="text-center text-[11px] text-slate-700 mt-1.5">
-          <span v-if="doneGroups < 12">{{ 12 - doneGroups }} group{{ 12 - doneGroups !== 1 ? 's' : '' }} remaining</span>
-          <span v-if="doneGroups < 12 && wildcards.length < 8"> · </span>
           <span v-if="wildcards.length < 8">{{ 8 - wildcards.length }} wildcard{{ 8 - wildcards.length !== 1 ? 's' : '' }} remaining</span>
-          <span v-if="(doneGroups < 12 || wildcards.length < 8) && doneProps < 10"> · </span>
-          <span v-if="doneProps < 10">{{ 10 - doneProps }} prop{{ 10 - doneProps !== 1 ? 's' : '' }} remaining</span>
+          <span v-if="wildcards.length < 8 && doneProps < PROPS.length"> · </span>
+          <span v-if="doneProps < PROPS.length">{{ PROPS.length - doneProps }} prop{{ PROPS.length - doneProps !== 1 ? 's' : '' }} remaining</span>
         </p>
       </div>
     </div>
 
   </div>
 </template>
+
+<style scoped>
+.drag-list-move {
+  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.pin-enter-active { transition: all 0.15s ease-out; }
+.pin-leave-active { transition: all 0.1s ease-in; }
+.pin-enter-from  { opacity: 0; transform: translateY(-6px); }
+.pin-leave-to    { opacity: 0; transform: translateY(-4px); }
+.pin-move        { transition: transform 0.15s ease; }
+.panel-enter-active { transition: all 0.2s ease-out; }
+.panel-leave-active { transition: all 0.15s ease-in; }
+.panel-enter-from   { opacity: 0; transform: translateX(-8px); }
+.panel-leave-to     { opacity: 0; transform: translateX(-8px); }
+</style>

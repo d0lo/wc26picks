@@ -12,7 +12,7 @@ const user = ref(null)
 const view = ref('picks')
 
 onMounted(() => {
-  onAuthStateChanged(auth, async (u) => {
+onAuthStateChanged(auth, async (u) => {
     user.value = u
     if (u) {
       try {

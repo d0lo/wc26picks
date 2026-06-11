@@ -7,18 +7,17 @@ import {
   updateProfile,
   RecaptchaVerifier,
   signInWithPhoneNumber,
-  OAuthProvider,
 } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase.js'
 
-const appleProvider = new OAuthProvider('apple.com')
-
 const signing = ref(false)
 const error = ref('')
-const mode = ref('login') // 'login' | 'register' | 'phone'
+const showPhone = ref(false)
+
 const email = ref('')
 const password = ref('')
 const displayName = ref('')
+const needsName = ref(false)
 
 // Phone auth state
 const phone = ref('')
@@ -46,16 +45,6 @@ async function googleSignIn() {
   }
 }
 
-async function appleSignIn() {
-  signing.value = true
-  error.value = ''
-  try {
-    await signInWithPopup(auth, appleProvider)
-  } catch {
-    error.value = 'Apple sign-in failed. Please try again.'
-    signing.value = false
-  }
-}
 
 async function sendOtp() {
   if (!phone.value) return
@@ -87,24 +76,29 @@ async function verifyOtp() {
 
 async function emailSubmit() {
   if (!email.value || !password.value) return
-  if (mode.value === 'register' && !displayName.value) return
+  if (needsName.value && !displayName.value) return
   signing.value = true
   error.value = ''
   try {
-    if (mode.value === 'register') {
+    if (needsName.value) {
       const cred = await createUserWithEmailAndPassword(auth, email.value, password.value)
       await updateProfile(cred.user, { displayName: displayName.value.trim() })
     } else {
       await signInWithEmailAndPassword(auth, email.value, password.value)
     }
   } catch (e) {
-    const msg = {
-      'auth/email-already-in-use': 'That email is already registered.',
-      'auth/invalid-credential':   'Wrong email or password.',
-      'auth/weak-password':        'Password must be at least 6 characters.',
-      'auth/invalid-email':        'Invalid email address.',
+    if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+      needsName.value = true
+      error.value = ''
+    } else {
+      const msg = {
+        'auth/email-already-in-use': 'That email is already registered.',
+        'auth/weak-password':        'Password must be at least 6 characters.',
+        'auth/invalid-email':        'Invalid email address.',
+        'auth/wrong-password':       'Wrong password.',
+      }
+      error.value = msg[e.code] ?? 'Something went wrong. Try again.'
     }
-    error.value = msg[e.code] ?? 'Something went wrong. Try again.'
     signing.value = false
   }
 }
@@ -136,135 +130,119 @@ async function emailSubmit() {
 
       <div class="my-8 w-24 h-px bg-gradient-to-r from-transparent via-sky-400/40 to-transparent"></div>
 
-      <!-- Mode tabs -->
-      <div class="flex w-full bg-court-800 border border-court-700 rounded-xl p-1 mb-4 gap-1">
-        <button type="button" @click="mode = 'login'; error = ''; otpSent = false"
-          class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors"
-          :class="mode === 'login' ? 'bg-court-600 text-white' : 'text-slate-600 hover:text-slate-400'">
-          Sign In
+      <!-- Phone flow -->
+      <template v-if="showPhone">
+        <form @submit.prevent="otpSent ? verifyOtp() : sendOtp()" class="w-full space-y-2 mb-3">
+          <input
+            v-if="!otpSent"
+            v-model="phone"
+            type="tel"
+            placeholder="+1 (555) 000-0000"
+            required
+            class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors"
+          />
+          <p v-if="!otpSent" class="text-[11px] text-slate-600">Include country code, e.g. +1 for US</p>
+          <input
+            v-if="otpSent"
+            v-model="otp"
+            type="text"
+            inputmode="numeric"
+            placeholder="Enter 6-digit code"
+            maxlength="6"
+            required
+            class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors tracking-[0.3em] text-center"
+          />
+          <p v-if="otpSent" class="text-[11px] text-slate-500">Code sent to {{ phone }}</p>
+          <button type="submit" :disabled="signing"
+            class="w-full py-3.5 rounded-xl font-bold text-sm bg-sky-500 hover:bg-sky-400 text-white transition-all active:scale-[0.98] disabled:opacity-60">
+            <span v-if="signing">…</span>
+            <span v-else-if="otpSent">Verify Code</span>
+            <span v-else>Send Code</span>
+          </button>
+          <button v-if="otpSent" type="button" @click="otpSent = false; otp = ''"
+            class="w-full text-xs text-slate-600 hover:text-slate-400 transition-colors py-1">
+            ← Use a different number
+          </button>
+        </form>
+        <button type="button" @click="showPhone = false; error = ''"
+          class="text-xs text-slate-600 hover:text-slate-400 transition-colors mt-1">
+          ← Back
         </button>
-        <button type="button" @click="mode = 'register'; error = ''; otpSent = false"
-          class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors"
-          :class="mode === 'register' ? 'bg-court-600 text-white' : 'text-slate-600 hover:text-slate-400'">
-          Register
-        </button>
-        <button type="button" @click="mode = 'phone'; error = ''; otpSent = false"
-          class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors"
-          :class="mode === 'phone' ? 'bg-court-600 text-white' : 'text-slate-600 hover:text-slate-400'">
-          Phone
-        </button>
-      </div>
-
-      <!-- Phone form -->
-      <form v-if="mode === 'phone'" @submit.prevent="otpSent ? verifyOtp() : sendOtp()" class="w-full space-y-2 mb-3">
-        <input
-          v-if="!otpSent"
-          v-model="phone"
-          type="tel"
-          placeholder="+1 (555) 000-0000"
-          required
-          class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors"
-        />
-        <p v-if="!otpSent" class="text-[11px] text-slate-600">Include country code, e.g. +1 for US</p>
-        <input
-          v-if="otpSent"
-          v-model="otp"
-          type="text"
-          inputmode="numeric"
-          placeholder="Enter 6-digit code"
-          maxlength="6"
-          required
-          class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors tracking-[0.3em] text-center"
-        />
-        <p v-if="otpSent" class="text-[11px] text-slate-500">Code sent to {{ phone }}</p>
-        <button type="submit" :disabled="signing"
-          class="w-full py-3.5 rounded-xl font-bold text-sm bg-sky-500 hover:bg-sky-400 text-white transition-all active:scale-[0.98] disabled:opacity-60">
-          <span v-if="signing">…</span>
-          <span v-else-if="otpSent">Verify Code</span>
-          <span v-else>Send Code</span>
-        </button>
-        <button v-if="otpSent" type="button" @click="otpSent = false; otp = ''"
-          class="w-full text-xs text-slate-600 hover:text-slate-400 transition-colors py-1">
-          ← Use a different number
-        </button>
-      </form>
-
-      <!-- Email/password form -->
-      <form v-if="mode !== 'phone'" @submit.prevent="emailSubmit" class="w-full space-y-2 mb-3">
-        <input
-          v-if="mode === 'register'"
-          v-model="displayName"
-          type="text"
-          placeholder="Your name"
-          required
-          class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors"
-        />
-        <input
-          v-model="email"
-          type="email"
-          placeholder="Email"
-          required
-          class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors"
-        />
-        <input
-          v-model="password"
-          type="password"
-          placeholder="Password"
-          required
-          class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors"
-        />
-        <button
-          type="submit"
-          :disabled="signing"
-          class="w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 bg-sky-500 hover:bg-sky-400 text-white shadow-lg shadow-sky-500/20"
-        >
-          <span v-if="signing" class="flex items-center justify-center gap-2">
-            <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4" class="opacity-30"/>
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-            </svg>
-            Signing in…
-          </span>
-          <span v-else>{{ mode === 'register' ? 'Create Account' : 'Sign In' }}</span>
-        </button>
-      </form>
-
-      <!-- Divider + Google (hidden on phone tab) -->
-      <template v-if="mode !== 'phone'">
-      <div class="w-full flex items-center gap-3 mb-4">
-        <div class="flex-1 h-px bg-court-700"></div>
-        <span class="text-[11px] text-slate-700 font-medium">or</span>
-        <div class="flex-1 h-px bg-court-700"></div>
-      </div>
-
-      <!-- Google button -->
-      <button
-        @click="googleSignIn"
-        :disabled="signing"
-        class="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-semibold py-3.5 px-6 rounded-xl text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 shadow-2xl shadow-black/60 hover:bg-slate-50"
-      >
-        <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
-          <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18"/>
-          <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17"/>
-          <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18z"/>
-          <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.31"/>
-        </svg>
-        Continue with Google
-      </button>
-
-      <!-- Apple button -->
-      <button
-        @click="appleSignIn"
-        :disabled="signing"
-        class="w-full flex items-center justify-center gap-3 bg-black text-white font-semibold py-3.5 px-6 rounded-xl text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 border border-slate-800 hover:bg-slate-900 mt-2"
-      >
-        <svg width="15" height="18" viewBox="0 0 814 1000" aria-hidden="true" fill="white">
-          <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-37.5-155.5-127.4C46.7 790.7 0 663 0 541.8c0-207.5 135.4-317.3 269-317.3 70.2 0 127.9 46.5 170.8 46.5 41.2 0 106.4-49.6 185.3-49.6zm-164.3-50.4c-4.3 20.8-6.9 41.9-6.9 60.4 0 3.5.2 7 .5 10.5 41.7-7.1 93.7-42.2 121.9-89.5 24.6-42 27.8-86.2 27.8-104.5 0-4.5-.3-9-1-12.5-44.5 7.4-100 41.9-142.3 135.6z"/>
-        </svg>
-        Continue with Apple
-      </button>
-
       </template>
+
+      <!-- Email flow -->
+      <template v-else>
+        <form @submit.prevent="emailSubmit" class="w-full space-y-2 mb-3">
+          <!-- Name field appears only when account doesn't exist -->
+          <div v-if="needsName" class="text-left">
+            <p class="text-xs text-sky-400 mb-2 font-medium">New here! Just need your name.</p>
+            <input
+              v-model="displayName"
+              type="text"
+              placeholder="Your name"
+              required
+              autofocus
+              class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors"
+            />
+          </div>
+          <input
+            v-model="email"
+            type="email"
+            placeholder="Email"
+            required
+            class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors"
+          />
+          <input
+            v-model="password"
+            type="password"
+            placeholder="Password"
+            required
+            class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors"
+          />
+          <button
+            type="submit"
+            :disabled="signing"
+            class="w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 bg-sky-500 hover:bg-sky-400 text-white shadow-lg shadow-sky-500/20"
+          >
+            <span v-if="signing" class="flex items-center justify-center gap-2">
+              <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4" class="opacity-30"/>
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+              </svg>
+              Signing in…
+            </span>
+            <span v-else>{{ needsName ? 'Create Account' : 'Continue' }}</span>
+          </button>
+        </form>
+
+        <div class="w-full flex items-center gap-3 mb-4">
+          <div class="flex-1 h-px bg-court-700"></div>
+          <span class="text-[11px] text-slate-700 font-medium">or</span>
+          <div class="flex-1 h-px bg-court-700"></div>
+        </div>
+
+        <!-- Google button -->
+        <button
+          @click="googleSignIn"
+          :disabled="signing"
+          class="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-semibold py-3.5 px-6 rounded-xl text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 shadow-2xl shadow-black/60 hover:bg-slate-50"
+        >
+          <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
+            <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18"/>
+            <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17"/>
+            <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18z"/>
+            <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.31"/>
+          </svg>
+          Continue with Google
+        </button>
+
+
+<button type="button" @click="showPhone = true; error = ''"
+          class="mt-4 text-xs text-slate-600 hover:text-slate-400 transition-colors">
+          Use phone number instead
+        </button>
+      </template>
+
       <div id="recaptcha-container"></div>
       <p v-if="error" class="mt-4 text-red-400 text-xs">{{ error }}</p>
 
