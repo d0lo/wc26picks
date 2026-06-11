@@ -7,6 +7,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
+  sendPasswordResetEmail,
+  fetchSignInMethodsForEmail,
 } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase.js'
 
@@ -172,6 +174,50 @@ const error = ref('')
 const email = ref('')
 const password = ref('')
 
+const forgotMode = ref(false)
+const resetSent = ref(false)
+const resetError = ref('')
+const resetEmail = ref('')
+
+function openForgot() {
+  resetEmail.value = email.value
+  resetSent.value = false
+  resetError.value = ''
+  forgotMode.value = true
+}
+
+function closeForgot() {
+  forgotMode.value = false
+  resetSent.value = false
+  resetError.value = ''
+}
+
+async function sendReset() {
+  if (!resetEmail.value) return
+  signing.value = true
+  resetError.value = ''
+  try {
+    const methods = await fetchSignInMethodsForEmail(auth, resetEmail.value)
+    if (methods.length === 0) {
+      resetError.value = 'No account found with that email.'
+      return
+    }
+    if (!methods.includes('password')) {
+      resetError.value = 'This account uses Google Sign-in. Use the "Continue with Google" button instead.'
+      return
+    }
+    await sendPasswordResetEmail(auth, resetEmail.value)
+    resetSent.value = true
+  } catch (e) {
+    const msg = {
+      'auth/invalid-email': 'Invalid email address.',
+    }
+    resetError.value = msg[e.code] ?? 'Something went wrong. Try again.'
+  } finally {
+    signing.value = false
+  }
+}
+
 
 async function googleSignIn() {
   signing.value = true
@@ -254,58 +300,106 @@ async function emailSubmit() {
 
       <div class="my-5 w-24 h-px bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent"></div>
 
-      <form @submit.prevent="emailSubmit" class="w-full space-y-2 mb-3">
-        <input
-          v-model="email"
-          type="email"
-          placeholder="Email"
-          required
-          class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-emerald-400 transition-colors"
-        />
-        <input
-          v-model="password"
-          type="password"
-          placeholder="Password"
-          required
-          class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-emerald-400 transition-colors"
-        />
+      <!-- Forgot password panel -->
+      <template v-if="forgotMode">
+        <div class="w-full space-y-3">
+          <template v-if="resetSent">
+            <div class="rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-4 text-center space-y-1">
+              <p class="text-emerald-400 text-sm font-semibold">Check your inbox</p>
+              <p class="text-zinc-400 text-xs">A reset link was sent to <span class="text-zinc-200">{{ resetEmail }}</span></p>
+            </div>
+          </template>
+          <template v-else>
+            <p class="text-zinc-400 text-xs text-left">Enter your email and we'll send you a link to reset your password.</p>
+            <form @submit.prevent="sendReset" class="space-y-2">
+              <input
+                v-model="resetEmail"
+                type="email"
+                placeholder="Email"
+                required
+                class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-emerald-400 transition-colors"
+              />
+              <button
+                type="submit"
+                :disabled="signing"
+                class="w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20"
+              >
+                <span v-if="signing" class="flex items-center justify-center gap-2">
+                  <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4" class="opacity-30"/>
+                    <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                  </svg>
+                  Sending…
+                </span>
+                <span v-else>Send reset link</span>
+              </button>
+            </form>
+            <p v-if="resetError" class="text-red-400 text-xs">{{ resetError }}</p>
+          </template>
+          <button @click="closeForgot" class="w-full text-xs text-zinc-400 hover:text-zinc-200 transition-colors py-1">← Back to sign in</button>
+        </div>
+      </template>
+
+      <!-- Normal sign-in form -->
+      <template v-else>
+        <form @submit.prevent="emailSubmit" class="w-full space-y-2 mb-3">
+          <input
+            v-model="email"
+            type="email"
+            placeholder="Email"
+            required
+            class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-emerald-400 transition-colors"
+          />
+          <div class="relative">
+            <input
+              v-model="password"
+              type="password"
+              placeholder="Password"
+              required
+              class="w-full bg-court-800 border border-court-600 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-emerald-400 transition-colors"
+            />
+          </div>
+          <div class="flex justify-end">
+            <button type="button" @click="openForgot" class="text-[11px] text-zinc-400 hover:text-emerald-400 transition-colors">Forgot password?</button>
+          </div>
+          <button
+            type="submit"
+            :disabled="signing"
+            class="w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20"
+          >
+            <span v-if="signing" class="flex items-center justify-center gap-2">
+              <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4" class="opacity-30"/>
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+              </svg>
+              Signing in…
+            </span>
+            <span v-else>Continue</span>
+          </button>
+        </form>
+
+        <div class="w-full flex items-center gap-3 mb-4">
+          <div class="flex-1 h-px bg-court-700"></div>
+          <span class="text-[11px] text-zinc-400 font-medium">or</span>
+          <div class="flex-1 h-px bg-court-700"></div>
+        </div>
+
         <button
-          type="submit"
+          @click="googleSignIn"
           :disabled="signing"
-          class="w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20"
+          class="w-full flex items-center justify-center gap-3 bg-white text-zinc-900 font-semibold py-3.5 px-6 rounded-xl text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 shadow-2xl shadow-black/60 hover:bg-zinc-50"
         >
-          <span v-if="signing" class="flex items-center justify-center gap-2">
-            <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4" class="opacity-30"/>
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-            </svg>
-            Signing in…
-          </span>
-          <span v-else>Continue</span>
+          <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
+            <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18"/>
+            <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17"/>
+            <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18z"/>
+            <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.31"/>
+          </svg>
+          Continue with Google
         </button>
-      </form>
 
-      <div class="w-full flex items-center gap-3 mb-4">
-        <div class="flex-1 h-px bg-court-700"></div>
-        <span class="text-[11px] text-zinc-400 font-medium">or</span>
-        <div class="flex-1 h-px bg-court-700"></div>
-      </div>
-
-      <button
-        @click="googleSignIn"
-        :disabled="signing"
-        class="w-full flex items-center justify-center gap-3 bg-white text-zinc-900 font-semibold py-3.5 px-6 rounded-xl text-sm transition-all duration-100 active:scale-[0.98] disabled:opacity-60 shadow-2xl shadow-black/60 hover:bg-zinc-50"
-      >
-        <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
-          <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18"/>
-          <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17"/>
-          <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18z"/>
-          <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.31"/>
-        </svg>
-        Continue with Google
-      </button>
-
-      <p v-if="error" class="mt-4 text-red-400 text-xs">{{ error }}</p>
+        <p v-if="error" class="mt-4 text-red-400 text-xs">{{ error }}</p>
+      </template>
 
       <p class="mt-6 text-zinc-400 text-xs leading-relaxed">
         <span class="text-zinc-400">{{ picksLockTime ? `Picks lock ${fmtLockTime(picksLockTime)}` : '—' }}</span>
