@@ -294,10 +294,9 @@ async function emailSubmit() {
       <template v-if="forgotMode">
         <div class="w-full space-y-3">
           <template v-if="resetSent">
-            <div class="rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-4 text-center space-y-2">
+            <div class="rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-4 text-center space-y-1">
               <p class="text-emerald-400 text-sm font-semibold">Check your inbox</p>
-              <p class="text-zinc-400 text-xs">If <span class="text-zinc-200">{{ resetEmail }}</span> has a password account, a reset link is on its way.</p>
-              <p class="text-zinc-500 text-xs">Signed up with Google? Use the "Continue with Google" button instead.</p>
+              <p class="text-zinc-400 text-xs">A reset link was sent to <span class="text-zinc-200">{{ resetEmail }}</span></p>
             </div>
           </template>
           <template v-else>
