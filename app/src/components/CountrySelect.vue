@@ -1,14 +1,17 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { GROUP_TEAMS, GROUPS, TEAM_FLAG } from '../data.js'
 
-const props = defineProps({ modelValue: String, placeholder: { type: String, default: 'Select a team…' } })
+const props = defineProps({ modelValue: String, placeholder: { type: String, default: 'Select a team…' }, disabled: Boolean, allowNone: Boolean })
 const emit = defineEmits(['update:modelValue'])
 
 const open = ref(false)
+const dropUp = ref(false)
+const dropStyle = ref({})
 const search = ref('')
 const sortBy = ref('group') // 'group' | 'name'
 const container = ref(null)
+const dropdownEl = ref(null)
 const searchInput = ref(null)
 
 const ALL_TEAMS_SORTED = [...new Set(Object.values(GROUP_TEAMS).flat())].sort()
@@ -38,46 +41,65 @@ function select(team) {
 
 function toggle() {
   open.value = !open.value
-  if (open.value) setTimeout(() => searchInput.value?.focus(), 50)
+  if (open.value) {
+    const rect = container.value?.getBoundingClientRect()
+    if (rect) {
+      dropUp.value = window.innerHeight - rect.bottom < 300
+      if (dropUp.value) {
+        dropStyle.value = { position: 'fixed', bottom: `${window.innerHeight - rect.top}px`, right: `${window.innerWidth - rect.right}px` }
+      } else {
+        dropStyle.value = { position: 'fixed', top: `${rect.bottom + 6}px`, right: `${window.innerWidth - rect.right}px` }
+      }
+    }
+    nextTick(() => searchInput.value?.focus())
+  }
 }
 
 function onOutside(e) {
-  if (container.value && !container.value.contains(e.target)) {
+  if (container.value && !container.value.contains(e.target) && !dropdownEl.value?.contains(e.target)) {
     open.value = false
     search.value = ''
   }
 }
-onMounted(() => document.addEventListener('mousedown', onOutside))
-onUnmounted(() => document.removeEventListener('mousedown', onOutside))
+onMounted(() => document.addEventListener('click', onOutside))
+onUnmounted(() => document.removeEventListener('click', onOutside))
 </script>
 
 <template>
-  <div ref="container" class="relative w-full">
+  <div ref="container" :class="['relative w-full', open ? 'z-10' : '']">
     <!-- Trigger -->
     <button
       type="button"
-      @click="toggle"
-      class="w-full flex items-center justify-between gap-2 bg-court-900 border rounded-xl px-3 py-2.5 text-xs transition-colors text-left"
-      :class="open ? 'border-sky-400' : 'border-court-600 hover:border-slate-600'"
+      @click="!disabled && toggle()"
+      :disabled="disabled"
+      class="w-full flex items-center justify-between gap-2 border rounded-xl px-3 py-2.5 text-xs transition-colors text-left"
+      :class="disabled ? 'bg-court-900 border-court-700 opacity-50 cursor-not-allowed' : open ? 'bg-court-900 border-emerald-400' : modelValue ? 'bg-emerald-500/10 border-emerald-400/25 hover:border-emerald-400/50' : 'bg-court-900 border-court-600 hover:border-zinc-600'"
     >
-      <span v-if="modelValue" class="flex items-center gap-1.5 min-w-0">
+      <span v-if="modelValue === '__none__'" class="flex items-center gap-1.5 min-w-0">
+        <span class="text-sm leading-none shrink-0">🚫</span>
+        <span class="text-white truncate">No Team</span>
+      </span>
+      <span v-else-if="modelValue" class="flex items-center gap-1.5 min-w-0">
         <span class="text-sm leading-none shrink-0">{{ TEAM_FLAG[modelValue] ?? '🏳' }}</span>
         <span class="text-white truncate">{{ modelValue }}</span>
       </span>
-      <span v-else class="text-slate-600">{{ placeholder }}</span>
-      <svg
-        class="w-3.5 h-3.5 text-slate-600 shrink-0 transition-transform duration-150"
-        :class="open ? 'rotate-180' : ''"
-        viewBox="0 0 12 8" fill="none"
-      >
+      <span v-else class="text-zinc-400">{{ placeholder }}</span>
+      <!-- pencil when selected, chevron when empty -->
+      <svg v-if="modelValue && !open" class="w-3.5 h-3.5 text-zinc-400 shrink-0" viewBox="0 0 16 16" fill="none">
+        <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <svg v-else class="w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform duration-150" :class="open ? 'rotate-180' : ''" viewBox="0 0 12 8" fill="none">
         <path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
 
     <!-- Dropdown -->
+    <Teleport to="body">
     <div
       v-if="open"
-      class="absolute z-50 right-0 min-w-full w-max max-w-[min(320px,calc(100vw-2rem))] mt-1.5 bg-court-800 border border-court-600 rounded-xl overflow-hidden shadow-2xl shadow-black/60"
+      ref="dropdownEl"
+      :style="dropStyle"
+      class="z-[9999] min-w-[240px] w-max max-w-[min(320px,calc(100vw-2rem))] bg-court-800 border border-court-600 rounded-xl overflow-hidden shadow-2xl shadow-black/60"
     >
       <!-- Search + sort toggle -->
       <div class="flex items-center gap-2 p-2 border-b border-court-700 w-full">
@@ -86,7 +108,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
           v-model="search"
           type="text"
           placeholder="Search…"
-          class="flex-1 min-w-0 bg-court-900 border border-court-600 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-700 focus:outline-none focus:border-sky-400 transition-colors"
+          class="flex-1 min-w-0 bg-court-900 border border-court-600 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-400 transition-colors"
         />
         <!-- Sort tabs -->
         <div class="flex bg-court-900 border border-court-700 rounded-lg overflow-hidden shrink-0">
@@ -94,13 +116,13 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
             type="button"
             @click="sortBy = 'group'"
             class="px-2.5 py-1.5 text-[10px] font-bold transition-colors"
-            :class="sortBy === 'group' ? 'bg-court-600 text-white' : 'text-slate-600 hover:text-slate-400'"
+            :class="sortBy === 'group' ? 'bg-court-600 text-white' : 'text-zinc-400 hover:text-zinc-400'"
           >Group</button>
           <button
             type="button"
             @click="sortBy = 'name'"
             class="px-2.5 py-1.5 text-[10px] font-bold transition-colors"
-            :class="sortBy === 'name' ? 'bg-court-600 text-white' : 'text-slate-600 hover:text-slate-400'"
+            :class="sortBy === 'name' ? 'bg-court-600 text-white' : 'text-zinc-400 hover:text-zinc-400'"
           >A–Z</button>
         </div>
       </div>
@@ -110,8 +132,21 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
 
         <!-- Group view -->
         <template v-if="sortBy === 'group'">
+          <button
+            v-if="allowNone"
+            type="button"
+            @click="select('__none__')"
+            class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors border-b border-court-700/30"
+            :class="modelValue === '__none__' ? 'bg-emerald-500/10 text-emerald-300' : 'text-zinc-400 hover:bg-court-700 hover:text-white'"
+          >
+            <span class="text-base leading-none shrink-0">🚫</span>
+            <span>No Team</span>
+            <svg v-if="modelValue === '__none__'" class="ml-auto w-3.5 h-3.5 text-emerald-400 shrink-0" viewBox="0 0 12 10" fill="none">
+              <path d="M1 5L4.5 8.5L11 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
           <template v-for="{ group, teams } in byGroup" :key="group">
-            <div class="px-3 py-1.5 text-[10px] font-black tracking-widest text-slate-600 uppercase bg-court-900/80 sticky top-0">
+            <div class="px-3 py-1.5 text-[10px] font-black tracking-widest text-zinc-400 uppercase bg-court-900/80 sticky top-0">
               Group {{ group }}
             </div>
             <button
@@ -119,11 +154,11 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
               type="button"
               @click="select(team)"
               class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors border-t border-court-700/30"
-              :class="modelValue === team ? 'bg-sky-500/10 text-sky-300' : 'text-slate-300 hover:bg-court-700 hover:text-white'"
+              :class="modelValue === team ? 'bg-emerald-500/10 text-emerald-300' : 'text-zinc-300 hover:bg-court-700 hover:text-white'"
             >
               <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳' }}</span>
               <span>{{ team }}</span>
-              <svg v-if="modelValue === team" class="ml-auto w-3.5 h-3.5 text-sky-400 shrink-0" viewBox="0 0 12 10" fill="none">
+              <svg v-if="modelValue === team" class="ml-auto w-3.5 h-3.5 text-emerald-400 shrink-0" viewBox="0 0 12 10" fill="none">
                 <path d="M1 5L4.5 8.5L11 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>
@@ -133,22 +168,36 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
         <!-- Name view -->
         <template v-else>
           <button
+            v-if="allowNone"
+            type="button"
+            @click="select('__none__')"
+            class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors border-b border-court-700/30"
+            :class="modelValue === '__none__' ? 'bg-emerald-500/10 text-emerald-300' : 'text-zinc-400 hover:bg-court-700 hover:text-white'"
+          >
+            <span class="text-base leading-none shrink-0">🚫</span>
+            <span>No Team</span>
+            <svg v-if="modelValue === '__none__'" class="ml-auto w-3.5 h-3.5 text-emerald-400 shrink-0" viewBox="0 0 12 10" fill="none">
+              <path d="M1 5L4.5 8.5L11 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button
             v-for="team in byName" :key="team"
             type="button"
             @click="select(team)"
             class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors border-b border-court-700/30 last:border-0"
-            :class="modelValue === team ? 'bg-sky-500/10 text-sky-300' : 'text-slate-300 hover:bg-court-700 hover:text-white'"
+            :class="modelValue === team ? 'bg-emerald-500/10 text-emerald-300' : 'text-zinc-300 hover:bg-court-700 hover:text-white'"
           >
             <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳' }}</span>
             <span>{{ team }}</span>
-            <svg v-if="modelValue === team" class="ml-auto w-3.5 h-3.5 text-sky-400 shrink-0" viewBox="0 0 12 10" fill="none">
+            <svg v-if="modelValue === team" class="ml-auto w-3.5 h-3.5 text-emerald-400 shrink-0" viewBox="0 0 12 10" fill="none">
               <path d="M1 5L4.5 8.5L11 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
         </template>
 
-        <div v-if="!hasResults" class="px-3 py-4 text-xs text-slate-600 text-center">No matches</div>
+        <div v-if="!hasResults" class="px-3 py-4 text-xs text-zinc-400 text-center">No matches</div>
       </div>
     </div>
+    </Teleport>
   </div>
 </template>

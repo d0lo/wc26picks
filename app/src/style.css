@@ -2,18 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes mc-bounce {
+  0%, 100% { transform: rotate(-20deg) scale(1);    }
+  50%       { transform: rotate(-20deg) scale(1.15); }
+}
+
+.mc-version {
+  animation: mc-bounce 1s ease-in-out infinite;
+}
+
 @layer base {
+  input, select, textarea {
+    font-size: max(16px, 1em);
+  }
+
+
   * {
     -webkit-tap-highlight-color: transparent;
   }
 
   body {
-    background-color: #03060F;
+    background-color: #080e0a;
     color: #f1f5f9;
   }
 
   select option {
-    background-color: #0a1326;
+    background-color: #131f16;
     color: #f1f5f9;
   }
 

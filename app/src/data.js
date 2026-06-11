@@ -122,10 +122,11 @@ export const FIFA_RANKING = {
 
 export const PROPS = [
   { key: 'Golden Boot',          label: 'Golden Boot',                        type: 'player', points: 5, hint: 'Tournament top scorer' },
-  { key: 'Golden Glove',         label: 'Golden Glove',                       type: 'player', points: 4, hint: 'Best goalkeeper' },
+  { key: 'Golden Glove',         label: 'Golden Glove',                       type: 'player', points: 4, hint: 'Best goalkeeper', positionFilter: 'G' },
   { key: 'Golden Ball',          label: 'Golden Ball',                        type: 'player', points: 5, hint: 'Best player of the tournament' },
-  { key: 'Young Player',         label: 'Young Player of the Tournament',     type: 'player', points: 4, hint: 'Best U-21 player' },
-  { key: 'Most Group Goals',     label: 'Most Goals in Group Stage',          type: 'number', points: 3, hint: 'Total goals scored across all group stage games' },
+  { key: 'Young Player',         label: 'Young Player of the Tournament',     type: 'player', points: 4, hint: 'Best U-21 player', maxAge: 21 },
+  { key: 'Breakout Player',      label: 'Breakout Player of the Tournament',  type: 'player', points: 6, hint: 'The under-the-radar player who has a standout tournament (media consensus)' },
+  { key: 'Most Group Goals',     label: 'Most Goals in Group Stage',          type: 'team',   points: 3, hint: 'Team that scores the most goals in the group stage' },
   { key: 'Hat Trick Scorer',     label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'First player to score a hat trick' },
   { key: 'Most Assists',         label: 'Most Assists',                       type: 'player', points: 4, hint: 'Player with the most assists' },
   { key: 'Most Yellow Cards',    label: 'Team with Most Yellow Cards',        type: 'team',   points: 3, hint: 'Most disciplinary cards received' },

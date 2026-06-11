@@ -7,7 +7,7 @@ import ProfileModal from '../components/ProfileModal.vue'
 
 const showProfile = ref(false)
 
-const props = defineProps({ user: Object })
+const props = defineProps({ user: Object, picksLocked: Boolean })
 const emit = defineEmits(['edit-picks'])
 
 const submission = ref(null)
@@ -60,11 +60,11 @@ function fmtDate(ts) {
           class="w-8 h-8 rounded-full ring-1 ring-court-600"
           referrerpolicy="no-referrer"
         />
-        <div v-else class="w-8 h-8 rounded-full bg-sky-500/20 flex items-center justify-center text-sky-400 text-sm font-bold">
+        <div v-else class="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm font-bold">
           {{ user.displayName?.[0] }}
         </div>
         <div>
-          <div class="text-[10px] text-slate-600">Signed in as</div>
+          <div class="text-[10px] text-zinc-400">Signed in as</div>
           <div class="text-sm font-bold text-white leading-tight">{{ user.displayName }}</div>
         </div>
       </button>
@@ -72,7 +72,7 @@ function fmtDate(ts) {
 
     <!-- Loading -->
     <div v-if="loading" class="flex justify-center py-20">
-      <div class="w-6 h-6 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
+      <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
     </div>
 
     <template v-else>
@@ -87,7 +87,7 @@ function fmtDate(ts) {
               <span class="text-[10px] font-black tracking-[0.3em] text-emerald-400 uppercase">Picks Locked</span>
             </div>
             <h1 class="text-2xl font-black text-white leading-tight">You're in.</h1>
-            <p class="text-xs text-slate-500 mt-1">{{ fmtDate(submission?.submittedAt) }}</p>
+            <p class="text-xs text-zinc-400 mt-1">{{ fmtDate(submission?.submittedAt) }}</p>
           </div>
           <div class="text-5xl shrink-0 select-none" style="filter: drop-shadow(0 0 24px rgba(251,191,36,0.35))">🏆</div>
         </div>
@@ -96,17 +96,18 @@ function fmtDate(ts) {
         <div v-if="myRank || myScore" class="flex items-center gap-3 mt-4 relative">
           <div v-if="myRank" class="bg-court-700/70 rounded-2xl px-4 py-2 text-center min-w-[64px]">
             <div class="text-xl font-black text-white">#{{ myRank }}</div>
-            <div class="text-[9px] text-slate-600 uppercase tracking-widest">Rank</div>
+            <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Rank</div>
           </div>
           <div v-if="myScore" class="bg-court-700/70 rounded-2xl px-4 py-2 text-center min-w-[64px]">
             <div class="text-xl font-black text-amber-400">{{ myScore.total }}</div>
-            <div class="text-[9px] text-slate-600 uppercase tracking-widest">Points</div>
+            <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Points</div>
           </div>
         </div>
 
         <button
+          v-if="!picksLocked"
           @click="emit('edit-picks')"
-          class="mt-4 text-xs text-sky-400 hover:text-sky-300 transition-colors font-medium relative"
+          class="mt-4 text-xs text-emerald-400 hover:text-emerald-300 transition-colors font-medium relative"
         >Edit picks →</button>
       </div>
 
@@ -118,7 +119,7 @@ function fmtDate(ts) {
         <div v-if="!hasScores" class="bg-court-800 border border-court-700 rounded-2xl p-10 text-center">
           <div class="text-4xl mb-4 select-none">⏳</div>
           <div class="text-sm font-bold text-white mb-1">Scoring Pending</div>
-          <p class="text-xs text-slate-600 max-w-[280px] mx-auto leading-relaxed">
+          <p class="text-xs text-zinc-400 max-w-[280px] mx-auto leading-relaxed">
             Rankings appear once the tournament begins and results are entered. Check back after June 12.
           </p>
         </div>
@@ -127,7 +128,7 @@ function fmtDate(ts) {
         <div v-else class="bg-court-800 border border-court-700 rounded-2xl overflow-hidden">
           <!-- Table header -->
           <div
-            class="grid text-[10px] font-black tracking-[0.15em] text-slate-600 uppercase border-b border-court-700 px-4 py-2.5"
+            class="grid text-[10px] font-black tracking-[0.15em] text-zinc-400 uppercase border-b border-court-700 px-4 py-2.5"
             style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 4rem"
           >
             <div>#</div>
@@ -141,13 +142,13 @@ function fmtDate(ts) {
           <div
             v-for="(s, i) in scores" :key="s.id"
             class="grid items-center px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors"
-            :class="s.id === user.uid ? 'bg-sky-500/5' : 'hover:bg-court-700/20'"
+            :class="s.id === user.uid ? 'bg-emerald-500/5' : 'hover:bg-court-700/20'"
             style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 4rem"
           >
             <!-- Rank -->
             <div
               class="text-sm font-black"
-              :class="i === 0 ? 'text-amber-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-amber-700' : 'text-slate-600'"
+              :class="i === 0 ? 'text-amber-400' : i === 1 ? 'text-zinc-300' : i === 2 ? 'text-amber-700' : 'text-zinc-400'"
             >{{ i + 1 }}</div>
 
             <!-- Name + avatar -->
@@ -158,19 +159,19 @@ function fmtDate(ts) {
                 class="w-6 h-6 rounded-full shrink-0"
                 referrerpolicy="no-referrer"
               />
-              <div v-else class="w-6 h-6 rounded-full bg-court-600 shrink-0 flex items-center justify-center text-[10px] font-bold text-slate-500">
+              <div v-else class="w-6 h-6 rounded-full bg-court-600 shrink-0 flex items-center justify-center text-[10px] font-bold text-zinc-400">
                 {{ s.name?.[0] ?? '?' }}
               </div>
               <span
                 class="text-xs font-semibold truncate"
-                :class="s.id === user.uid ? 'text-sky-300' : 'text-white'"
+                :class="s.id === user.uid ? 'text-emerald-300' : 'text-white'"
               >{{ s.name }}</span>
-              <span v-if="s.id === user.uid" class="text-[9px] text-sky-500/50 font-bold uppercase tracking-wider shrink-0">you</span>
+              <span v-if="s.id === user.uid" class="text-[9px] text-emerald-500/50 font-bold uppercase tracking-wider shrink-0">you</span>
             </div>
 
             <!-- Breakdown -->
-            <div class="text-xs text-center font-mono text-slate-500">{{ s.breakdown?.groups ?? '—' }}</div>
-            <div class="text-xs text-center font-mono text-slate-500">{{ s.breakdown?.wildcards ?? '—' }}</div>
+            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.groups ?? '—' }}</div>
+            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.wildcards ?? '—' }}</div>
 
             <!-- Total -->
             <div
@@ -188,24 +189,24 @@ function fmtDate(ts) {
           class="w-full flex items-center justify-between pb-3 border-b border-court-700 mb-4"
         >
           <span class="text-sm font-black tracking-[0.2em] text-white uppercase">My Picks</span>
-          <span class="text-xs text-slate-600 font-normal">{{ showPicks ? 'hide ↑' : 'show ↓' }}</span>
+          <span class="text-xs text-zinc-400 font-normal">{{ showPicks ? 'hide ↑' : 'show ↓' }}</span>
         </button>
 
         <div v-if="showPicks" class="space-y-3">
 
           <!-- Groups grid -->
           <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
-            <div class="text-[10px] font-black tracking-[0.2em] text-slate-600 uppercase mb-4">Group Standings</div>
+            <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-4">Group Standings</div>
             <div class="grid grid-cols-2 gap-x-5 gap-y-4">
               <div v-for="g in GROUPS" :key="g">
-                <div class="text-[10px] font-black tracking-[0.15em] text-sky-400 mb-1.5">GROUP {{ g }}</div>
+                <div class="text-[10px] font-black tracking-[0.15em] text-emerald-400 mb-1.5">GROUP {{ g }}</div>
                 <div class="space-y-0.5">
                   <div v-for="(team, i) in submission.groups[g]" :key="i" class="flex items-center gap-1.5 text-[11px]">
                     <span
                       class="text-[9px] font-black w-4 text-right tabular-nums shrink-0"
-                      :class="['text-amber-400','text-slate-500','text-amber-700','text-slate-700'][i]"
+                      :class="['text-amber-400','text-zinc-400','text-amber-700','text-zinc-400'][i]"
                     >{{ i + 1 }}</span>
-                    <span class="truncate text-slate-300">{{ team }}</span>
+                    <span class="truncate text-zinc-300">{{ team }}</span>
                   </div>
                 </div>
               </div>
@@ -214,24 +215,24 @@ function fmtDate(ts) {
 
           <!-- Wildcards -->
           <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
-            <div class="text-[10px] font-black tracking-[0.2em] text-slate-600 uppercase mb-3">Best 3rd-Place Teams</div>
+            <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-3">Best 3rd-Place Teams</div>
             <div class="flex flex-wrap gap-2">
               <div
                 v-for="g in submission.wildcards" :key="g"
                 class="bg-court-700 border border-court-600 rounded-xl px-2.5 py-1.5"
               >
-                <span class="text-[10px] font-black text-sky-400">{{ g }}</span>
-                <span class="text-xs text-slate-300 ml-1.5">{{ submission.groups[g]?.[2] }}</span>
+                <span class="text-[10px] font-black text-emerald-400">{{ g }}</span>
+                <span class="text-xs text-zinc-300 ml-1.5">{{ submission.groups[g]?.[2] }}</span>
               </div>
             </div>
           </div>
 
           <!-- Props -->
           <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
-            <div class="text-[10px] font-black tracking-[0.2em] text-slate-600 uppercase mb-3">Props</div>
+            <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-3">Props</div>
             <div class="divide-y divide-court-700">
               <div v-for="prop in PROPS" :key="prop.key" class="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
-                <span class="text-[11px] text-slate-500 shrink-0">{{ prop.label }}</span>
+                <span class="text-[11px] text-zinc-400 shrink-0">{{ prop.label }}</span>
                 <span class="text-[11px] text-right text-white font-medium">{{ submission.props[prop.key] }}</span>
               </div>
             </div>
