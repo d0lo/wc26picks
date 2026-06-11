@@ -8,7 +8,6 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   sendPasswordResetEmail,
-  fetchSignInMethodsForEmail,
 } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase.js'
 
@@ -197,15 +196,6 @@ async function sendReset() {
   signing.value = true
   resetError.value = ''
   try {
-    const methods = await fetchSignInMethodsForEmail(auth, resetEmail.value)
-    if (methods.length === 0) {
-      resetError.value = 'No account found with that email.'
-      return
-    }
-    if (!methods.includes('password')) {
-      resetError.value = 'This account uses Google Sign-in. Use the "Continue with Google" button instead.'
-      return
-    }
     await sendPasswordResetEmail(auth, resetEmail.value)
     resetSent.value = true
   } catch (e) {
@@ -304,9 +294,10 @@ async function emailSubmit() {
       <template v-if="forgotMode">
         <div class="w-full space-y-3">
           <template v-if="resetSent">
-            <div class="rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-4 text-center space-y-1">
+            <div class="rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-4 text-center space-y-2">
               <p class="text-emerald-400 text-sm font-semibold">Check your inbox</p>
-              <p class="text-zinc-400 text-xs">A reset link was sent to <span class="text-zinc-200">{{ resetEmail }}</span></p>
+              <p class="text-zinc-400 text-xs">If <span class="text-zinc-200">{{ resetEmail }}</span> has a password account, a reset link is on its way.</p>
+              <p class="text-zinc-500 text-xs">Signed up with Google? Use the "Continue with Google" button instead.</p>
             </div>
           </template>
           <template v-else>
