@@ -121,14 +121,13 @@ export const FIFA_RANKING = {
 }
 
 export const PROPS = [
-  { key: 'Winner',               label: 'Tournament Winner',   type: 'team',   points: 10, hint: 'Which team lifts the trophy?' },
-  { key: 'Runner-up',            label: 'Runner-Up',           type: 'team',   points: 6,  hint: 'Finalist who falls short' },
-  { key: 'Golden Boot',          label: 'Golden Boot',         type: 'player', points: 5,  hint: 'Tournament top scorer' },
-  { key: 'Golden Glove',         label: 'Golden Glove',        type: 'player', points: 4,  hint: 'Best goalkeeper' },
-  { key: 'Player of Tournament', label: 'Best Player',         type: 'player', points: 5,  hint: 'Tournament MVP' },
-  { key: 'Young Player',         label: 'Best Young Player',   type: 'player', points: 4,  hint: 'U-21 standout' },
-  { key: 'Biggest Surprise',     label: 'Biggest Surprise',    type: 'team',   points: 4,  hint: 'Most overachieving team' },
-  { key: 'Biggest Flop',         label: 'Biggest Flop',        type: 'team',   points: 4,  hint: 'Most disappointing team' },
-  { key: 'Breakout Player',      label: 'Breakout Player',     type: 'player', points: 4,  hint: 'Emerging star of the tournament' },
-  { key: '# of Set Piece Goals', label: 'Set Piece Goals',     type: 'number', points: 3,  hint: 'Total goals from corners, free kicks & penalties' },
+  { key: 'Golden Boot',          label: 'Golden Boot',                        type: 'player', points: 5, hint: 'Tournament top scorer' },
+  { key: 'Golden Glove',         label: 'Golden Glove',                       type: 'player', points: 4, hint: 'Best goalkeeper' },
+  { key: 'Golden Ball',          label: 'Golden Ball',                        type: 'player', points: 5, hint: 'Best player of the tournament' },
+  { key: 'Young Player',         label: 'Young Player of the Tournament',     type: 'player', points: 4, hint: 'Best U-21 player' },
+  { key: 'Most Group Goals',     label: 'Most Goals in Group Stage',          type: 'number', points: 3, hint: 'Total goals scored across all group stage games' },
+  { key: 'Hat Trick Scorer',     label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'First player to score a hat trick' },
+  { key: 'Most Assists',         label: 'Most Assists',                       type: 'player', points: 4, hint: 'Player with the most assists' },
+  { key: 'Most Yellow Cards',    label: 'Team with Most Yellow Cards',        type: 'team',   points: 3, hint: 'Most disciplinary cards received' },
+  { key: 'Clean Sheet Group',    label: 'Clean Sheet Every Group Game',       type: 'team',   points: 5, hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team' },
 ]

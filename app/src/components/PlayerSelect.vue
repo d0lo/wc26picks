@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { TEAM_FLAG } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import CountrySelect from './CountrySelect.vue'
@@ -95,6 +95,14 @@ const showList = computed(() => country.value || search.value.length >= 2)
 const selectedName = computed(() => extractName(props.modelValue))
 const selectedCountry = computed(() => extractCountry(props.modelValue))
 
+watch(() => props.modelValue, val => {
+  if (!val) { country.value = ''; search.value = '' }
+})
+
+watch(country, val => {
+  if (val) open.value = true
+})
+
 function onOutside(e) {
   if (container.value && !container.value.contains(e.target)) closePicker()
 }
@@ -106,32 +114,26 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
   <div ref="container" class="relative">
 
     <!-- ── Closed: show selected chip ── -->
-    <button
+    <div
       v-if="modelValue && !open"
-      type="button"
-      @click="openPicker"
-      class="w-full flex items-center gap-2.5 bg-sky-500/10 border border-sky-400/25 rounded-xl px-3 py-2.5 text-left hover:border-sky-400/50 transition-colors group"
+      class="w-full flex items-center gap-2.5 bg-sky-500/10 border border-sky-400/25 rounded-xl px-3 py-2.5 hover:border-sky-400/50 transition-colors group"
     >
-      <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[selectedCountry] ?? '⚽' }}</span>
-      <span class="text-sm text-white font-medium flex-1 truncate">{{ selectedName }}</span>
-      <svg class="w-3.5 h-3.5 text-slate-600 shrink-0" viewBox="0 0 16 16" fill="none">
-        <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </button>
+      <button type="button" @click="openPicker" class="flex items-center gap-2.5 flex-1 min-w-0 text-left">
+        <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[selectedCountry] ?? '⚽' }}</span>
+        <span class="text-sm text-white font-medium flex-1 truncate">{{ selectedName }}</span>
+        <svg class="w-3.5 h-3.5 text-slate-600 shrink-0" viewBox="0 0 16 16" fill="none">
+          <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <button type="button" @click="clear($event)" class="shrink-0 text-slate-600 hover:text-slate-400 text-xs leading-none">✕</button>
+    </div>
 
     <!-- ── Open: search picker ── -->
     <div v-else>
-      <!-- Country + search row -->
-      <div class="grid grid-cols-2 gap-1.5">
-        <!-- Country selector -->
-        <CountrySelect
-          v-model="country"
-          placeholder="Country"
-          @update:modelValue="open = true; setTimeout(() => searchInput?.focus(), 50)"
-        />
-
+      <!-- Search + country row -->
+      <div class="flex items-center gap-1.5">
         <!-- Search input -->
-        <div class="relative">
+        <div class="relative flex-1">
           <input
             ref="searchInput"
             v-model="search"
@@ -148,6 +150,16 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
             class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 text-xs"
           >✕</button>
         </div>
+
+        <span class="text-[10px] font-bold text-slate-600 shrink-0">or</span>
+
+        <!-- Country selector -->
+        <CountrySelect
+          class="flex-1"
+          v-model="country"
+          placeholder="By country"
+          @update:modelValue="open = true; setTimeout(() => searchInput?.focus(), 50)"
+        />
       </div>
 
       <!-- Player list dropdown -->
@@ -182,7 +194,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
       </div>
 
       <p v-else-if="open" class="mt-1.5 text-[11px] text-slate-700">
-        Select a country or type 2+ characters to search all squads
+        Type 2+ characters to search all squads, or pick a country
       </p>
     </div>
 

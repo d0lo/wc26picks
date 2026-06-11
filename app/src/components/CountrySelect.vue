@@ -52,17 +52,17 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
 </script>
 
 <template>
-  <div ref="container" class="relative">
+  <div ref="container" class="relative w-full">
     <!-- Trigger -->
     <button
       type="button"
       @click="toggle"
-      class="w-full flex items-center justify-between gap-2 bg-court-900 border rounded-xl px-3 py-2.5 text-sm transition-colors text-left"
+      class="w-full flex items-center justify-between gap-2 bg-court-900 border rounded-xl px-3 py-2.5 text-xs transition-colors text-left"
       :class="open ? 'border-sky-400' : 'border-court-600 hover:border-slate-600'"
     >
-      <span v-if="modelValue" class="flex items-center gap-2">
-        <span class="text-base leading-none">{{ TEAM_FLAG[modelValue] ?? '🏳' }}</span>
-        <span class="text-white">{{ modelValue }}</span>
+      <span v-if="modelValue" class="flex items-center gap-1.5 min-w-0">
+        <span class="text-sm leading-none shrink-0">{{ TEAM_FLAG[modelValue] ?? '🏳' }}</span>
+        <span class="text-white truncate">{{ modelValue }}</span>
       </span>
       <span v-else class="text-slate-600">{{ placeholder }}</span>
       <svg
@@ -77,16 +77,16 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
     <!-- Dropdown -->
     <div
       v-if="open"
-      class="absolute z-50 left-0 right-0 mt-1.5 bg-court-800 border border-court-600 rounded-xl overflow-hidden shadow-2xl shadow-black/60"
+      class="absolute z-50 right-0 min-w-full w-max max-w-[min(320px,calc(100vw-2rem))] mt-1.5 bg-court-800 border border-court-600 rounded-xl overflow-hidden shadow-2xl shadow-black/60"
     >
       <!-- Search + sort toggle -->
-      <div class="flex items-center gap-2 p-2 border-b border-court-700">
+      <div class="flex items-center gap-2 p-2 border-b border-court-700 w-full">
         <input
           ref="searchInput"
           v-model="search"
           type="text"
           placeholder="Search…"
-          class="flex-1 bg-court-900 border border-court-600 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-700 focus:outline-none focus:border-sky-400 transition-colors"
+          class="flex-1 min-w-0 bg-court-900 border border-court-600 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-700 focus:outline-none focus:border-sky-400 transition-colors"
         />
         <!-- Sort tabs -->
         <div class="flex bg-court-900 border border-court-700 rounded-lg overflow-hidden shrink-0">

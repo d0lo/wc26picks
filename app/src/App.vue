@@ -4,6 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
 import LoginView from './views/LoginView.vue'
+import SetUsernameView from './views/SetUsernameView.vue'
 import PicksView from './views/PicksView.vue'
 import DashboardView from './views/DashboardView.vue'
 
@@ -12,9 +13,9 @@ const user = ref(null)
 const view = ref('picks')
 
 onMounted(() => {
-onAuthStateChanged(auth, async (u) => {
+  onAuthStateChanged(auth, async (u) => {
     user.value = u
-    if (u) {
+    if (u && u.displayName) {
       try {
         const snap = await getDoc(doc(db, 'submissions', u.uid))
         view.value = snap.exists() ? 'dashboard' : 'picks'
@@ -34,6 +35,7 @@ onAuthStateChanged(auth, async (u) => {
     </div>
     <template v-else>
       <LoginView v-if="!user" />
+      <SetUsernameView v-else-if="!user.displayName" :user="user" @done="view = 'picks'" />
       <PicksView
         v-else-if="view === 'picks'"
         :user="user"

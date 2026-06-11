@@ -5,6 +5,9 @@ import { db } from '../firebase.js'
 import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING } from '../data.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
+import ProfileModal from '../components/ProfileModal.vue'
+
+const showProfile = ref(false)
 
 const props = defineProps({ user: Object })
 const emit = defineEmits(['submitted'])
@@ -119,7 +122,10 @@ async function submit() {
 // ── Sticky group preview ───────────────────────────────────────────────
 const groupCardRefs = reactive({})
 const overlayRef = ref(null)
+const overlayCollapsed = ref(false)
 const pinnedGroups = ref([])
+const leftPinnedGroups = computed(() => pinnedGroups.value.slice(0, 6))
+const rightPinnedGroups = computed(() => pinnedGroups.value.slice(6))
 
 function updatePinned() {
   // On desktop, threshold is just the sticky header (~60px)
@@ -156,13 +162,15 @@ const POS_COLORS = [
 <template>
   <div class="max-w-2xl mx-auto px-4 pb-40">
 
+    <ProfileModal v-if="showProfile" :user="user" @close="showProfile = false" />
+
     <!-- Sticky progress header -->
     <header class="sticky top-0 z-50 -mx-4 px-4 py-3 bg-court-950/95 backdrop-blur-md border-b border-court-700">
       <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
+        <button type="button" @click="showProfile = true" class="min-w-0 text-left">
           <div class="text-[10px] font-black tracking-[0.25em] text-slate-600 uppercase">WC 2026</div>
           <div class="text-sm font-bold text-white truncate">{{ user.displayName?.split(' ')[0] }}'s Picks</div>
-        </div>
+        </button>
         <div class="flex items-center gap-1.5 shrink-0">
           <div
             class="border rounded-full px-2 py-0.5 text-[11px] font-mono transition-colors"
@@ -180,53 +188,119 @@ const POS_COLORS = [
     <div
       ref="overlayRef"
       v-if="pinnedGroups.length"
-      class="sm:hidden sticky top-[56px] z-40 -mx-4 px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60"
+      class="min-[964px]:hidden sticky top-[56px] z-[60] -mx-4 px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60"
     >
-      <div class="grid grid-cols-2 gap-x-2 py-2">
-        <TransitionGroup name="pin" tag="div" class="contents">
-          <div
-            v-for="group in pinnedGroups" :key="group"
-            class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
-          >
-            <span class="text-[11px] font-black tracking-[0.18em] text-sky-500 w-4 shrink-0">{{ group }}</span>
-            <div class="flex gap-1 items-center">
-              <span
-                v-for="(team, i) in order[group]" :key="team"
-                class="text-xl leading-none transition-opacity"
-                :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
-                :title="`${i + 1}. ${team}`"
-              >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+      <div class="relative">
+        <div
+          class="grid transition-[grid-template-rows] duration-300 ease-in-out"
+          :style="{ gridTemplateRows: overlayCollapsed ? '0fr' : '1fr' }"
+        >
+          <div class="overflow-hidden">
+            <div class="grid gap-x-2 pt-2 pb-1" style="grid-template-columns: repeat(auto-fill, minmax(calc(4 * 1.25rem + 3 * 0.25rem + 1rem + 1.25rem + 0.5rem), 1fr))"  >
+              <TransitionGroup name="pin" tag="div" class="contents">
+                <div
+                  v-for="group in pinnedGroups" :key="group"
+                  class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
+                >
+                  <span class="text-[11px] font-black tracking-[0.18em] text-sky-500 w-4 shrink-0">{{ group }}</span>
+                  <div class="flex gap-1 items-center">
+                    <span
+                      v-for="(team, i) in order[group]" :key="team"
+                      class="relative group/flag cursor-default hover:z-[200]"
+                    >
+                      <span
+                        class="text-xl leading-none transition-opacity"
+                        :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
+                      >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                      <span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold bg-white text-black shadow-lg opacity-0 group-hover/flag:opacity-100 transition-opacity z-[200]">
+                        {{ team }}<span class="text-slate-500 font-normal"> · #{{ FIFA_RANKING[team] ?? '–' }}</span>
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </TransitionGroup>
             </div>
           </div>
-        </TransitionGroup>
+        </div>
+        <button
+          type="button"
+          @click="overlayCollapsed = !overlayCollapsed"
+          class="absolute bottom-1 right-0 py-1 px-1 text-slate-600 hover:text-slate-400 transition-colors"
+          :aria-label="overlayCollapsed ? 'Expand group preview' : 'Collapse group preview'"
+        >
+          <svg class="w-3 h-3 transition-transform duration-300" :class="overlayCollapsed ? '' : 'rotate-180'" viewBox="0 0 12 8" fill="none">
+            <path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </div>
     </div>
 
     <!-- ── Desktop: fixed left panel ── -->
-    <Transition name="panel">
+      <!-- wide: single left panel, 2 cols -->
       <div
-        v-if="pinnedGroups.length"
-        class="hidden sm:block fixed top-24 z-40"
-        style="right: calc(50% + 340px)"
+        v-if="leftPinnedGroups.length"
+        class="hidden min-[1248px]:block fixed top-16 z-[60]"
+        style="right: calc(50% + 340px); width: min(312px, calc(50vw - 348px))"
       >
-        <TransitionGroup name="pin" tag="div" class="grid grid-cols-2 gap-2">
+        <TransitionGroup name="pin" tag="div" class="grid gap-2" style="grid-template-columns: repeat(auto-fill, calc(4 * 1.5rem + 3 * 0.25rem + 2 * 0.75rem + 2px)); justify-content: end">
           <div
-            v-for="group in pinnedGroups" :key="group"
+            v-for="group in leftPinnedGroups" :key="group"
             class="flex flex-col gap-0.5 bg-court-800/80 backdrop-blur-sm border border-court-700/60 rounded-xl px-3 py-2"
           >
             <span class="text-[10px] font-black tracking-[0.2em] text-sky-500">{{ group }}</span>
             <div class="flex gap-1">
-              <span
-                v-for="(team, i) in order[group]" :key="team"
-                class="text-2xl leading-none transition-opacity"
-                :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
-                :title="`${i + 1}. ${team}`"
-              >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+              <span v-for="(team, i) in order[group]" :key="team" class="relative group/flag cursor-default">
+                <span class="text-2xl leading-none transition-opacity" :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                <span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold bg-white text-black shadow-lg opacity-0 group-hover/flag:opacity-100 transition-opacity z-[200]">
+                  {{ team }}<span class="text-slate-500 font-normal"> · #{{ FIFA_RANKING[team] ?? '–' }}</span>
+                </span>
+              </span>
             </div>
           </div>
         </TransitionGroup>
       </div>
-    </Transition>
+
+      <!-- narrow desktop: two panels, left and right, 1 col each -->
+      <template v-if="pinnedGroups.length">
+        <div
+          v-if="leftPinnedGroups.length"
+          class="hidden min-[964px]:block min-[1248px]:hidden fixed top-16 z-[60]"
+          style="right: calc(50% + 348px)"
+        >
+          <TransitionGroup name="pin" tag="div" class="grid gap-2" style="grid-template-columns: calc(4 * 1.5rem + 3 * 0.25rem + 2 * 0.75rem + 2px)">
+            <div v-for="group in leftPinnedGroups" :key="group" class="flex flex-col gap-0.5 bg-court-800/80 backdrop-blur-sm border border-court-700/60 rounded-xl px-3 py-2">
+              <span class="text-[10px] font-black tracking-[0.2em] text-sky-500">{{ group }}</span>
+              <div class="flex gap-1">
+                <span v-for="(team, i) in order[group]" :key="team" class="relative group/flag cursor-default">
+                  <span class="text-2xl leading-none transition-opacity" :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                  <span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold bg-white text-black shadow-lg opacity-0 group-hover/flag:opacity-100 transition-opacity z-[200]">
+                    {{ team }}<span class="text-slate-500 font-normal"> · #{{ FIFA_RANKING[team] ?? '–' }}</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </TransitionGroup>
+        </div>
+        <div
+          v-if="rightPinnedGroups.length"
+          class="hidden min-[964px]:block min-[1248px]:hidden fixed top-16 z-[60]"
+          style="left: calc(50% + 348px)"
+        >
+          <TransitionGroup name="pin" tag="div" class="grid gap-2" style="grid-template-columns: calc(4 * 1.5rem + 3 * 0.25rem + 2 * 0.75rem + 2px)">
+            <div v-for="group in rightPinnedGroups" :key="group" class="flex flex-col gap-0.5 bg-court-800/80 backdrop-blur-sm border border-court-700/60 rounded-xl px-3 py-2">
+              <span class="text-[10px] font-black tracking-[0.2em] text-sky-500">{{ group }}</span>
+              <div class="flex gap-1">
+                <span v-for="(team, i) in order[group]" :key="team" class="relative group/flag cursor-default">
+                  <span class="text-2xl leading-none transition-opacity" :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                  <span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold bg-white text-black shadow-lg opacity-0 group-hover/flag:opacity-100 transition-opacity z-[200]">
+                    {{ team }}<span class="text-slate-500 font-normal"> · #{{ FIFA_RANKING[team] ?? '–' }}</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </TransitionGroup>
+        </div>
+      </template>
 
     <!-- ── SECTION 1: Group Standings ── -->
     <section class="mt-8 mb-10">
@@ -253,7 +327,7 @@ const POS_COLORS = [
           </div>
 
           <!-- Draggable team rows -->
-          <TransitionGroup tag="div" name="drag-list" class="space-y-1">
+          <TransitionGroup tag="div" :name="drag.group === group ? '' : 'drag-list'" class="space-y-1">
             <div
               v-for="(team, idx) in order[group]" :key="team"
               draggable="true"
@@ -348,12 +422,10 @@ const POS_COLORS = [
 
     <!-- ── SECTION 3: Tournament Props ── -->
     <section class="mb-10">
-      <div class="flex items-baseline justify-between mb-1">
+      <div class="flex items-baseline justify-between mb-5">
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Tournament Props</h2>
         <span class="text-[10px] text-slate-600 font-mono">3–10 pts</span>
       </div>
-      <p class="text-[11px] text-slate-600 mb-5">Bold calls only. Points for exact matches.</p>
-
       <div class="space-y-2">
         <div
           v-for="prop in PROPS" :key="prop.key"

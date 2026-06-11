@@ -1,9 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
-import { signOut } from 'firebase/auth'
-import { auth, db } from '../firebase.js'
+import { db } from '../firebase.js'
 import { GROUPS, PROPS } from '../data.js'
+import ProfileModal from '../components/ProfileModal.vue'
+
+const showProfile = ref(false)
 
 const props = defineProps({ user: Object })
 const emit = defineEmits(['edit-picks'])
@@ -47,9 +49,11 @@ function fmtDate(ts) {
 <template>
   <div class="max-w-2xl mx-auto px-4 pb-16">
 
+    <ProfileModal v-if="showProfile" :user="user" @close="showProfile = false" />
+
     <!-- Nav bar -->
     <header class="flex items-center justify-between py-4 border-b border-court-700 mb-6">
-      <div class="flex items-center gap-3">
+      <button type="button" @click="showProfile = true" class="flex items-center gap-3 text-left">
         <img
           v-if="user.photoURL"
           :src="user.photoURL"
@@ -63,8 +67,7 @@ function fmtDate(ts) {
           <div class="text-[10px] text-slate-600">Signed in as</div>
           <div class="text-sm font-bold text-white leading-tight">{{ user.displayName }}</div>
         </div>
-      </div>
-      <button @click="signOut(auth)" class="text-xs text-slate-600 hover:text-slate-400 transition-colors">Sign out</button>
+      </button>
     </header>
 
     <!-- Loading -->
