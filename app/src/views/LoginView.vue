@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-
 const appVersion = __APP_VERSION__
+
 import {
   signInWithPopup,
   signInWithEmailAndPassword,
@@ -311,8 +311,8 @@ async function emailSubmit() {
         <span class="text-zinc-400">{{ picksLockTime ? `Picks lock ${fmtLockTime(picksLockTime)}` : '—' }}</span>
       </p>
     </div>
-    <div class="absolute bottom-6 left-0 right-0 text-center">
-      <span class="text-[10px] text-zinc-600 font-mono">v{{ appVersion }}</span>
+    <div class="text-center py-4">
+      <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
     </div>
   </div>
 </template>

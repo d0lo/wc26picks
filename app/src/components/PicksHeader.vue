@@ -1,10 +1,15 @@
 <script setup>
+import { ref } from 'vue'
+
 defineProps({ user: Object, locked: Boolean })
 defineEmits(['profile'])
+
+const headerEl = ref(null)
+defineExpose({ headerEl })
 </script>
 
 <template>
-  <header class="sticky top-0 z-50 -mx-4 px-4 flex items-center justify-between py-4 border-b border-court-700 mb-4 bg-court-950/95 backdrop-blur-md">
+  <header ref="headerEl" class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between py-4 border-b border-court-700 bg-court-950/95 backdrop-blur-md px-4" style="padding-top: max(1rem, calc(1rem + env(safe-area-inset-top)))">
     <button type="button" @click="$emit('profile')" class="flex items-center gap-3 text-left">
       <img
         v-if="user.photoURL"

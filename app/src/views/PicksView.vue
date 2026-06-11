@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue'
+const appVersion = __APP_VERSION__
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING } from '../data.js'
@@ -203,7 +204,7 @@ let lastExpandedOverlayHeight = 0
 let cachedRowHeight = 0
 
 function getHeaderBottom() {
-  const el = picksHeaderRef.value?.$el ?? picksHeaderRef.value
+  const el = picksHeaderRef.value?.headerEl
   if (el) return el.getBoundingClientRect().bottom
   return 60
 }
@@ -272,7 +273,7 @@ const POS_COLORS = [
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4" style="padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
+  <div class="max-w-2xl mx-auto px-4 pt-16" style="padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
 
     <ProfileModal v-if="showProfile" :user="user" @close="showProfile = false" />
 
@@ -516,7 +517,7 @@ const POS_COLORS = [
 
     <template v-if="loaded">
 
-    <section class="mb-10">
+    <section class="mt-4 mb-10">
       <div class="flex items-start justify-between mb-5">
         <div>
           <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Group Standings</h2>
@@ -741,6 +742,10 @@ const POS_COLORS = [
     </template><!-- end loaded -->
 
     </template><!-- end v-else edit view -->
+
+    <div class="text-center py-4">
+      <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
+    </div>
 
   </div>
 </template>

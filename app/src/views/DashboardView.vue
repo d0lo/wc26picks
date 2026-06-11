@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+const appVersion = __APP_VERSION__
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import PicksHeader from '../components/PicksHeader.vue'
 import { db } from '../firebase.js'
@@ -8,6 +9,18 @@ import ProfileModal from '../components/ProfileModal.vue'
 
 const showProfile = ref(false)
 const editNameMode = ref(false)
+
+const ballTotalDeg = ref(0)
+const ballDuration = ref('0ms')
+let ballSpinTimer = null
+function spinBall() {
+  clearTimeout(ballSpinTimer)
+  const ms = 700 + Math.floor(Math.random() * 301)
+  const deg = 720 + Math.floor(Math.random() * 721)
+  ballDuration.value = `${ms}ms`
+  ballTotalDeg.value += deg
+  ballSpinTimer = setTimeout(() => { ballDuration.value = '0ms' }, ms)
+}
 
 const props = defineProps({ user: Object, picksLocked: Boolean })
 const emit = defineEmits(['edit-picks'])
@@ -87,7 +100,7 @@ function fmtDate(ts) {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4" style="padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
+  <div class="max-w-2xl mx-auto px-4 pt-16" style="padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
 
     <ProfileModal v-if="showProfile" :user="user" :edit-name="editNameMode" @close="showProfile = false; editNameMode = false" @name-saved="onNameSaved" />
 
@@ -101,18 +114,28 @@ function fmtDate(ts) {
     <template v-else>
 
       <!-- Picks locked hero card -->
-      <div class="relative bg-gradient-to-br from-court-800 to-court-900 border border-emerald-500/20 rounded-3xl p-6 mb-5 overflow-hidden">
+      <div class="relative bg-gradient-to-br from-court-800 to-court-900 border border-emerald-500/20 rounded-3xl p-6 mt-4 mb-5 overflow-hidden">
         <div class="absolute -right-10 -top-10 w-48 h-48 bg-emerald-400/5 rounded-full blur-3xl pointer-events-none"></div>
         <div class="flex items-start justify-between gap-4 relative">
           <div class="min-w-0">
             <div class="flex items-center gap-2 mb-2">
               <div class="w-1.5 h-1.5 bg-emerald-400 rounded-full"></div>
-              <span class="text-[10px] font-black tracking-[0.3em] text-emerald-400 uppercase">Picks Locked</span>
+              <span class="text-[10px] font-black tracking-[0.3em] text-emerald-400 uppercase">Picks Submitted</span>
             </div>
             <h1 class="text-2xl font-black text-white leading-tight">You're in.</h1>
             <p class="text-xs text-zinc-400 mt-1">{{ fmtDate(submission?.submittedAt) }}</p>
           </div>
-          <div class="text-5xl shrink-0 select-none" style="filter: drop-shadow(0 0 24px rgba(251,191,36,0.35))">🏆</div>
+          <div class="relative shrink-0 select-none">
+            <div class="absolute inset-0 blur-2xl bg-amber-400/15 rounded-full scale-[2] pointer-events-none"></div>
+            <div
+              class="absolute inset-x-0 top-0 flex justify-center text-2xl leading-none pointer-events-none"
+              :style="{ transform: `translateY(-55%) rotate(${ballTotalDeg}deg)`, transition: `transform ${ballDuration} cubic-bezier(0.22, 1, 0.36, 1)` }"
+            >⚽</div>
+            <div class="relative text-5xl" style="filter: drop-shadow(0 0 24px rgba(251,191,36,0.45))">🏆</div>
+            <div class="absolute inset-x-0 top-0 flex justify-center cursor-pointer" style="transform: translateY(-55%)" @click="spinBall">
+              <div style="width:2rem; height:2rem"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Rank + score pills (once scoring starts) -->
@@ -306,5 +329,10 @@ function fmtDate(ts) {
       </section>
 
     </template>
+
+    <div class="text-center py-4">
+      <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
+    </div>
+
   </div>
 </template>
