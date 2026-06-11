@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /submissions/{userId} {
+      allow create, update: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null;
+      allow delete: if false;
+    }
+
+    match /outcomes/official {
+      allow read: if request.auth != null;
+      allow write: if false; // admin writes via Firebase Console or trusted server
+    }
+
+    match /scores/{userId} {
+      allow read: if request.auth != null;
+      allow write: if false; // computed server-side or by admin
+    }
+  }
+}
