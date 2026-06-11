@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import {
   signInWithPopup,
   signInWithEmailAndPassword,
@@ -120,7 +120,40 @@ const splashes = [
   "Golden boot race!",
   "Last 16 upset!",
 ]
-const splash = splashes[Math.floor(Math.random() * splashes.length)]
+function randomSplash(current) {
+  if (Math.random() < 0.2 && current !== 'DYKB?') return 'DYKB?'
+  const pool = splashes.filter(s => s !== current)
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+const splash = ref(randomSplash())
+const wordmarkRef = ref(null)
+const ballTotalDeg = ref(0)
+const ballDuration = ref('0ms')
+let ballSpinTimer = null
+function spinBall() {
+  clearTimeout(ballSpinTimer)
+  const ms = 700 + Math.floor(Math.random() * 301)
+  const deg = 720 + Math.floor(Math.random() * 721)
+  ballDuration.value = `${ms}ms`
+  ballTotalDeg.value += deg
+  ballSpinTimer = setTimeout(() => { ballDuration.value = '0ms' }, ms)
+}
+const splashMaxWidth = ref('160px')
+
+function updateSplashWidth() {
+  if (!wordmarkRef.value) return
+  const rect = wordmarkRef.value.getBoundingClientRect()
+  // span center x = rect.right + 30 (right edge of span, since right:-30px places right edge 30px past wordmark)
+  // but center is rect.right + 30 - splashMaxWidth/2 — approximate with rect.right + 30 as anchor
+  const distToScreenRight = window.innerWidth - (rect.right + 30)
+  splashMaxWidth.value = `${Math.max(40, distToScreenRight * 2 - 20)}px`
+}
+
+onMounted(() => {
+  updateSplashWidth()
+  window.addEventListener('resize', updateSplashWidth)
+})
+onUnmounted(() => window.removeEventListener('resize', updateSplashWidth))
 
 function fmtLockTime(ts) {
   if (!ts) return null
@@ -182,7 +215,7 @@ async function emailSubmit() {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
+  <div class="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
     <div class="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,#0d2918,transparent)]"></div>
     <div class="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_110%,#0a1f12,transparent)]"></div>
     <div
@@ -190,25 +223,34 @@ async function emailSubmit() {
       style="background-image: linear-gradient(#4ade80 1px, transparent 1px), linear-gradient(90deg, #4ade80 1px, transparent 1px); background-size: 64px 64px;"
     ></div>
 
-    <div class="relative z-10 flex flex-col items-center max-w-xs w-full text-center">
+    <div class="relative z-10 flex flex-col items-center max-w-xs w-full text-center py-6">
       <!-- Trophy -->
-      <div class="relative mb-8 select-none">
+      <div class="relative mb-4 select-none">
         <div class="absolute inset-0 blur-3xl bg-amber-400/15 rounded-full scale-[2]"></div>
-        <div class="relative text-7xl" style="filter: drop-shadow(0 0 48px rgba(251,191,36,0.45))">🏆</div>
+        <div class="absolute inset-x-0 top-0 flex justify-center text-[2.25rem] leading-none select-none pointer-events-none -translate-y-1/2" style="z-index:1" :style="{ transform: `translateY(-50%) rotate(${ballTotalDeg}deg)`, transition: `transform ${ballDuration} cubic-bezier(0.22, 1, 0.36, 1)` }">⚽</div>
+        <div class="relative text-7xl pointer-events-none" style="filter: drop-shadow(0 0 48px rgba(251,191,36,0.45)); z-index:2">🏆</div>
+        <div class="absolute inset-x-0 top-0 flex justify-center -translate-y-1/2" style="z-index:3; cursor:pointer" @click="spinBall"><div style="width:2.25rem; height:2.25rem"></div></div>
       </div>
 
       <!-- Wordmark -->
-      <div class="mb-2 relative">
-        <h1 class="text-5xl font-black tracking-tighter text-white leading-none">WORLD CUP</h1>
-        <div class="text-[2.5rem] font-black tracking-[0.12em] text-amber-400 leading-none mt-1">2026</div>
-        <span
-          class="mc-version absolute text-[11px] font-black text-yellow-300 select-none pointer-events-none text-right leading-tight"
-          style="font-family: 'Courier New', Courier, monospace; bottom: 50%; right: 0; max-width: 160px; transform: rotate(-20deg); transform-origin: right center; text-shadow: 1px 1px 0 #7c5000, -1px -1px 0 #7c5000, 1px -1px 0 #7c5000, -1px 1px 0 #7c5000;"
-        >{{ splash }}</span>
+      <div ref="wordmarkRef" class="mb-2 relative">
+        <h1 class="text-5xl font-black tracking-tighter leading-none">
+          <span class="text-white">WC</span><span class="text-amber-400"> 2026</span>
+        </h1>
+        <div
+          class="absolute"
+          style="top: 50%; left: 88%; transform: translate(-50%, -50%); cursor: pointer;"
+          @click="splash = randomSplash(splash)"
+        >
+          <span
+            class="splash-text text-[13px] font-black text-yellow-300 select-none text-left leading-tight whitespace-nowrap"
+            :style="{ fontFamily: '\'Courier New\', Courier, monospace', textShadow: '1px 1px 0 #7c5000, -1px -1px 0 #7c5000, 1px -1px 0 #7c5000, -1px 1px 0 #7c5000' }"
+          >{{ splash }}</span>
+        </div>
         <div class="text-[11px] font-bold tracking-[0.35em] text-zinc-400 uppercase mt-2">Predictor</div>
       </div>
 
-      <div class="my-8 w-24 h-px bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent"></div>
+      <div class="my-5 w-24 h-px bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent"></div>
 
       <form @submit.prevent="emailSubmit" class="w-full space-y-2 mb-3">
         <input
@@ -268,7 +310,10 @@ async function emailSubmit() {
       </p>
     </div>
     <div class="absolute bottom-6 left-0 right-0 text-center">
-      <span class="text-[10px] text-zinc-600 font-mono">v1.2.1</span>
+      <span class="text-[10px] text-zinc-600 font-mono">v1.3.1</span>
     </div>
   </div>
 </template>
+
+<style scoped>
+</style>

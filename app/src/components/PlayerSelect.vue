@@ -17,6 +17,7 @@ const country = ref('')
 const search = ref('')
 const container = ref(null)
 const searchInput = ref(null)
+const countrySelectRef = ref(null)
 
 // Reverse-map flag emoji → country name for pre-filling on edit
 const FLAG_TO_TEAM = Object.fromEntries(Object.entries(TEAM_FLAG).map(([k, v]) => [v, k]))
@@ -30,10 +31,8 @@ function extractCountry(val) {
 }
 
 function openPicker() {
-  if (props.modelValue) {
-    country.value = extractCountry(props.modelValue)
-    search.value = extractName(props.modelValue)
-  }
+  country.value = ''
+  search.value = ''
   open.value = true
   setTimeout(() => searchInput.value?.focus(), 50)
 }
@@ -132,7 +131,11 @@ watch(country, val => {
 })
 
 function onOutside(e) {
-  if (container.value && !container.value.contains(e.target)) closePicker()
+  const countryDropdown = countrySelectRef.value?.dropdownEl
+  if (
+    container.value && !container.value.contains(e.target) &&
+    !(countryDropdown && countryDropdown.contains(e.target))
+  ) closePicker()
 }
 onMounted(() => document.addEventListener('mousedown', onOutside))
 onUnmounted(() => document.removeEventListener('mousedown', onOutside))
@@ -183,6 +186,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
 
         <!-- Country selector -->
         <CountrySelect
+          ref="countrySelectRef"
           class="flex-1"
           v-model="country"
           placeholder="By country"

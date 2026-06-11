@@ -3,10 +3,10 @@ import { ref } from 'vue'
 import { updateProfile } from 'firebase/auth'
 import { auth } from '../firebase.js'
 
-const props = defineProps({ user: Object })
+const props = defineProps({ user: Object, defaultName: String })
 const emit = defineEmits(['done'])
 
-const username = ref('')
+const username = ref(props.defaultName ?? '')
 const saving = ref(false)
 const error = ref('')
 

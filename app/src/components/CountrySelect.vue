@@ -16,17 +16,19 @@ const searchInput = ref(null)
 
 const ALL_TEAMS_SORTED = [...new Set(Object.values(GROUP_TEAMS).flat())].sort()
 
+const normalize = s => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+
 const byGroup = computed(() => {
-  const q = search.value.toLowerCase()
+  const q = normalize(search.value)
   return GROUPS.map(g => ({
     group: g,
-    teams: GROUP_TEAMS[g].filter(t => !q || t.toLowerCase().includes(q)),
+    teams: GROUP_TEAMS[g].filter(t => !q || normalize(t).includes(q)),
   })).filter(g => g.teams.length > 0)
 })
 
 const byName = computed(() => {
-  const q = search.value.toLowerCase()
-  return q ? ALL_TEAMS_SORTED.filter(t => t.toLowerCase().includes(q)) : ALL_TEAMS_SORTED
+  const q = normalize(search.value)
+  return q ? ALL_TEAMS_SORTED.filter(t => normalize(t).includes(q)) : ALL_TEAMS_SORTED
 })
 
 const hasResults = computed(() =>
@@ -63,6 +65,8 @@ function onOutside(e) {
 }
 onMounted(() => document.addEventListener('click', onOutside))
 onUnmounted(() => document.removeEventListener('click', onOutside))
+
+defineExpose({ dropdownEl })
 </script>
 
 <template>

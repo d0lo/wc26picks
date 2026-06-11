@@ -12,6 +12,7 @@ const loading = ref(true)
 const user = ref(null)
 const view = ref('picks')
 const picksLockTime = ref(null)
+const needsUsernameConfirm = ref(false)
 
 const picksLocked = computed(() => {
   if (!picksLockTime.value) return false
@@ -26,11 +27,20 @@ onMounted(async () => {
   }).catch(() => {})
 
   onAuthStateChanged(auth, async (u) => {
+    if (u) loading.value = true
     user.value = u
-    if (u && u.displayName) {
+    if (u) {
       try {
         const snap = await getDoc(doc(db, 'submissions', u.uid))
-        view.value = snap.exists() ? 'dashboard' : 'picks'
+        const isGoogle = u.providerData?.[0]?.providerId === 'google.com'
+        const nameConfirmed = localStorage.getItem(`name_confirmed_${u.uid}`) === '1'
+        if (!u.displayName) {
+          // no-op: SetUsernameView handles this
+        } else if (isGoogle && !snap.exists() && !nameConfirmed) {
+          needsUsernameConfirm.value = true
+        } else {
+          view.value = snap.exists() ? 'dashboard' : 'picks'
+        }
       } catch {
         view.value = 'picks'
       }
@@ -38,6 +48,12 @@ onMounted(async () => {
     loading.value = false
   })
 })
+
+function onUsernameDone() {
+  localStorage.setItem(`name_confirmed_${user.value.uid}`, '1')
+  needsUsernameConfirm.value = false
+  view.value = 'picks'
+}
 </script>
 
 <template>
@@ -47,7 +63,7 @@ onMounted(async () => {
     </div>
     <template v-else>
       <LoginView v-if="!user" :picksLockTime="picksLockTime" />
-      <SetUsernameView v-else-if="!user.displayName" :user="user" @done="view = 'picks'" />
+      <SetUsernameView v-else-if="!user.displayName || needsUsernameConfirm" :user="user" :default-name="user.displayName" @done="onUsernameDone" />
       <PicksView
         v-else-if="view === 'picks'"
         :user="user"

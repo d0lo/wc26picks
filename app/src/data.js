@@ -130,5 +130,5 @@ export const PROPS = [
   { key: 'Hat Trick Scorer',     label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'First player to score a hat trick' },
   { key: 'Most Assists',         label: 'Most Assists',                       type: 'player', points: 4, hint: 'Player with the most assists' },
   { key: 'Most Yellow Cards',    label: 'Team with Most Yellow Cards',        type: 'team',   points: 3, hint: 'Most disciplinary cards received' },
-  { key: 'Clean Sheet Group',    label: 'Clean Sheet Every Group Game',       type: 'team',   points: 5, hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team' },
+  { key: 'Clean Sheet Group',    label: 'Clean Group',                        type: 'team',   points: 5, hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team' },
 ]

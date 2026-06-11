@@ -1,18 +1,25 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { signOut, deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, updateProfile } from 'firebase/auth'
-import { doc, deleteDoc } from 'firebase/firestore'
+import { doc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { auth, db, googleProvider } from '../firebase.js'
 
-const props = defineProps({ user: Object })
-const emit = defineEmits(['close'])
+const props = defineProps({ user: Object, editName: Boolean })
+const emit = defineEmits(['close', 'name-saved'])
 
 const busy = ref(false)
 const error = ref('')
 const confirmingDelete = ref(false)
 const reauthPassword = ref('')
-const editingName = ref(false)
-const newName = ref('')
+
+const defaultDisplayName = computed(() => {
+  const n = props.user.displayName ?? ''
+  const parts = n.trim().split(/\s+/)
+  return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : n
+})
+
+const editingName = ref(props.editName)
+const newName = ref(props.editName ? defaultDisplayName.value : '')
 
 async function saveName() {
   const name = newName.value.trim()
@@ -21,7 +28,11 @@ async function saveName() {
   error.value = ''
   try {
     await updateProfile(props.user, { displayName: name })
-    editingName.value = false
+    // Keep submission doc in sync so leaderboard reflects the new name
+    const subRef = doc(db, 'submissions', props.user.uid)
+    await updateDoc(subRef, { name }).catch(() => {})
+    emit('name-saved')
+    emit('close')
   } catch {
     error.value = 'Could not update name. Please try again.'
   }
@@ -81,7 +92,7 @@ async function reauthAndDelete() {
         <template v-if="!confirmingDelete && !editingName">
           <button
             type="button"
-            @click="editingName = true; newName = user.displayName ?? ''"
+            @click="editingName = true; newName = defaultDisplayName"
             :disabled="busy"
             class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-court-700 hover:bg-court-600 text-sm text-white font-medium transition-colors disabled:opacity-50"
           >

@@ -2,13 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
-@keyframes mc-bounce {
+@keyframes shelf-ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.shelf-ticker {
+  animation: shelf-ticker linear infinite;
+}
+
+@keyframes splash-pulse {
   0%, 100% { transform: rotate(-20deg) scale(1);    }
   50%       { transform: rotate(-20deg) scale(1.15); }
 }
 
-.mc-version {
-  animation: mc-bounce 1s ease-in-out infinite;
+@layer components {
+  .splash-text {
+    display: inline-block;
+    animation: splash-pulse 0.5s ease-in-out infinite;
+    transform-origin: center center;
+  }
 }
 
 @layer base {
