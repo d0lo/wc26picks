@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 const appVersion = __APP_VERSION__
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import PicksHeader from '../components/PicksHeader.vue'
@@ -69,6 +69,16 @@ const picksHeaderRef = ref(null)
 const propsSectionRef = ref(null)
 const pinnedGroups = ref([])
 let lastExpandedOverlayHeight = 0
+let cachedRowHeight = 40
+let leaveAnimating = false
+let leaveTimer = null
+watch(() => pinnedGroups.value.length, (n, o) => {
+  if (n < o) {
+    leaveAnimating = true
+    clearTimeout(leaveTimer)
+    leaveTimer = setTimeout(() => { leaveAnimating = false }, 150)
+  }
+})
 
 function getHeaderBottom() {
   const el = picksHeaderRef.value?.headerEl
@@ -112,9 +122,11 @@ function updatePinned() {
   if (!submission.value) return
   const headerBottom = getHeaderBottom()
   const rowCount = Math.ceil(pinnedGroups.value.length / 2)
-  const rowHeight = (overlayRef.value && rowCount > 0 && !overlayCollapsed.value)
-    ? overlayRef.value.getBoundingClientRect().height / rowCount
-    : 40
+  if (overlayRef.value && rowCount > 0 && !overlayCollapsed.value && !leaveAnimating) {
+    const h = overlayRef.value.getBoundingClientRect().height
+    if (h > 0) cachedRowHeight = h / rowCount
+  }
+  const rowHeight = cachedRowHeight
 
   const newRows = []
   for (const row of PAIR_ROWS) {
@@ -488,6 +500,8 @@ function fmtDate(ts) {
 
 <style scoped>
 .pin-enter-active { transition: all 0.15s ease-out; }
+.pin-leave-active { transition: all 0.1s ease-in; }
 .pin-enter-from  { opacity: 0; transform: translateY(-6px); }
+.pin-leave-to    { opacity: 0; transform: translateY(-4px); }
 .pin-move        { transition: transform 0.15s ease; }
 </style>
