@@ -78,10 +78,12 @@ onMounted(async () => {
 
 // ── Drag and drop ──────────────────────────────────────────────────────
 const drag = reactive({ group: null, item: null })
+let _dragSaved = null // order snapshot before drag; cleared on valid drop
 
 function onDragStart(e, group, team) {
   drag.group = group
   drag.item = team
+  _dragSaved = { group, order: [...order[group]] }
   e.dataTransfer.effectAllowed = 'move'
 }
 
@@ -95,19 +97,31 @@ function onDragOver(e, group, idx) {
   arr.splice(idx, 0, drag.item)
 }
 
+function onDrop(e) {
+  e.preventDefault()
+  _dragSaved = null // valid drop within group — keep new order
+}
+
 function onDragEnd() {
+  if (_dragSaved) {
+    // Dropped outside the group card — restore original order
+    order[_dragSaved.group].splice(0, Infinity, ..._dragSaved.order)
+  }
   drag.group = null
   drag.item = null
+  _dragSaved = null
 }
 
 // ── Touch drag (mobile) ────────────────────────────────────────────────
 const touch = reactive({ group: null, item: null })
+let _touchSaved = null // order snapshot before touch drag
 
 function onTouchStart(e, group, team) {
   touch.group = group
   touch.item = team
   drag.group = group
   drag.item = team
+  _touchSaved = { group, order: [...order[group]] }
 }
 
 function onTouchMove(e) {
@@ -132,11 +146,21 @@ function onTouchMove(e) {
   arr.splice(targetIdx, 0, touch.item)
 }
 
-function onTouchEnd() {
+function onTouchEnd(e) {
+  if (_touchSaved && touch.group) {
+    const t = e.changedTouches[0]
+    const el = document.elementFromPoint(t.clientX, t.clientY)
+    const groupEl = el?.closest('[data-group]')
+    if (groupEl?.dataset.group !== touch.group) {
+      // Finger lifted outside the group card — restore original order
+      order[_touchSaved.group].splice(0, Infinity, ..._touchSaved.order)
+    }
+  }
   touch.group = null
   touch.item = null
   drag.group = null
   drag.item = null
+  _touchSaved = null
 }
 
 function resetGroup(group) {
@@ -593,10 +617,11 @@ const POS_COLORS = [
               :data-drag-idx="idx"
               @dragstart="!picksLocked && onDragStart($event, group, team)"
               @dragover="!picksLocked && onDragOver($event, group, idx)"
+              @drop="!picksLocked && onDrop($event)"
               @dragend="!picksLocked && onDragEnd()"
               @touchstart.passive="!picksLocked && onTouchStart($event, group, team)"
               @touchmove="!picksLocked && onTouchMove($event)"
-              @touchend="!picksLocked && onTouchEnd()"
+              @touchend="!picksLocked && onTouchEnd($event)"
               class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border"
               :class="[
                 picksLocked ? 'cursor-default bg-court-750 border-transparent opacity-60' :
