@@ -9,7 +9,7 @@ Every feature follows two feedback loops before merging.
 ### Loop 1 — Feature Testing
 
 1. **New feature request** → create a dedicated branch: `feature/<short-description>`
-2. Implement the feature, then **commit, push, and open a PR** against `main`
+2. Implement the feature, then **commit, push, and open a PR** against `main` — **ALWAYS open the PR immediately after pushing. Never wait to be asked.**
 3. Opening the PR automatically triggers a Firebase Hosting preview deploy — post the preview URL in chat
 4. Wait for the user to test the preview
 5. For each **code change request**:
