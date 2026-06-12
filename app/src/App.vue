@@ -70,6 +70,7 @@ function onUsernameDone() {
         :picksLocked="picksLocked"
         :picksLockTime="picksLockTime"
         @submitted="view = 'dashboard'"
+        @cancel="view = 'dashboard'"
       />
       <DashboardView
         v-else
