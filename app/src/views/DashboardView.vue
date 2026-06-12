@@ -488,8 +488,6 @@ function fmtDate(ts) {
 
 <style scoped>
 .pin-enter-active { transition: all 0.15s ease-out; }
-.pin-leave-active { transition: all 0.1s ease-in; }
 .pin-enter-from  { opacity: 0; transform: translateY(-6px); }
-.pin-leave-to    { opacity: 0; transform: translateY(-4px); }
 .pin-move        { transition: transform 0.15s ease; }
 </style>
