@@ -8,7 +8,6 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   sendPasswordResetEmail,
-  fetchSignInMethodsForEmail,
 } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase.js'
 
@@ -197,15 +196,6 @@ async function sendReset() {
   signing.value = true
   resetError.value = ''
   try {
-    const methods = await fetchSignInMethodsForEmail(auth, resetEmail.value)
-    if (methods.length === 0) {
-      resetError.value = 'No account found with that email.'
-      return
-    }
-    if (!methods.includes('password')) {
-      resetError.value = 'This account uses Google Sign-in. Use the "Continue with Google" button instead.'
-      return
-    }
     await sendPasswordResetEmail(auth, resetEmail.value)
     resetSent.value = true
   } catch (e) {
