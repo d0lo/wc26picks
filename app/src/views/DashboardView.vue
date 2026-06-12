@@ -214,6 +214,7 @@ function fmtDate(ts) {
         <div ref="overlayGridRef">
           <div class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
                :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'">
+            <TransitionGroup name="pin" tag="div" class="contents">
             <div
               v-for="group in pinnedGroups" :key="group"
               class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
@@ -227,6 +228,7 @@ function fmtDate(ts) {
                 >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
               </div>
             </div>
+            </TransitionGroup>
           </div>
         </div>
         <!-- collapsed: ticker -->
@@ -483,3 +485,11 @@ function fmtDate(ts) {
 
   </div>
 </template>
+
+<style scoped>
+.pin-enter-active { transition: all 0.15s ease-out; }
+.pin-leave-active { transition: all 0.1s ease-in; }
+.pin-enter-from  { opacity: 0; transform: translateY(-6px); }
+.pin-leave-to    { opacity: 0; transform: translateY(-4px); }
+.pin-move        { transition: transform 0.15s ease; }
+</style>
