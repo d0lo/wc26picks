@@ -1,24 +1,24 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, provide, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
-import LoginView from './views/LoginView.vue'
-import SetUsernameView from './views/SetUsernameView.vue'
-import PicksView from './views/PicksView.vue'
-import DashboardView from './views/DashboardView.vue'
 
+const router = useRouter()
 const loading = ref(true)
 const user = ref(null)
-const view = ref('picks')
 const picksLockTime = ref(null)
-const needsUsernameConfirm = ref(false)
 
 const picksLocked = computed(() => {
   if (!picksLockTime.value) return false
   const lockMs = picksLockTime.value?.toDate?.().getTime() ?? picksLockTime.value
   return Date.now() >= lockMs
 })
+
+provide('user', user)
+provide('picksLocked', picksLocked)
+provide('picksLockTime', picksLockTime)
 
 onMounted(async () => {
   // Config is public — fetch before auth so splash page shows lock time immediately
@@ -35,15 +35,17 @@ onMounted(async () => {
         const isGoogle = u.providerData?.[0]?.providerId === 'google.com'
         const nameConfirmed = localStorage.getItem(`name_confirmed_${u.uid}`) === '1'
         if (!u.displayName) {
-          // no-op: SetUsernameView handles this
+          await router.push('/username')
         } else if (isGoogle && !snap.exists() && !nameConfirmed) {
-          needsUsernameConfirm.value = true
+          await router.push('/username')
         } else {
-          view.value = snap.exists() ? 'dashboard' : 'picks'
+          await router.push(snap.exists() ? '/dashboard' : '/picks')
         }
       } catch {
-        view.value = 'picks'
+        await router.push('/picks')
       }
+    } else {
+      await router.push('/login')
     }
     loading.value = false
   })
@@ -51,8 +53,7 @@ onMounted(async () => {
 
 function onUsernameDone() {
   localStorage.setItem(`name_confirmed_${user.value.uid}`, '1')
-  needsUsernameConfirm.value = false
-  view.value = 'picks'
+  router.push('/picks')
 }
 </script>
 
@@ -61,22 +62,8 @@ function onUsernameDone() {
     <div v-if="loading" class="flex items-center justify-center min-h-screen">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
     </div>
-    <template v-else>
-      <LoginView v-if="!user" :picksLockTime="picksLockTime" />
-      <SetUsernameView v-else-if="!user.displayName || needsUsernameConfirm" :user="user" :default-name="user.displayName" @done="onUsernameDone" />
-      <PicksView
-        v-else-if="view === 'picks'"
-        :user="user"
-        :picksLocked="picksLocked"
-        :picksLockTime="picksLockTime"
-        @submitted="view = 'dashboard'"
-      />
-      <DashboardView
-        v-else
-        :user="user"
-        :picksLocked="picksLocked"
-        @edit-picks="view = 'picks'"
-      />
-    </template>
+    <RouterView v-else v-slot="{ Component }">
+      <component :is="Component" @done="onUsernameDone" />
+    </RouterView>
   </div>
 </template>

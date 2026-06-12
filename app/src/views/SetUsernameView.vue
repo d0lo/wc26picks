@@ -1,12 +1,12 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, inject } from 'vue'
 import { updateProfile } from 'firebase/auth'
 import { auth } from '../firebase.js'
 
-const props = defineProps({ user: Object, defaultName: String })
+const user = inject('user')
 const emit = defineEmits(['done'])
 
-const username = ref(props.defaultName ?? '')
+const username = ref(user.value?.displayName ?? '')
 const saving = ref(false)
 const error = ref('')
 
@@ -16,7 +16,7 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    await updateProfile(props.user, { displayName: name })
+    await updateProfile(user.value, { displayName: name })
     emit('done')
   } catch {
     error.value = 'Could not save username. Please try again.'

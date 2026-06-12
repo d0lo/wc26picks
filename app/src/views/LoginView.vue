@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, inject, onMounted, onUnmounted } from 'vue'
 const appVersion = __APP_VERSION__
 
 import {
@@ -11,7 +11,7 @@ import {
 } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase.js'
 
-const props = defineProps({ picksLockTime: Object })
+const picksLockTime = inject('picksLockTime')
 
 const splashes = [
   // Minecraft-style

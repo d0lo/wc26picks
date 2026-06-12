@@ -1,5 +1,6 @@
 <script setup>
-import { reactive, ref, computed, onMounted, watch, nextTick } from 'vue'
+import { reactive, ref, computed, inject, onMounted, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 const appVersion = __APP_VERSION__
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
@@ -11,7 +12,10 @@ import PicksHeader from '../components/PicksHeader.vue'
 
 const showProfile = ref(false)
 
-const props = defineProps({ user: Object, picksLocked: Boolean, picksLockTime: Object })
+const router = useRouter()
+const user = inject('user')
+const picksLocked = inject('picksLocked')
+const picksLockTime = inject('picksLockTime')
 
 function fmtLockTime(ts) {
   if (!ts) return null
@@ -22,7 +26,6 @@ function fmtLockTime(ts) {
   const date = d.toLocaleString('en-US', { month: 'short', day: 'numeric' })
   return `on ${date} at ${time}`
 }
-const emit = defineEmits(['submitted'])
 
 // ── State ──────────────────────────────────────────────────────────────
 // order[group] = [1st, 2nd, 3rd, 4th] — default sorted by FIFA ranking
@@ -56,7 +59,7 @@ function picksChanged() {
 onMounted(async () => {
   let snap
   try {
-    snap = await getDoc(doc(db, 'submissions', props.user.uid))
+    snap = await getDoc(doc(db, 'submissions', user.value.uid))
   } catch {
     loaded.value = true
     return
@@ -161,7 +164,7 @@ function wcDisabled(group) {
 // ── Progress ───────────────────────────────────────────────────────────
 const doneProps = computed(() => PROPS.filter(p => propAnswers[p.key] !== '').length)
 const canSubmit = computed(
-  () => !props.picksLocked && wildcards.value.length === 8 && doneProps.value === PROPS.length
+  () => !picksLocked.value && wildcards.value.length === 8 && doneProps.value === PROPS.length
 )
 
 // ── Submit ─────────────────────────────────────────────────────────────
@@ -171,10 +174,10 @@ async function submit() {
   submitError.value = ''
   try {
     const changed = picksChanged()
-    await setDoc(doc(db, 'submissions', props.user.uid), {
-      name: props.user.displayName,
-      uid: props.user.uid,
-      photoURL: props.user.photoURL ?? null,
+    await setDoc(doc(db, 'submissions', user.value.uid), {
+      name: user.value.displayName,
+      uid: user.value.uid,
+      photoURL: user.value.photoURL ?? null,
       ...(changed ? { submittedAt: serverTimestamp() } : {}),
       groups: Object.fromEntries(GROUPS.map(g => [g, [...order[g]]])),
       wildcards: wildcards.value,
@@ -182,7 +185,7 @@ async function submit() {
         PROPS.map(p => [p.key, p.type === 'number' ? Number(propAnswers[p.key]) : propAnswers[p.key]])
       ),
     }, { merge: true })
-    emit('submitted')
+    router.push('/dashboard')
   } catch {
     submitError.value = 'Save failed — check your connection and try again.'
     submitting.value = false
