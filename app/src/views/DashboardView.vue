@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 const appVersion = __APP_VERSION__
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import PicksHeader from '../components/PicksHeader.vue'
@@ -69,6 +69,16 @@ const picksHeaderRef = ref(null)
 const propsSectionRef = ref(null)
 const pinnedGroups = ref([])
 let lastExpandedOverlayHeight = 0
+let cachedRowHeight = 40
+let leaveAnimating = false
+let leaveTimer = null
+watch(() => pinnedGroups.value.length, (n, o) => {
+  if (n < o) {
+    leaveAnimating = true
+    clearTimeout(leaveTimer)
+    leaveTimer = setTimeout(() => { leaveAnimating = false }, 150)
+  }
+})
 
 function getHeaderBottom() {
   const el = picksHeaderRef.value?.headerEl
@@ -112,9 +122,11 @@ function updatePinned() {
   if (!submission.value) return
   const headerBottom = getHeaderBottom()
   const rowCount = Math.ceil(pinnedGroups.value.length / 2)
-  const rowHeight = (overlayRef.value && rowCount > 0 && !overlayCollapsed.value)
-    ? overlayRef.value.getBoundingClientRect().height / rowCount
-    : 40
+  if (overlayRef.value && rowCount > 0 && !overlayCollapsed.value && !leaveAnimating) {
+    const h = overlayRef.value.getBoundingClientRect().height
+    if (h > 0) cachedRowHeight = h / rowCount
+  }
+  const rowHeight = cachedRowHeight
 
   const newRows = []
   for (const row of PAIR_ROWS) {
@@ -214,6 +226,7 @@ function fmtDate(ts) {
         <div ref="overlayGridRef">
           <div class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
                :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'">
+            <TransitionGroup name="pin" tag="div" class="contents">
             <div
               v-for="group in pinnedGroups" :key="group"
               class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
@@ -227,6 +240,7 @@ function fmtDate(ts) {
                 >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
               </div>
             </div>
+            </TransitionGroup>
           </div>
         </div>
         <!-- collapsed: ticker -->
@@ -483,3 +497,11 @@ function fmtDate(ts) {
 
   </div>
 </template>
+
+<style scoped>
+.pin-enter-active { transition: all 0.15s ease-out; }
+.pin-leave-active { transition: all 0.1s ease-in; }
+.pin-enter-from  { opacity: 0; transform: translateY(-6px); }
+.pin-leave-to    { opacity: 0; transform: translateY(-4px); }
+.pin-move        { transition: transform 0.15s ease; }
+</style>
