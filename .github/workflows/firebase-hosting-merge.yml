@@ -3,11 +3,51 @@ on:
   push:
     branches:
       - main
+
+permissions:
+  contents: write
+
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version
+        run: |
+          # Skip if this is the version bump commit itself
+          if git log -1 --pretty=format:"%s" | grep -q "\[skip ci\]"; then
+            echo "Version bump commit — skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            COMMITS=$(git log --pretty=format:"%s" | head -20)
+          else
+            COMMITS=$(git log ${BEFORE}..HEAD --pretty=format:"%s")
+          fi
+
+          BUMP="patch"
+          if echo "$COMMITS" | grep -qE "^feat(\(.+\))?!:|BREAKING CHANGE"; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
+            BUMP="minor"
+          fi
+
+          cd app
+          npm version $BUMP --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+
+          git add package.json
+          git commit -m "chore: bump version to v$VERSION [skip ci]"
+          git push
+
       - name: Build Vue app
         working-directory: app
         env:

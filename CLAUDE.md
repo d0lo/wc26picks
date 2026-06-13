@@ -41,9 +41,20 @@ Every feature follows two feedback loops before merging.
 
 ### Commit Style
 
-- One commit per logical change
-- Present-tense subject line, 50 chars or fewer
+Use **conventional commits** — the CI auto-bumps the app version based on these prefixes:
+
+| Prefix | When to use | Version bump |
+|---|---|---|
+| `feat:` | New user-facing feature | minor |
+| `fix:` | Bug fix | patch |
+| `chore:` | Config, CI, deps, CLAUDE.md | patch |
+| `feat!:` | Breaking change | major |
+
+- Subject line 50 chars or fewer (not counting the prefix)
 - Body explains *why*, not *what*, when non-obvious
+- One commit per logical change
+
+Example: `feat: add forgot password flow` / `fix: restore group order on cancelled drag`
 
 ---
 
