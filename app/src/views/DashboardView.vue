@@ -1,5 +1,6 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 const appVersion = __APP_VERSION__
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import PicksHeader from '../components/PicksHeader.vue'
@@ -22,8 +23,9 @@ function spinBall() {
   ballSpinTimer = setTimeout(() => { ballDuration.value = '0ms' }, ms)
 }
 
-const props = defineProps({ user: Object, picksLocked: Boolean })
-const emit = defineEmits(['edit-picks'])
+const router = useRouter()
+const user = inject('user')
+const picksLocked = inject('picksLocked')
 
 const submission = ref(null)
 const scores = ref([])
@@ -41,7 +43,7 @@ function playerFlag(val) {
 async function fetchData() {
   try {
     const [subSnap, scoresSnap, submittersSnap] = await Promise.all([
-      getDoc(doc(db, 'submissions', props.user.uid)),
+      getDoc(doc(db, 'submissions', user.value.uid)),
       getDocs(query(collection(db, 'scores'), orderBy('total', 'desc'), limit(50))),
       getDocs(query(collection(db, 'submissions'), orderBy('submittedAt', 'asc'))),
     ])
@@ -188,10 +190,10 @@ const sortedSubmitters = computed(() => {
 })
 const myRank = computed(() => {
   if (!hasScores.value) return null
-  const idx = scores.value.findIndex(s => s.id === props.user.uid)
+  const idx = scores.value.findIndex(s => s.id === user.value.uid)
   return idx >= 0 ? idx + 1 : null
 })
-const myScore = computed(() => scores.value.find(s => s.id === props.user.uid))
+const myScore = computed(() => scores.value.find(s => s.id === user.value.uid))
 
 function fmtName(name) {
   if (!name) return '?'
@@ -314,7 +316,7 @@ function fmtDate(ts) {
 
         <button
           v-if="!picksLocked"
-          @click="emit('edit-picks')"
+          @click="router.push('/picks')"
           class="mt-4 text-xs text-emerald-400 hover:text-emerald-300 transition-colors font-medium relative"
         >Edit picks →</button>
       </div>

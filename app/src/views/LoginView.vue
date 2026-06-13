@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, inject, onMounted, onUnmounted } from 'vue'
 const appVersion = __APP_VERSION__
 
 import {
@@ -11,7 +11,8 @@ import {
 } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase.js'
 
-const props = defineProps({ picksLockTime: Object })
+const picksLockTime = inject('picksLockTime')
+const picksLocked = inject('picksLocked')
 
 const splashes = [
   // Minecraft-style
@@ -392,7 +393,7 @@ async function emailSubmit() {
       </template>
 
       <p class="mt-6 text-zinc-400 text-xs leading-relaxed">
-        <span class="text-zinc-400">{{ picksLockTime ? `Picks lock ${fmtLockTime(picksLockTime)}` : '—' }}</span>
+        <span class="text-zinc-400">{{ picksLockTime && !picksLocked ? `Picks lock ${fmtLockTime(picksLockTime)}` : '—' }}</span>
       </p>
     </div>
     <div class="text-center py-4">
