@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import { auth } from './firebase.js'
 import LoginView from './views/LoginView.vue'
 import SetUsernameView from './views/SetUsernameView.vue'
@@ -11,7 +11,7 @@ const authReady = new Promise(resolve => { authResolve = resolve })
 auth.onAuthStateChanged(() => authResolve())
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createMemoryHistory(),
   routes: [
     { path: '/', redirect: '/picks' },
     { path: '/login', component: LoginView },
