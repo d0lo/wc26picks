@@ -81,10 +81,12 @@ onMounted(async () => {
 
 // ── Drag and drop ──────────────────────────────────────────────────────
 const drag = reactive({ group: null, item: null })
+let _dragSaved = null // order snapshot before drag; cleared on valid drop
 
 function onDragStart(e, group, team) {
   drag.group = group
   drag.item = team
+  _dragSaved = { group, order: [...order[group]] }
   e.dataTransfer.effectAllowed = 'move'
 }
 
@@ -98,19 +100,31 @@ function onDragOver(e, group, idx) {
   arr.splice(idx, 0, drag.item)
 }
 
+function onDrop(e) {
+  e.preventDefault()
+  _dragSaved = null // valid drop within group — keep new order
+}
+
 function onDragEnd() {
+  if (_dragSaved) {
+    // Dropped outside the group card — restore original order
+    order[_dragSaved.group].splice(0, Infinity, ..._dragSaved.order)
+  }
   drag.group = null
   drag.item = null
+  _dragSaved = null
 }
 
 // ── Touch drag (mobile) ────────────────────────────────────────────────
 const touch = reactive({ group: null, item: null })
+let _touchSaved = null // order snapshot before touch drag
 
 function onTouchStart(e, group, team) {
   touch.group = group
   touch.item = team
   drag.group = group
   drag.item = team
+  _touchSaved = { group, order: [...order[group]] }
 }
 
 function onTouchMove(e) {
@@ -135,11 +149,21 @@ function onTouchMove(e) {
   arr.splice(targetIdx, 0, touch.item)
 }
 
-function onTouchEnd() {
+function onTouchEnd(e) {
+  if (_touchSaved && touch.group) {
+    const t = e.changedTouches[0]
+    const el = document.elementFromPoint(t.clientX, t.clientY)
+    const groupEl = el?.closest('[data-group]')
+    if (groupEl?.dataset.group !== touch.group) {
+      // Finger lifted outside the group card — restore original order
+      order[_touchSaved.group].splice(0, Infinity, ..._touchSaved.order)
+    }
+  }
   touch.group = null
   touch.item = null
   drag.group = null
   drag.item = null
+  _touchSaved = null
 }
 
 function resetGroup(group) {
@@ -417,6 +441,17 @@ const POS_COLORS = [
 
     <PicksHeader ref="picksHeaderRef" :user="user" :locked="false" @profile="showProfile = true" />
 
+    <button
+      v-if="isUpdate"
+      @click="emit('cancel')"
+      class="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-medium transition-colors mt-3 mb-1"
+    >
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 12H5"/><path d="M12 5l-7 7 7 7"/>
+      </svg>
+      Back to Home
+    </button>
+
     <!-- ── Mobile: sticky top rows ── -->
     <div
       ref="overlayRef"
@@ -596,10 +631,11 @@ const POS_COLORS = [
               :data-drag-idx="idx"
               @dragstart="!picksLocked && onDragStart($event, group, team)"
               @dragover="!picksLocked && onDragOver($event, group, idx)"
+              @drop="!picksLocked && onDrop($event)"
               @dragend="!picksLocked && onDragEnd()"
               @touchstart.passive="!picksLocked && onTouchStart($event, group, team)"
               @touchmove="!picksLocked && onTouchMove($event)"
-              @touchend="!picksLocked && onTouchEnd()"
+              @touchend="!picksLocked && onTouchEnd($event)"
               class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border"
               :class="[
                 picksLocked ? 'cursor-default bg-court-750 border-transparent opacity-60' :
