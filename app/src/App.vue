@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, provide, onMounted } from 'vue'
+import { ref, computed, provide, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
@@ -9,6 +9,8 @@ const router = useRouter()
 const loading = ref(true)
 const user = ref(null)
 const picksLockTime = ref(null)
+const hasSubmitted = ref(false)
+const dataReady = ref(false)
 
 const picksLocked = computed(() => {
   if (!picksLockTime.value) return false
@@ -19,6 +21,19 @@ const picksLocked = computed(() => {
 provide('user', user)
 provide('picksLocked', picksLocked)
 provide('picksLockTime', picksLockTime)
+provide('hasSubmitted', hasSubmitted)
+
+router.beforeEach((to) => {
+  if (!dataReady.value) return
+  if (to.path === '/picks' && picksLocked.value && hasSubmitted.value) return '/dashboard'
+  if (to.path === '/dashboard' && !hasSubmitted.value) return '/picks'
+})
+
+watch(picksLocked, (locked) => {
+  if (locked && hasSubmitted.value && router.currentRoute.value.path === '/picks') {
+    router.push('/dashboard')
+  }
+})
 
 onMounted(async () => {
   // Config is public — fetch before auth so splash page shows lock time immediately
@@ -27,11 +42,15 @@ onMounted(async () => {
   }).catch(() => {})
 
   onAuthStateChanged(auth, async (u) => {
-    if (u) loading.value = true
+    if (u) {
+      loading.value = true
+      dataReady.value = false
+    }
     user.value = u
     if (u) {
       try {
         const snap = await getDoc(doc(db, 'submissions', u.uid))
+        hasSubmitted.value = snap.exists()
         const isGoogle = u.providerData?.[0]?.providerId === 'google.com'
         const nameConfirmed = localStorage.getItem(`name_confirmed_${u.uid}`) === '1'
         if (!u.displayName) {
@@ -43,8 +62,12 @@ onMounted(async () => {
         }
       } catch {
         await router.push('/picks')
+      } finally {
+        dataReady.value = true
       }
     } else {
+      hasSubmitted.value = false
+      dataReady.value = false
       await router.push('/login')
     }
     loading.value = false

@@ -26,6 +26,11 @@ router.beforeEach(async (to) => {
   const user = auth.currentUser
   if (!user && to.path !== '/login') return '/login'
   if (user && to.path === '/login') return '/picks'
+  if (user && to.path === '/username' && user.displayName) {
+    const isGoogle = user.providerData?.[0]?.providerId === 'google.com'
+    const nameConfirmed = localStorage.getItem(`name_confirmed_${user.uid}`) === '1'
+    if (!isGoogle || nameConfirmed) return '/picks'
+  }
 })
 
 export default router
