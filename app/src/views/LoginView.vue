@@ -12,6 +12,7 @@ import {
 import { auth, googleProvider } from '../firebase.js'
 
 const picksLockTime = inject('picksLockTime')
+const picksLocked = inject('picksLocked')
 
 const splashes = [
   // Minecraft-style
@@ -392,7 +393,7 @@ async function emailSubmit() {
       </template>
 
       <p class="mt-6 text-zinc-400 text-xs leading-relaxed">
-        <span class="text-zinc-400">{{ picksLockTime ? `Picks lock ${fmtLockTime(picksLockTime)}` : '—' }}</span>
+        <span class="text-zinc-400">{{ picksLockTime && !picksLocked ? `Picks lock ${fmtLockTime(picksLockTime)}` : '—' }}</span>
       </p>
     </div>
     <div class="text-center py-4">

@@ -772,7 +772,7 @@ const POS_COLORS = [
           <span v-if="wildcards.length < 8 && doneProps < PROPS.length"> · </span>
           <span v-if="doneProps < PROPS.length">{{ PROPS.length - doneProps }} prop{{ PROPS.length - doneProps !== 1 ? 's' : '' }} remaining</span>
         </p>
-        <p v-if="picksLockTime" class="text-center text-[11px] text-zinc-400 mt-1.5">
+        <p v-if="picksLockTime && !picksLocked" class="text-center text-[11px] text-zinc-400 mt-1.5">
           Picks lock {{ fmtLockTime(picksLockTime) }}
         </p>
       </template>
