@@ -1,5 +1,8 @@
 # WC26 Picks — Development Process
 
+> [!IMPORTANT]
+> **After every PR is opened, you MUST immediately post the Firebase preview URL in chat. No exceptions. Do not move on until you have fetched and posted the preview URL.**
+
 ## Workflow
 
 Every feature follows two feedback loops before merging.
