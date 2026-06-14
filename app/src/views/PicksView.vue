@@ -342,7 +342,7 @@ const POS_COLORS = [
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4 pt-16" style="padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
+  <div class="max-w-2xl mx-auto px-4" style="padding-top: calc(4rem + env(safe-area-inset-top)); padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
 
     <ProfileModal v-if="showProfile" :user="user" @close="showProfile = false" />
 
@@ -456,7 +456,8 @@ const POS_COLORS = [
     <div
       ref="overlayRef"
       v-if="pinnedGroups.length"
-      class="min-[964px]:hidden fixed top-16 left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
+      class="min-[964px]:hidden fixed left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
+      :style="{ top: 'calc(4rem + env(safe-area-inset-top))' }"
     >
       <!-- layer wrapper: grid sits in flow to drive height; ticker overlays on top -->
       <div class="relative">

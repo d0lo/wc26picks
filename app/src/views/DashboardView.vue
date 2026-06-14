@@ -211,7 +211,7 @@ function fmtDate(ts) {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4 pt-16" style="padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
+  <div class="max-w-2xl mx-auto px-4" style="padding-top: calc(4rem + env(safe-area-inset-top)); padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
 
     <ProfileModal v-if="showProfile" :user="user" :edit-name="editNameMode" @close="showProfile = false; editNameMode = false" @name-saved="onNameSaved" />
 
