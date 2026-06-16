@@ -26,7 +26,6 @@ provide('hasSubmitted', hasSubmitted)
 router.beforeEach((to) => {
   if (!dataReady.value) return
   if (to.path === '/picks' && picksLocked.value) return '/dashboard'
-  if (to.path === '/dashboard' && !hasSubmitted.value && !picksLocked.value) return '/picks'
 })
 
 watch(picksLocked, (locked) => {
@@ -65,7 +64,7 @@ onMounted(async () => {
         } else if (isGoogle && !pickExists && !nameConfirmed) {
           await router.push('/username')
         } else {
-          await router.push(pickExists ? '/dashboard' : '/picks')
+          await router.push('/dashboard')
         }
       } finally {
         dataReady.value = true
