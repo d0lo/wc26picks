@@ -26,18 +26,11 @@
 
 @layer base {
   html, body, #app {
-    height: 100vh;  /* fallback */
-    height: 100dvh; /* iOS 15.4+, Chrome 108+ */
-  }
-
-  /* In Safari browser (not PWA), -webkit-fill-available fixes the bottom toolbar
-     overlap on older iOS that doesn't support dvh. Scoped to browser mode so
-     it doesn't shrink the layout in standalone PWA where it returns the wrong value. */
-  @media (display-mode: browser) {
-    html, body, #app {
-      height: -webkit-fill-available;
-      height: 100dvh;
-    }
+    height: 100vh;             /* fallback */
+    height: 100dvh;            /* iOS 15.4+, Chrome 108+ */
+    height: var(--app-height); /* JS-measured viewport height, set in main.js — fixes
+                                   inconsistent dvh/-webkit-fill-available behaviour
+                                   between Safari browser tabs and standalone PWA mode */
   }
 
   input, select, textarea {
