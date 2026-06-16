@@ -1,4 +1,5 @@
 <script setup>
+import { reactive, ref } from 'vue'
 import { GROUPS, PROPS, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 
@@ -12,6 +13,11 @@ const PLAYER_BY_ID = {}
 for (const [teamName, players] of Object.entries(ROSTERS)) {
   for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
 }
+
+const groupCardRefs = reactive({})
+const wildcardsSectionRef = ref(null)
+
+defineExpose({ groupCardRefs, wildcardsSectionRef })
 </script>
 
 <template>
@@ -21,7 +27,7 @@ for (const [teamName, players] of Object.entries(ROSTERS)) {
     <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
       <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-4">Group Standings</div>
       <div class="grid grid-cols-2 gap-x-5 gap-y-4">
-        <div v-for="g in GROUPS" :key="g">
+        <div v-for="g in GROUPS" :key="g" :ref="el => { if (el) groupCardRefs[g] = el }">
           <div class="text-[10px] font-black tracking-[0.15em] text-emerald-400 mb-1.5">GROUP {{ g }}</div>
           <div class="space-y-0.5">
             <div
@@ -45,7 +51,7 @@ for (const [teamName, players] of Object.entries(ROSTERS)) {
     </div>
 
     <!-- Best 3rd-Place Teams — single card, flex-wrap chips -->
-    <div v-if="wildcards?.length" class="bg-court-800 border border-court-700 rounded-2xl p-4">
+    <div v-if="wildcards?.length" ref="wildcardsSectionRef" class="bg-court-800 border border-court-700 rounded-2xl p-4">
       <div class="flex items-baseline justify-between mb-3">
         <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase">Best 3rd-Place Teams</div>
         <span class="text-[10px] text-zinc-400 font-mono">2 pts each</span>
