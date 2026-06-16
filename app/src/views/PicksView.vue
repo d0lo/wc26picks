@@ -4,11 +4,33 @@ import { useRouter } from 'vue-router'
 const appVersion = __APP_VERSION__
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING } from '../data.js'
+import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
+import { ROSTERS } from '../rosters.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
 import ProfileModal from '../components/ProfileModal.vue'
 import PicksHeader from '../components/PicksHeader.vue'
+
+// Build player-by-id lookup for prop display in locked summary
+const PLAYER_BY_ID = {}
+for (const [teamName, players] of Object.entries(ROSTERS)) {
+  for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
+}
+
+function propDisplay(prop) {
+  const val = propAnswers[prop.key]
+  if (val === null || val === undefined || val === '') return '—'
+  if (prop.type === 'player') {
+    const p = PLAYER_BY_ID[val]
+    return p ? `${TEAM_FLAG[p.team] ?? ''} ${p.name}` : '—'
+  }
+  if (prop.type === 'team') {
+    if (val === null) return '🚫 No Team'
+    const t = TEAM_BY_ID[val]
+    return t ? `${t.flag} ${t.name}` : '—'
+  }
+  return val
+}
 
 const showProfile = ref(false)
 
@@ -55,11 +77,11 @@ function picksChanged() {
   return makeSnapshot() !== savedSnapshot.value
 }
 
-// ── Pre-populate from existing submission ──────────────────────────────
+// ── Pre-populate from existing pick ───────────────────────────────────
 onMounted(async () => {
   let snap
   try {
-    snap = await getDoc(doc(db, 'submissions', user.value.uid))
+    snap = await getDoc(doc(db, 'picks', user.value.uid))
   } catch {
     loaded.value = true
     return
@@ -68,8 +90,10 @@ onMounted(async () => {
     isUpdate.value = true
     const data = snap.data()
     if (data.groups) {
-      for (const [g, arr] of Object.entries(data.groups)) {
-        if (arr && arr.length === 4 && order[g]) order[g] = [...arr]
+      for (const [g, teamIds] of Object.entries(data.groups)) {
+        // teamIds are UUIDs — map back to team names for the drag-drop UI
+        const names = teamIds.map(id => TEAM_BY_ID[id]?.name).filter(Boolean)
+        if (names.length === 4 && order[g]) order[g] = names
       }
     }
     if (data.wildcards) wildcards.value = [...data.wildcards]
@@ -198,15 +222,17 @@ async function submit() {
   submitError.value = ''
   try {
     const changed = picksChanged()
-    await setDoc(doc(db, 'submissions', user.value.uid), {
+    await setDoc(doc(db, 'picks', user.value.uid), {
       name: user.value.displayName,
       uid: user.value.uid,
       photoURL: user.value.photoURL ?? null,
       ...(changed ? { submittedAt: serverTimestamp() } : {}),
-      groups: Object.fromEntries(GROUPS.map(g => [g, [...order[g]]])),
+      // Store team UUIDs, not names
+      groups: Object.fromEntries(GROUPS.map(g => [g, order[g].map(name => TEAM_ID[name])])),
       wildcards: wildcards.value,
+      // Props already store UUIDs (from CountrySelect/PlayerSelect); cleanGroupTeam null-safe
       props: Object.fromEntries(
-        PROPS.map(p => [p.key, p.type === 'number' ? Number(propAnswers[p.key]) : propAnswers[p.key]])
+        PROPS.map(p => [p.key, propAnswers[p.key] === '' ? null : propAnswers[p.key]])
       ),
     }, { merge: true })
     router.push('/dashboard')
@@ -422,9 +448,7 @@ const POS_COLORS = [
           >
             <div class="min-w-0">
               <div class="text-[11px] text-zinc-400 mb-0.5">{{ prop.label }}</div>
-              <div class="text-sm font-bold text-white truncate">
-                {{ propAnswers[prop.key] === '__none__' ? '🚫 No Team' : (propAnswers[prop.key] || '—') }}
-              </div>
+              <div class="text-sm font-bold text-white truncate">{{ propDisplay(prop) }}</div>
             </div>
             <div class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
               {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
@@ -443,7 +467,7 @@ const POS_COLORS = [
 
     <button
       v-if="isUpdate"
-      @click="emit('cancel')"
+      @click="router.push('/dashboard')"
       class="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-medium transition-colors mt-3 mb-1"
     >
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -752,7 +776,7 @@ const POS_COLORS = [
             v-if="prop.type === 'team'"
             v-model="propAnswers[prop.key]"
             :disabled="picksLocked"
-            :allowNone="prop.key === 'Clean Sheet Group'"
+            :allowNone="prop.key === 'cleanGroupTeam'"
           />
           <PlayerSelect
             v-else-if="prop.type === 'player'"
