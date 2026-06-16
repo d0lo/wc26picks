@@ -25,12 +25,12 @@ provide('hasSubmitted', hasSubmitted)
 
 router.beforeEach((to) => {
   if (!dataReady.value) return
-  if (to.path === '/picks' && picksLocked.value && hasSubmitted.value) return '/dashboard'
+  if (to.path === '/picks' && picksLocked.value) return '/dashboard'
   if (to.path === '/dashboard' && !hasSubmitted.value && !picksLocked.value) return '/picks'
 })
 
 watch(picksLocked, (locked) => {
-  if (locked && hasSubmitted.value && router.currentRoute.value.path === '/picks') {
+  if (locked && router.currentRoute.value.path === '/picks') {
     router.push('/dashboard')
   }
 })
