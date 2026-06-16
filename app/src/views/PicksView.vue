@@ -8,31 +8,6 @@ import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_I
 import { ROSTERS } from '../rosters.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
-import ProfileModal from '../components/ProfileModal.vue'
-import PicksHeader from '../components/PicksHeader.vue'
-
-// Build player-by-id lookup for prop display in locked summary
-const PLAYER_BY_ID = {}
-for (const [teamName, players] of Object.entries(ROSTERS)) {
-  for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
-}
-
-function propDisplay(prop) {
-  const val = propAnswers[prop.key]
-  if (val === null || val === undefined || val === '') return '—'
-  if (prop.type === 'player') {
-    const p = PLAYER_BY_ID[val]
-    return p ? `${TEAM_FLAG[p.team] ?? ''} ${p.name}` : '—'
-  }
-  if (prop.type === 'team') {
-    if (val === null) return '🚫 No Team'
-    const t = TEAM_BY_ID[val]
-    return t ? `${t.flag} ${t.name}` : '—'
-  }
-  return val
-}
-
-const showProfile = ref(false)
 
 const router = useRouter()
 const user = inject('user')
@@ -235,7 +210,7 @@ async function submit() {
         PROPS.map(p => [p.key, propAnswers[p.key] === '' ? null : propAnswers[p.key]])
       ),
     }, { merge: true })
-    router.push('/dashboard')
+    router.push('/leaderboard')
   } catch {
     submitError.value = 'Save failed — check your connection and try again.'
     submitting.value = false
@@ -368,91 +343,11 @@ const POS_COLORS = [
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4" style="padding-top: calc(4rem + env(safe-area-inset-top)); padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
-
-    <ProfileModal v-if="showProfile" :user="user" @close="showProfile = false" />
-
-    <!-- ══════════════════════════════════════════════════
-         LOCKED SUMMARY VIEW
-    ══════════════════════════════════════════════════ -->
-    <template v-if="picksLocked">
-      <PicksHeader :user="user" :locked="true" @profile="showProfile = true" />
-
-      <!-- Group standings summary -->
-      <section class="mt-8 mb-10">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-5">Group Standings</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div
-            v-for="group in GROUPS" :key="group"
-            class="rounded-2xl border p-4 bg-court-800 border-court-700"
-          >
-            <div class="text-[10px] font-black tracking-[0.2em] text-emerald-400 mb-3">GROUP {{ group }}</div>
-            <div class="space-y-1.5">
-              <div v-for="(team, idx) in order[group]" :key="team" class="flex items-center gap-2">
-                <div
-                  class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
-                  :class="POS_COLORS[idx]"
-                >{{ idx + 1 }}</div>
-                <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
-                <span class="text-xs font-medium text-white flex-1 truncate">{{ team }}</span>
-                <span
-                  v-if="idx === 2 && wildcards.includes(group)"
-                  class="text-[9px] font-black tracking-wider text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-full px-1.5 py-0.5 shrink-0"
-                >WC</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Wildcards summary -->
-      <section class="mb-10">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-1">Best 3rd-Place Teams</h2>
-        <p class="text-[11px] text-zinc-400 mb-5">Your 8 wildcard picks</p>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <div
-            v-for="group in wildcards" :key="group"
-            class="flex items-center gap-2 bg-emerald-500/10 border border-emerald-400/20 rounded-xl px-3 py-2.5"
-          >
-            <span class="text-lg leading-none">{{ TEAM_FLAG[thirdOf(group)] ?? '🏳️' }}</span>
-            <div>
-              <div class="text-[9px] font-black tracking-wider text-emerald-400">Group {{ group }}</div>
-              <div class="text-xs font-semibold text-white truncate">{{ thirdOf(group) }}<span class="text-zinc-400 font-normal"> · #{{ FIFA_RANKING[thirdOf(group)] ?? '–' }}</span></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Props summary -->
-      <section class="mb-10">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-5">Group Stage Props</h2>
-        <div class="space-y-2">
-          <div
-            v-for="prop in PROPS" :key="prop.key"
-            class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
-          >
-            <div class="min-w-0">
-              <div class="text-[11px] text-zinc-400 mb-0.5">{{ prop.label }}</div>
-              <div class="text-sm font-bold text-white truncate">{{ propDisplay(prop) }}</div>
-            </div>
-            <div class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
-              {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
-            </div>
-          </div>
-        </div>
-      </section>
-    </template>
-
-    <!-- ══════════════════════════════════════════════════
-         EDIT VIEW (picks not yet locked)
-    ══════════════════════════════════════════════════ -->
-    <template v-else>
-
-    <PicksHeader ref="picksHeaderRef" :user="user" :locked="false" @profile="showProfile = true" />
+  <div class="max-w-2xl mx-auto px-4" style="padding-top: calc(4rem + env(safe-area-inset-top)); padding-bottom: max(6rem, calc(6rem + env(safe-area-inset-bottom)))">
 
     <button
       v-if="isUpdate"
-      @click="router.push('/dashboard')"
+      @click="router.push('/leaderboard')"
       class="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-medium transition-colors mt-3 mb-1"
     >
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -825,8 +720,6 @@ const POS_COLORS = [
     </div>
 
     </template><!-- end loaded -->
-
-    </template><!-- end v-else edit view -->
 
     <div v-if="loaded" class="text-center py-4">
       <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
