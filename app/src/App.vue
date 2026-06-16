@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, provide, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, provide, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
@@ -117,41 +117,6 @@ function onNameSaved() {
   showProfile.value = false
   editNameMode.value = false
 }
-
-// TEMPORARY diagnostic overlay — remove once the iOS viewport-height bug is confirmed fixed
-const debugInfo = ref({})
-let debugTimer
-function updateDebugInfo() {
-  const appEl = document.getElementById('app')
-  // navigator.standalone is the only reliable standalone signal for the
-  // legacy apple-mobile-web-app-capable webclip mechanism this app uses
-  // (no manifest.json). The display-mode media query is the W3C signal
-  // for manifest-based PWA installs and is unreliable for webclips on
-  // iOS, which is why mode was always reading "browser" before.
-  const navStandalone = window.navigator.standalone
-  const displayModeStandalone = window.matchMedia('(display-mode: standalone)').matches
-  debugInfo.value = {
-    innerH: window.innerHeight,
-    vvH: window.visualViewport?.height?.toFixed(0),
-    vvOffsetTop: window.visualViewport?.offsetTop?.toFixed(0),
-    cssVar: getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim(),
-    appH: appEl ? getComputedStyle(appEl).height : '-',
-    mode: navStandalone || displayModeStandalone ? 'standalone' : 'browser',
-    navStandalone: String(navStandalone),
-    displayModeStandalone: String(displayModeStandalone),
-    scrollY: window.scrollY,
-    docScrollH: document.documentElement.scrollHeight,
-  }
-}
-onMounted(() => {
-  updateDebugInfo()
-  window.addEventListener('resize', updateDebugInfo)
-  window.addEventListener('scroll', updateDebugInfo, true)
-  window.visualViewport?.addEventListener('resize', updateDebugInfo)
-  window.visualViewport?.addEventListener('scroll', updateDebugInfo)
-  debugTimer = setInterval(updateDebugInfo, 500)
-})
-onUnmounted(() => clearInterval(debugTimer))
 </script>
 
 <template>
@@ -188,11 +153,6 @@ onUnmounted(() => clearInterval(debugTimer))
         :showPicksTab="showPicksTab"
         @navigate="onTabNavigate"
       />
-
-      <!-- TEMPORARY diagnostic overlay -->
-      <div class="fixed bottom-20 left-1 z-[9999] text-[9px] leading-tight font-mono bg-black/85 text-lime-400 p-1.5 rounded pointer-events-none">
-        <div v-for="(v, k) in debugInfo" :key="k">{{ k }}: {{ v }}</div>
-      </div>
     </template>
   </div>
 </template>
