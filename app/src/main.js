@@ -12,7 +12,13 @@ import './style.css'
 // on its own) once the user scrolls — visualViewport's own resize event
 // tracks the chrome settling in real time instead of waiting for that.
 function setAppHeight() {
-  const height = window.visualViewport?.height ?? window.innerHeight
+  const vv = window.visualViewport
+  // The on-screen keyboard shrinks visualViewport.height (but not
+  // innerHeight) by a large amount — much more than a chrome show/hide
+  // ever does. Skip those so the whole app doesn't squeeze into the
+  // sliver above the keyboard; let the keyboard overlap normally instead.
+  if (vv && window.innerHeight - vv.height > 100) return
+  const height = vv?.height ?? window.innerHeight
   document.documentElement.style.setProperty('--app-height', `${height}px`)
 }
 setAppHeight()
