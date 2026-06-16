@@ -8,110 +8,85 @@ defineProps({
   props: Object,     // { goldenBoot: uuid, ... }
 })
 
-// Build player-by-id lookup
 const PLAYER_BY_ID = {}
 for (const [teamName, players] of Object.entries(ROSTERS)) {
   for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
 }
-
-const POS_COLORS = [
-  'bg-amber-400 text-zinc-900',
-  'bg-zinc-300 text-zinc-900',
-  'bg-amber-700 text-amber-100',
-  'bg-zinc-700 text-zinc-300',
-]
-
-function propDisplay(propDef, propsData) {
-  const val = propsData?.[propDef.key]
-  if (val === null || val === undefined || val === '') return { flag: '', text: '—' }
-  if (propDef.type === 'player') {
-    const p = PLAYER_BY_ID[val]
-    return p ? { flag: TEAM_FLAG[p.team] ?? '', text: p.name } : { flag: '', text: '—' }
-  }
-  if (propDef.type === 'team') {
-    if (val === null) return { flag: '🚫', text: 'No Team' }
-    const t = TEAM_BY_ID[val]
-    return t ? { flag: t.flag, text: t.name } : { flag: '', text: '—' }
-  }
-  return { flag: '', text: String(val) }
-}
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-3">
 
-    <!-- Section 1: Group Standings -->
-    <section>
-      <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Group Standings</h2>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div
-          v-for="group in GROUPS"
-          :key="group"
-          class="rounded-2xl border p-4 bg-court-800 border-court-700"
-        >
-          <div class="text-[10px] font-black tracking-[0.2em] text-emerald-400 mb-3">GROUP {{ group }}</div>
-          <div class="space-y-1.5">
+    <!-- Group Standings — single card, 2-col grid -->
+    <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
+      <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-4">Group Standings</div>
+      <div class="grid grid-cols-2 gap-x-5 gap-y-4">
+        <div v-for="g in GROUPS" :key="g">
+          <div class="text-[10px] font-black tracking-[0.15em] text-emerald-400 mb-1.5">GROUP {{ g }}</div>
+          <div class="space-y-0.5">
             <div
-              v-for="(teamId, idx) in groups?.[group]"
-              :key="teamId"
-              class="flex items-center gap-2"
+              v-for="(teamId, i) in groups?.[g]" :key="i"
+              class="flex items-center gap-1.5 text-[11px] transition-opacity"
+              :class="(i === 3 || (i === 2 && !wildcards?.includes(g))) ? 'opacity-30' : ''"
             >
-              <div
-                class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
-                :class="POS_COLORS[idx]"
-              >{{ idx + 1 }}</div>
-              <span class="text-base leading-none shrink-0">{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
-              <span class="text-xs font-medium text-white flex-1 truncate">{{ TEAM_BY_ID[teamId]?.name ?? teamId }}</span>
               <span
-                v-if="idx === 2 && wildcards?.includes(group)"
-                class="text-[9px] font-black tracking-wider text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-full px-1.5 py-0.5 shrink-0"
-              >WC</span>
+                class="text-[9px] font-black w-4 text-right tabular-nums shrink-0"
+                :class="['text-amber-400','text-zinc-400','text-amber-700','text-zinc-400'][i]"
+              >{{ i + 1 }}</span>
+              <span class="text-base leading-none shrink-0">{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
+              <span
+                class="truncate"
+                :class="i < 2 || (i === 2 && wildcards?.includes(g)) ? 'text-white font-bold' : 'text-zinc-300'"
+              >{{ TEAM_BY_ID[teamId]?.name ?? teamId }}</span>
             </div>
           </div>
         </div>
       </div>
-    </section>
+    </div>
 
-    <!-- Section 2: Best 3rd-Place Teams -->
-    <section v-if="wildcards?.length">
-      <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Best 3rd-Place Teams</h2>
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+    <!-- Best 3rd-Place Teams — single card, flex-wrap chips -->
+    <div v-if="wildcards?.length" class="bg-court-800 border border-court-700 rounded-2xl p-4">
+      <div class="flex items-baseline justify-between mb-3">
+        <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase">Best 3rd-Place Teams</div>
+        <span class="text-[10px] text-zinc-400 font-mono">2 pts each</span>
+      </div>
+      <div class="flex flex-wrap gap-2">
         <div
-          v-for="group in [...(wildcards ?? [])].sort()"
-          :key="group"
-          class="flex items-center gap-2 bg-emerald-500/10 border border-emerald-400/20 rounded-xl px-3 py-2.5"
+          v-for="g in [...wildcards].sort()" :key="g"
+          class="flex items-center gap-1.5 bg-court-700 border border-court-600 rounded-xl px-2.5 py-1.5"
         >
-          <span class="text-lg leading-none">{{ TEAM_BY_ID[groups?.[group]?.[2]]?.flag ?? '🏳️' }}</span>
-          <div>
-            <div class="text-[9px] font-black tracking-wider text-emerald-400">Group {{ group }}</div>
-            <div class="text-xs font-semibold text-white truncate">{{ TEAM_BY_ID[groups?.[group]?.[2]]?.name ?? '—' }}</div>
+          <span class="text-sm leading-none">{{ TEAM_BY_ID[groups?.[g]?.[2]]?.flag ?? '🏳️' }}</span>
+          <span class="text-[10px] font-black text-emerald-400">{{ g }}</span>
+          <span class="text-xs text-zinc-300">{{ TEAM_BY_ID[groups?.[g]?.[2]]?.name }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Group Stage Props — single card, divide-y rows -->
+    <div v-if="props" class="bg-court-800 border border-court-700 rounded-2xl p-4">
+      <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-3">Group Stage Props</div>
+      <div class="divide-y divide-court-700">
+        <div v-for="prop in PROPS" :key="prop.key" class="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+          <div class="shrink-0">
+            <div class="text-[11px] text-zinc-400">{{ prop.label }}</div>
+            <div class="text-[10px] text-amber-400/60 font-mono">{{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}</div>
+          </div>
+          <div class="text-[11px] text-right text-white font-medium flex items-center gap-1 justify-end">
+            <template v-if="prop.type === 'player' && props[prop.key]">
+              <span>{{ TEAM_FLAG[PLAYER_BY_ID[props[prop.key]]?.team] ?? '' }}</span>
+              <span>{{ PLAYER_BY_ID[props[prop.key]]?.name ?? '—' }}</span>
+            </template>
+            <template v-else-if="prop.type === 'team' && props[prop.key] !== null && props[prop.key]">
+              <span>{{ TEAM_BY_ID[props[prop.key]]?.flag ?? '🏳️' }}</span>
+              <span>{{ TEAM_BY_ID[props[prop.key]]?.name }}</span>
+            </template>
+            <template v-else>
+              <span>{{ props[prop.key] === null ? '🚫 No Team' : '—' }}</span>
+            </template>
           </div>
         </div>
       </div>
-    </section>
-
-    <!-- Section 3: Group Stage Props -->
-    <section v-if="props">
-      <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Group Stage Props</h2>
-      <div class="space-y-2">
-        <div
-          v-for="prop in PROPS"
-          :key="prop.key"
-          class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
-        >
-          <div class="min-w-0">
-            <div class="text-[11px] text-zinc-400 mb-0.5">{{ prop.label }}</div>
-            <div class="text-sm font-bold text-white truncate flex items-center gap-1">
-              <span v-if="propDisplay(prop, props).flag">{{ propDisplay(prop, props).flag }}</span>
-              <span>{{ propDisplay(prop, props).text }}</span>
-            </div>
-          </div>
-          <div class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
-            {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
-          </div>
-        </div>
-      </div>
-    </section>
+    </div>
 
   </div>
 </template>
