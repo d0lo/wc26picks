@@ -120,7 +120,7 @@ function onNameSaved() {
 </script>
 
 <template>
-  <div class="flex flex-col bg-court-950 text-zinc-100 font-sans antialiased overflow-hidden" style="height: 100dvh; height: 100vh">
+  <div class="h-full flex flex-col bg-court-950 text-zinc-100 font-sans antialiased overflow-hidden">
     <!-- Global loading spinner -->
     <div v-if="loading" class="flex-1 flex items-center justify-center">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>

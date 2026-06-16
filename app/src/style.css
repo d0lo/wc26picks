@@ -26,8 +26,9 @@
 
 @layer base {
   html, body, #app {
-    height: 100vh;
-    height: 100dvh;
+    height: 100vh;                  /* universal fallback */
+    height: -webkit-fill-available; /* iOS Safari < 15.4: accounts for browser toolbars */
+    height: 100dvh;                 /* iOS 15.4+, Chrome 108+: dynamic viewport */
   }
 
   input, select, textarea {
