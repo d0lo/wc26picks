@@ -56,10 +56,11 @@ async function reauthAndDelete() {
       const cred = EmailAuthProvider.credential(props.user.email, reauthPassword.value)
       await reauthenticateWithCredential(props.user, cred)
     }
-    await deleteDoc(doc(db, 'picks', props.user.uid))
+    // Best-effort cleanup — don't let a Firestore failure block account deletion
+    await deleteDoc(doc(db, 'picks', props.user.uid)).catch(() => {})
     await deleteUser(props.user)
   } catch {
-    error.value = 'Re-authentication failed. Please try again.'
+    error.value = 'Could not delete account. Please try again.'
     busy.value = false
   }
 }
