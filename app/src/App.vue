@@ -48,20 +48,25 @@ onMounted(async () => {
     }
     user.value = u
     if (u) {
+      // Firestore read is best-effort — a permissions error must never skip the username flow
+      let pickExists = false
       try {
         const snap = await getDoc(doc(db, 'picks', u.uid))
-        hasSubmitted.value = snap.exists()
+        pickExists = snap.exists()
+      } catch {
+        // picks/ not yet accessible (e.g. rules not deployed) — treat as no pick
+      }
+      try {
+        hasSubmitted.value = pickExists
         const isGoogle = u.providerData?.[0]?.providerId === 'google.com'
         const nameConfirmed = localStorage.getItem(`name_confirmed_${u.uid}`) === '1'
         if (!u.displayName) {
           await router.push('/username')
-        } else if (isGoogle && !snap.exists() && !nameConfirmed) {
+        } else if (isGoogle && !pickExists && !nameConfirmed) {
           await router.push('/username')
         } else {
-          await router.push(snap.exists() ? '/dashboard' : '/picks')
+          await router.push(pickExists ? '/dashboard' : '/picks')
         }
-      } catch {
-        await router.push('/picks')
       } finally {
         dataReady.value = true
       }
