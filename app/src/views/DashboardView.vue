@@ -276,8 +276,23 @@ function fmtDate(ts) {
 
     <template v-else>
 
-      <!-- Picks locked hero card -->
-      <div class="relative bg-gradient-to-br from-court-800 to-court-900 border border-emerald-500/20 rounded-3xl p-6 mt-4 mb-5 overflow-hidden">
+      <!-- No picks CTA -->
+      <div v-if="!submission" class="relative bg-gradient-to-br from-court-800 to-court-900 border border-court-700 rounded-3xl p-6 mt-4 mb-5 overflow-hidden">
+        <div class="absolute -right-10 -top-10 w-48 h-48 bg-court-700/30 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="relative">
+          <h1 class="text-2xl font-black text-white leading-tight mb-1">Make your picks.</h1>
+          <p class="text-xs text-zinc-400 mb-4">Enter before the tournament starts to compete on the leaderboard.</p>
+          <button
+            v-if="!picksLocked"
+            @click="router.push('/picks')"
+            class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold transition-colors"
+          >Make picks →</button>
+          <p v-else class="text-xs text-zinc-500">Picks are now locked.</p>
+        </div>
+      </div>
+
+      <!-- Picks submitted hero card -->
+      <div v-else class="relative bg-gradient-to-br from-court-800 to-court-900 border border-emerald-500/20 rounded-3xl p-6 mt-4 mb-5 overflow-hidden">
         <div class="absolute -right-10 -top-10 w-48 h-48 bg-emerald-400/5 rounded-full blur-3xl pointer-events-none"></div>
         <div class="flex items-start justify-between gap-4 relative">
           <div class="min-w-0">
