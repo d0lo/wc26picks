@@ -49,7 +49,7 @@ onMounted(async () => {
     user.value = u
     if (u) {
       try {
-        const snap = await getDoc(doc(db, 'submissions', u.uid))
+        const snap = await getDoc(doc(db, 'picks', u.uid))
         hasSubmitted.value = snap.exists()
         const isGoogle = u.providerData?.[0]?.providerId === 'google.com'
         const nameConfirmed = localStorage.getItem(`name_confirmed_${u.uid}`) === '1'

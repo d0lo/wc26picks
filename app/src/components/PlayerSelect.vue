@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { TEAM_FLAG } from '../data.js'
+import { TEAM_FLAG, TEAM_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import CountrySelect from './CountrySelect.vue'
 
@@ -13,22 +13,22 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const open = ref(false)
-const country = ref('')
+const country = ref('')       // teamId UUID of the selected country filter
 const search = ref('')
 const container = ref(null)
 const searchInput = ref(null)
 const countrySelectRef = ref(null)
 
-// Reverse-map flag emoji → country name for pre-filling on edit
-const FLAG_TO_TEAM = Object.fromEntries(Object.entries(TEAM_FLAG).map(([k, v]) => [v, k]))
+// Build a flat player-by-id lookup once
+const PLAYER_BY_ID = {}
+for (const [teamName, players] of Object.entries(ROSTERS)) {
+  for (const p of players) {
+    PLAYER_BY_ID[p.id] = { ...p, team: teamName }
+  }
+}
 
-function extractName(val) {
-  return val ? val.replace(/\s*\([^)]*\)$/, '') : ''
-}
-function extractCountry(val) {
-  const m = val?.match(/\(([^)]+)\)$/)
-  return m ? (FLAG_TO_TEAM[m[1]] ?? '') : ''
-}
+// Resolve selected player from UUID
+const selectedPlayer = computed(() => props.modelValue ? PLAYER_BY_ID[props.modelValue] ?? null : null)
 
 function openPicker() {
   country.value = ''
@@ -41,9 +41,8 @@ function closePicker() {
   open.value = false
 }
 
-function selectPlayer(name, teamName) {
-  const flag = TEAM_FLAG[teamName] ?? teamName
-  emit('update:modelValue', `${name} (${flag})`)
+function selectPlayer(playerId) {
+  emit('update:modelValue', playerId)
   open.value = false
   search.value = ''
 }
@@ -67,15 +66,19 @@ const groupedPlayers = computed(() => {
   let pool = []
 
   if (q.length >= 2) {
-    for (const [c, players] of Object.entries(ROSTERS)) {
+    for (const [teamName, players] of Object.entries(ROSTERS)) {
       for (const p of players) {
-        if (normalize(p.name).includes(q)) pool.push({ ...p, team: c })
+        if (normalize(p.name).includes(q)) pool.push({ ...p, team: teamName })
         if (pool.length >= 40) break
       }
       if (pool.length >= 40) break
     }
-  } else if (country.value && ROSTERS[country.value]) {
-    pool = ROSTERS[country.value].map(p => ({ ...p, team: country.value }))
+  } else if (country.value) {
+    // Find team name from teamId
+    const teamEntry = Object.entries(ROSTERS).find(([teamName]) => TEAM_ID[teamName] === country.value)
+    if (teamEntry) {
+      pool = teamEntry[1].map(p => ({ ...p, team: teamEntry[0] }))
+    }
   } else {
     return {}
   }
@@ -95,7 +98,6 @@ const groupedPlayers = computed(() => {
     })
   }
 
-  // Sort by position then group
   pool.sort((a, b) => (POS_ORDER[a.pos] ?? 9) - (POS_ORDER[b.pos] ?? 9))
   const groups = {}
   for (const p of pool) {
@@ -118,9 +120,6 @@ function playerAge(dob) {
   const days = Math.floor((ref - lastBirthday) / 86400000)
   return `${years}y ${days}d`
 }
-
-const selectedName = computed(() => extractName(props.modelValue))
-const selectedCountry = computed(() => extractCountry(props.modelValue))
 
 watch(() => props.modelValue, val => {
   if (!val) { country.value = ''; search.value = '' }
@@ -151,8 +150,8 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
       :class="disabled ? 'bg-court-900 border-court-700 opacity-50' : 'bg-emerald-500/10 border-emerald-400/25 hover:border-emerald-400/50'"
     >
       <button type="button" @click="!disabled && openPicker()" :disabled="disabled" class="flex items-center gap-2.5 flex-1 min-w-0 text-left" :class="disabled ? 'cursor-not-allowed' : ''">
-        <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[selectedCountry] ?? '⚽' }}</span>
-        <span class="text-sm text-white font-medium flex-1 truncate">{{ selectedName }}</span>
+        <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[selectedPlayer?.team] ?? '⚽' }}</span>
+        <span class="text-sm text-white font-medium flex-1 truncate">{{ selectedPlayer?.name ?? '…' }}</span>
         <svg v-if="!disabled" class="w-3.5 h-3.5 text-zinc-400 shrink-0" viewBox="0 0 16 16" fill="none">
           <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
@@ -184,7 +183,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
 
         <span class="text-[10px] font-bold text-zinc-400 shrink-0">or</span>
 
-        <!-- Country selector -->
+        <!-- Country selector — v-model is teamId UUID -->
         <CountrySelect
           ref="countrySelectRef"
           class="flex-1"
@@ -205,11 +204,11 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
               {{ posGroup }}
             </div>
             <button
-              v-for="player in players" :key="player.name + player.team"
+              v-for="player in players" :key="player.id"
               type="button"
-              @click="selectPlayer(player.name, player.team)"
+              @click="selectPlayer(player.id)"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors border-t border-court-700/30"
-              :class="selectedName === player.name && selectedCountry === player.team
+              :class="modelValue === player.id
                 ? 'bg-emerald-500/10 text-emerald-300'
                 : 'text-zinc-300 hover:bg-court-700 hover:text-white'"
             >
@@ -217,7 +216,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onOutside))
               <span v-if="player.num" class="text-[10px] font-mono text-zinc-400 w-6 text-right shrink-0">#{{ player.num }}</span>
               <span class="flex-1 truncate font-medium">{{ player.name }}</span>
               <span v-if="maxAge != null && player.dob" class="text-[10px] font-mono text-zinc-400 shrink-0">{{ playerAge(player.dob) }}</span>
-              <svg v-if="selectedName === player.name && selectedCountry === player.team" class="w-3.5 h-3.5 text-emerald-400 shrink-0" viewBox="0 0 12 10" fill="none">
+              <svg v-if="modelValue === player.id" class="w-3.5 h-3.5 text-emerald-400 shrink-0" viewBox="0 0 12 10" fill="none">
                 <path d="M1 5L4.5 8.5L11 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>

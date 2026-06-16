@@ -29,7 +29,7 @@ async function saveName() {
   try {
     await updateProfile(props.user, { displayName: name })
     // Keep submission doc in sync so leaderboard reflects the new name
-    const subRef = doc(db, 'submissions', props.user.uid)
+    const subRef = doc(db, 'picks', props.user.uid)
     await updateDoc(subRef, { name }).catch(() => {})
     emit('name-saved')
     emit('close')
@@ -56,7 +56,7 @@ async function reauthAndDelete() {
       const cred = EmailAuthProvider.credential(props.user.email, reauthPassword.value)
       await reauthenticateWithCredential(props.user, cred)
     }
-    await deleteDoc(doc(db, 'submissions', props.user.uid))
+    await deleteDoc(doc(db, 'picks', props.user.uid))
     await deleteUser(props.user)
   } catch {
     error.value = 'Re-authentication failed. Please try again.'

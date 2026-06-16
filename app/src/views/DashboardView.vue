@@ -5,8 +5,15 @@ const appVersion = __APP_VERSION__
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import PicksHeader from '../components/PicksHeader.vue'
 import { db } from '../firebase.js'
-import { GROUPS, PROPS, TEAM_FLAG } from '../data.js'
+import { GROUPS, PROPS, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
+import { ROSTERS } from '../rosters.js'
 import ProfileModal from '../components/ProfileModal.vue'
+
+// Build player-by-id lookup
+const PLAYER_BY_ID = {}
+for (const [teamName, players] of Object.entries(ROSTERS)) {
+  for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
+}
 
 const showProfile = ref(false)
 const editNameMode = ref(false)
@@ -32,20 +39,12 @@ const scores = ref([])
 const submitters = ref([])
 const loading = ref(true)
 
-function playerName(val) {
-  return val ? val.replace(/\s*\(.*\)$/, '') : '—'
-}
-function playerFlag(val) {
-  const m = val?.match(/\((.+)\)$/)
-  return m ? m[1] : ''
-}
-
 async function fetchData() {
   try {
     const [subSnap, scoresSnap, submittersSnap] = await Promise.all([
-      getDoc(doc(db, 'submissions', user.value.uid)),
+      getDoc(doc(db, 'picks', user.value.uid)),
       getDocs(query(collection(db, 'scores'), orderBy('total', 'desc'), limit(50))),
-      getDocs(query(collection(db, 'submissions'), orderBy('submittedAt', 'asc'))),
+      getDocs(query(collection(db, 'picks'), orderBy('submittedAt', 'asc'))),
     ])
     if (subSnap.exists()) submission.value = subSnap.data()
     scores.value = scoresSnap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -236,10 +235,10 @@ function fmtDate(ts) {
               <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500 w-4 shrink-0">{{ group }}</span>
               <div class="flex gap-1 items-center">
                 <span
-                  v-for="(team, i) in submission?.groups[group]" :key="team"
+                  v-for="(teamId, i) in submission?.groups[group]" :key="teamId"
                   class="text-xl leading-none transition-opacity"
                   :class="(i >= 2 && !submission?.wildcards?.includes(group)) || i >= 3 ? 'opacity-30' : ''"
-                >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                >{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
               </div>
             </div>
             </TransitionGroup>
@@ -258,10 +257,10 @@ function fmtDate(ts) {
                 <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500">{{ group }}</span>
                 <div class="flex gap-0.5 items-center">
                   <span
-                    v-for="(team, i) in submission?.groups[group]" :key="team"
+                    v-for="(teamId, i) in submission?.groups[group]" :key="teamId"
                     class="text-lg leading-none transition-opacity"
                     :class="(i >= 2 && !submission?.wildcards?.includes(group)) || i >= 3 ? 'opacity-30' : ''"
-                  >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                  >{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
                 </div>
               </div>
             </template>
@@ -425,7 +424,7 @@ function fmtDate(ts) {
                 <div class="text-[10px] font-black tracking-[0.15em] text-emerald-400 mb-1.5">GROUP {{ g }}</div>
                 <div class="space-y-0.5">
                   <div
-                    v-for="(team, i) in submission.groups[g]" :key="i"
+                    v-for="(teamId, i) in submission.groups[g]" :key="i"
                     class="flex items-center gap-1.5 text-[11px] transition-opacity"
                     :class="(i === 3 || (i === 2 && !submission.wildcards.includes(g))) ? 'opacity-30' : ''"
                   >
@@ -433,11 +432,11 @@ function fmtDate(ts) {
                       class="text-[9px] font-black w-4 text-right tabular-nums shrink-0"
                       :class="['text-amber-400','text-zinc-400','text-amber-700','text-zinc-400'][i]"
                     >{{ i + 1 }}</span>
-                    <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                    <span class="text-base leading-none shrink-0">{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
                     <span
                       class="truncate"
                       :class="i < 2 || (i === 2 && submission.wildcards.includes(g)) ? 'text-white font-bold' : 'text-zinc-300'"
-                    >{{ team }}</span>
+                    >{{ TEAM_BY_ID[teamId]?.name ?? teamId }}</span>
                   </div>
                 </div>
               </div>
@@ -455,9 +454,9 @@ function fmtDate(ts) {
                 v-for="g in [...submission.wildcards].sort()" :key="g"
                 class="flex items-center gap-1.5 bg-court-700 border border-court-600 rounded-xl px-2.5 py-1.5"
               >
-                <span class="text-sm leading-none">{{ TEAM_FLAG[submission.groups[g]?.[2]] ?? '🏳️' }}</span>
+                <span class="text-sm leading-none">{{ TEAM_BY_ID[submission.groups[g]?.[2]]?.flag ?? '🏳️' }}</span>
                 <span class="text-[10px] font-black text-emerald-400">{{ g }}</span>
-                <span class="text-xs text-zinc-300">{{ submission.groups[g]?.[2] }}</span>
+                <span class="text-xs text-zinc-300">{{ TEAM_BY_ID[submission.groups[g]?.[2]]?.name }}</span>
               </div>
             </div>
           </div>
@@ -472,16 +471,16 @@ function fmtDate(ts) {
                   <div class="text-[10px] text-amber-400/60 font-mono">{{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}</div>
                 </div>
                 <div class="text-[11px] text-right text-white font-medium flex items-center gap-1 justify-end">
-                  <template v-if="prop.type === 'player'">
-                    <span>{{ playerFlag(submission.props[prop.key]) }}</span>
-                    <span>{{ playerName(submission.props[prop.key]) }}</span>
+                  <template v-if="prop.type === 'player' && submission.props[prop.key]">
+                    <span>{{ TEAM_FLAG[PLAYER_BY_ID[submission.props[prop.key]]?.team] ?? '' }}</span>
+                    <span>{{ PLAYER_BY_ID[submission.props[prop.key]]?.name ?? '—' }}</span>
                   </template>
-                  <template v-else-if="prop.type === 'team' && submission.props[prop.key] && submission.props[prop.key] !== '__none__'">
-                    <span>{{ TEAM_FLAG[submission.props[prop.key]] ?? '🏳️' }}</span>
-                    <span>{{ submission.props[prop.key] }}</span>
+                  <template v-else-if="prop.type === 'team' && submission.props[prop.key] !== null && submission.props[prop.key]">
+                    <span>{{ TEAM_BY_ID[submission.props[prop.key]]?.flag ?? '🏳️' }}</span>
+                    <span>{{ TEAM_BY_ID[submission.props[prop.key]]?.name }}</span>
                   </template>
                   <template v-else>
-                    <span>{{ submission.props[prop.key] === '__none__' ? '🚫 No Team' : (submission.props[prop.key] || '—') }}</span>
+                    <span>{{ submission.props[prop.key] === null ? '🚫 No Team' : '—' }}</span>
                   </template>
                 </div>
               </div>
