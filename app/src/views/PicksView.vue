@@ -375,22 +375,7 @@ const POS_COLORS = [
     <!-- ══════════════════════════════════════════════════
          LOCKED SUMMARY VIEW
     ══════════════════════════════════════════════════ -->
-    <template v-if="picksLocked && !isUpdate">
-      <PicksHeader :user="user" :locked="true" @profile="showProfile = true" />
-      <div class="flex flex-col items-center justify-center text-center pt-24 pb-16 px-6">
-        <div class="text-4xl mb-5">🔒</div>
-        <h2 class="text-lg font-black tracking-wide text-white mb-2">Submissions are locked!</h2>
-        <p class="text-sm text-zinc-400 mb-8">Come back for the knockout round.</p>
-        <button @click="router.push('/dashboard')" class="flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-sm tracking-[0.08em] uppercase bg-emerald-500 hover:bg-emerald-400 text-white transition-colors">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M8 6l4-4 4 4"/><path d="M12 2v13"/><path d="M20 21H4"/><path d="M16 13l4 4-4 4"/>
-          </svg>
-          View Leaderboard
-        </button>
-      </div>
-    </template>
-
-    <template v-else-if="picksLocked">
+    <template v-if="picksLocked">
       <PicksHeader :user="user" :locked="true" @profile="showProfile = true" />
 
       <!-- Group standings summary -->
