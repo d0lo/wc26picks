@@ -28,6 +28,7 @@
   html, body, #app {
     height: 100vh;  /* fallback */
     height: 100dvh; /* iOS 15.4+, Chrome 108+ */
+    overflow: hidden;
   }
 
   input, select, textarea {
