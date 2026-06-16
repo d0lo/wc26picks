@@ -1,11 +1,10 @@
 <script setup>
-import { ref, computed, inject, onMounted } from 'vue'
+import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 const appVersion = __APP_VERSION__
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { GROUPS, PROPS, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
-import { ROSTERS } from '../rosters.js'
+import { GROUPS, TEAM_BY_ID } from '../data.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 
@@ -78,10 +77,118 @@ function fmtDate(ts) {
 
 function openUser(s) {
   const uid = s.uid ?? s.id
-  // Don't open modal for the current user
   if (uid === user.value?.uid) return
   selectedUser.value = { uid, name: s.name, photoURL: s.photoURL ?? null }
 }
+
+// ── Sticky group overlay ───────────────────────────────────────────────
+const picksSummaryRef = ref(null)
+const overlayRef = ref(null)
+const overlayCollapsed = ref(false)
+const overlayContentVisible = ref(false)
+const overlayGridRef = ref(null)
+const overlayTickerRef = ref(null)
+const pinnedGroups = ref([])
+let lastExpandedOverlayHeight = 0
+let cachedRowHeight = 40
+let leaveAnimating = false
+let leaveTimer = null
+
+watch(() => pinnedGroups.value.length, (n, o) => {
+  if (n < o) {
+    leaveAnimating = true
+    clearTimeout(leaveTimer)
+    leaveTimer = setTimeout(() => { leaveAnimating = false }, 150)
+  }
+})
+
+function getHeaderBottom() {
+  const header = document.querySelector('header')
+  return header ? header.getBoundingClientRect().bottom : 64
+}
+
+function animateOverlayHeight(el, from, to, clearAfter, onDone) {
+  el.style.height = from + 'px'
+  el.offsetHeight
+  el.style.transition = 'height 280ms cubic-bezier(0.4, 0, 0.2, 1)'
+  el.style.height = to + 'px'
+  el.addEventListener('transitionend', () => {
+    el.style.transition = ''
+    if (clearAfter) el.style.height = ''
+    onDone?.()
+  }, { once: true })
+}
+
+function setOverlayCollapsed(val) {
+  if (overlayCollapsed.value === val) return
+  const el = overlayRef.value
+  if (!el) return
+  if (val) {
+    const from = el.offsetHeight
+    overlayCollapsed.value = true
+    animateOverlayHeight(el, from, 36, false, () => { overlayContentVisible.value = true })
+  } else {
+    overlayContentVisible.value = false
+    nextTick(() => {
+      const from = parseFloat(el.style.height) || el.offsetHeight
+      overlayCollapsed.value = false
+      nextTick(() => {
+        const to = overlayGridRef.value?.offsetHeight ?? from
+        animateOverlayHeight(el, from, to, true, null)
+      })
+    })
+  }
+}
+
+function updatePinned() {
+  if (!submission.value) return
+  const groupCardRefs = picksSummaryRef.value?.groupCardRefs
+  if (!groupCardRefs) return
+
+  const headerBottom = getHeaderBottom()
+  const rowCount = Math.ceil(pinnedGroups.value.length / 2)
+  if (overlayRef.value && rowCount > 0 && !overlayCollapsed.value && !leaveAnimating) {
+    const h = overlayRef.value.getBoundingClientRect().height
+    if (h > 0) cachedRowHeight = h / rowCount
+  }
+  const rowHeight = cachedRowHeight
+
+  const newRows = []
+  const PAIR_ROWS = []
+  for (let i = 0; i < GROUPS.length; i += 2) PAIR_ROWS.push(GROUPS.slice(i, i + 2))
+  for (const row of PAIR_ROWS) {
+    const el = groupCardRefs[row[0]]
+    if (!el) break
+    const r = el.getBoundingClientRect()
+    const threshold = headerBottom + (newRows.length + 1) * rowHeight
+    if ((r.top + r.bottom) / 2 < threshold) newRows.push(row)
+    else break
+  }
+  pinnedGroups.value = newRows.flat()
+
+  if (!overlayRef.value) return
+  const overlayRect = overlayRef.value.getBoundingClientRect()
+  if (!overlayCollapsed.value) lastExpandedOverlayHeight = overlayRect.height
+
+  const wildcardsSectionRef = picksSummaryRef.value?.wildcardsSectionRef
+  if (!overlayCollapsed.value && wildcardsSectionRef?.value) {
+    const r = wildcardsSectionRef.value.getBoundingClientRect()
+    if ((r.top + r.bottom) / 2 < overlayRect.bottom) setOverlayCollapsed(true)
+  }
+  if (overlayCollapsed.value && wildcardsSectionRef?.value && lastExpandedOverlayHeight) {
+    const expandedBottom = overlayRect.top + lastExpandedOverlayHeight
+    if (wildcardsSectionRef.value.getBoundingClientRect().top > expandedBottom) setOverlayCollapsed(false)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('scroll', updatePinned, { passive: true })
+  window.addEventListener('resize', updatePinned, { passive: true })
+})
+onUnmounted(() => {
+  window.removeEventListener('scroll', updatePinned)
+  window.removeEventListener('resize', updatePinned)
+})
 </script>
 
 <template>
@@ -95,6 +202,58 @@ function openUser(s) {
     </div>
 
     <template v-else>
+
+      <!-- Sticky group overlay (mobile) -->
+      <div
+        ref="overlayRef"
+        v-if="pinnedGroups.length"
+        class="min-[964px]:hidden fixed left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
+        :style="{ top: 'calc(4rem + env(safe-area-inset-top))' }"
+      >
+        <div class="relative">
+          <div ref="overlayGridRef">
+            <div class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
+                 :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'">
+              <TransitionGroup name="pin" tag="div" class="contents">
+                <div
+                  v-for="group in pinnedGroups" :key="group"
+                  class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
+                >
+                  <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500 w-4 shrink-0">{{ group }}</span>
+                  <div class="flex gap-1 items-center">
+                    <span
+                      v-for="(teamId, i) in submission?.groups[group]" :key="teamId"
+                      class="text-xl leading-none transition-opacity"
+                      :class="(i >= 2 && !submission?.wildcards?.includes(group)) || i >= 3 ? 'opacity-30' : ''"
+                    >{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
+                  </div>
+                </div>
+              </TransitionGroup>
+            </div>
+          </div>
+          <div
+            ref="overlayTickerRef"
+            class="absolute top-0 overflow-hidden transition-opacity duration-200 flex items-center"
+            style="height: 36px; left: -1rem; right: -1rem;"
+            :class="overlayContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'"
+          >
+            <div class="shelf-ticker flex gap-5 w-max" :style="{ animationDuration: `${pinnedGroups.length * 2.5}s` }">
+              <template v-for="pass in 2" :key="pass">
+                <div v-for="group in pinnedGroups" :key="`${pass}-${group}`" class="flex items-center gap-1.5 shrink-0">
+                  <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500">{{ group }}</span>
+                  <div class="flex gap-0.5 items-center">
+                    <span
+                      v-for="(teamId, i) in submission?.groups[group]" :key="teamId"
+                      class="text-lg leading-none transition-opacity"
+                      :class="(i >= 2 && !submission?.wildcards?.includes(group)) || i >= 3 ? 'opacity-30' : ''"
+                    >{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- My score card (only when I have submitted) -->
       <div v-if="submission" class="mt-4 mb-5">
@@ -216,6 +375,7 @@ function openUser(s) {
           <span class="text-sm font-black tracking-[0.2em] text-white uppercase">My Picks</span>
         </div>
         <PicksSummary
+          ref="picksSummaryRef"
           :groups="submission.groups"
           :wildcards="submission.wildcards"
           :props="submission.props"
@@ -228,7 +388,6 @@ function openUser(s) {
 
     </template>
 
-    <!-- Picks modal for another user -->
     <PicksModal
       v-if="selectedUser"
       :uid="selectedUser.uid"
@@ -238,3 +397,11 @@ function openUser(s) {
     />
   </div>
 </template>
+
+<style scoped>
+.pin-enter-active { transition: all 0.15s ease-out; }
+.pin-leave-active { transition: all 0.1s ease-in; }
+.pin-enter-from  { opacity: 0; transform: translateY(-6px); }
+.pin-leave-to    { opacity: 0; transform: translateY(-4px); }
+.pin-move        { transition: transform 0.15s ease; }
+</style>
