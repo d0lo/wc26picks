@@ -1106,7 +1106,7 @@ export const ROSTERS = {
     },
     {
       "id": "21a6a36e-f2db-5692-920c-79c744db4686",
-      "name": "Marquinhos ",
+      "name": "Marquinhos",
       "pos": "D",
       "num": "4",
       "dob": "1994-05-14"
@@ -6144,7 +6144,7 @@ export const ROSTERS = {
     },
     {
       "id": "f1dba1c9-d882-5995-bcc5-ab07b49e5dac",
-      "name": "Vitinha ",
+      "name": "Vitinha",
       "pos": "M",
       "num": "23",
       "dob": "2000-02-13"
