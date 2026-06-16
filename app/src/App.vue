@@ -123,13 +123,22 @@ const debugInfo = ref({})
 let debugTimer
 function updateDebugInfo() {
   const appEl = document.getElementById('app')
+  // navigator.standalone is the only reliable standalone signal for the
+  // legacy apple-mobile-web-app-capable webclip mechanism this app uses
+  // (no manifest.json). The display-mode media query is the W3C signal
+  // for manifest-based PWA installs and is unreliable for webclips on
+  // iOS, which is why mode was always reading "browser" before.
+  const navStandalone = window.navigator.standalone
+  const displayModeStandalone = window.matchMedia('(display-mode: standalone)').matches
   debugInfo.value = {
     innerH: window.innerHeight,
     vvH: window.visualViewport?.height?.toFixed(0),
     vvOffsetTop: window.visualViewport?.offsetTop?.toFixed(0),
     cssVar: getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim(),
     appH: appEl ? getComputedStyle(appEl).height : '-',
-    mode: window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser',
+    mode: navStandalone || displayModeStandalone ? 'standalone' : 'browser',
+    navStandalone: String(navStandalone),
+    displayModeStandalone: String(displayModeStandalone),
     scrollY: window.scrollY,
     docScrollH: document.documentElement.scrollHeight,
   }
