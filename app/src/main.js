@@ -28,4 +28,11 @@ window.addEventListener('orientationchange', setAppHeight)
 window.addEventListener('pageshow', setAppHeight)
 window.visualViewport?.addEventListener('resize', setAppHeight)
 
+// On a cold standalone launch, iOS can report a too-short visualViewport
+// height for a brief window before settling the real safe-area geometry,
+// with no resize/visualViewport event firing to correct it until the user
+// happens to interact. Re-measure a few times early on to catch that settle
+// without waiting on an event that may not come.
+;[50, 150, 300, 600, 1000].forEach((ms) => setTimeout(setAppHeight, ms))
+
 createApp(App).use(router).mount('#app')
