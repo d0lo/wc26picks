@@ -89,6 +89,7 @@ const overlayContentVisible = ref(false)
 const overlayGridRef = ref(null)
 const overlayTickerRef = ref(null)
 const pinnedGroups = ref([])
+const headerBottomPx = ref(64)
 let lastExpandedOverlayHeight = 0
 let cachedRowHeight = 40
 let leaveAnimating = false
@@ -102,9 +103,13 @@ watch(() => pinnedGroups.value.length, (n, o) => {
   }
 })
 
-function getHeaderBottom() {
+function measureHeader() {
   const header = document.querySelector('header')
-  return header ? header.getBoundingClientRect().bottom : 64
+  if (header) headerBottomPx.value = header.getBoundingClientRect().bottom
+}
+
+function getHeaderBottom() {
+  return headerBottomPx.value
 }
 
 function animateOverlayHeight(el, from, to, clearAfter, onDone) {
@@ -182,11 +187,14 @@ function updatePinned() {
 }
 
 onMounted(() => {
+  measureHeader()
   window.addEventListener('scroll', updatePinned, { passive: true })
+  window.addEventListener('resize', measureHeader, { passive: true })
   window.addEventListener('resize', updatePinned, { passive: true })
 })
 onUnmounted(() => {
   window.removeEventListener('scroll', updatePinned)
+  window.removeEventListener('resize', measureHeader)
   window.removeEventListener('resize', updatePinned)
 })
 </script>
@@ -208,7 +216,7 @@ onUnmounted(() => {
         ref="overlayRef"
         v-if="pinnedGroups.length"
         class="min-[964px]:hidden fixed left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
-        :style="{ top: 'calc(4rem + env(safe-area-inset-top))' }"
+        :style="{ top: headerBottomPx + 'px' }"
       >
         <div class="relative">
           <div ref="overlayGridRef">
