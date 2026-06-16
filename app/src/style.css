@@ -26,11 +26,17 @@
 
 @layer base {
   html, body, #app {
-    height: 100vh;             /* fallback */
-    height: 100dvh;            /* iOS 15.4+, Chrome 108+ */
-    height: var(--app-height); /* JS-measured viewport height, set in main.js — fixes
-                                   inconsistent dvh/-webkit-fill-available behaviour
-                                   between Safari browser tabs and standalone PWA mode */
+    height: 100vh;  /* fallback */
+    height: 100dvh; /* iOS 15.4+, Chrome 108+ — stable in standalone mode since
+                        there's no browser chrome to show/hide */
+  }
+
+  /* Browser-tab mode only (class set in main.js): dvh's chrome show/hide
+     behaviour is unreliable there, so override with a JS-measured height. */
+  html.browser-chrome,
+  html.browser-chrome body,
+  html.browser-chrome #app {
+    height: var(--app-height);
   }
 
   input, select, textarea {
