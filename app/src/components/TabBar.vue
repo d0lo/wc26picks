@@ -18,7 +18,7 @@ function visibleTabs() {
 
 <template>
   <nav
-    class="fixed bottom-0 left-0 right-0 z-50 bg-court-900/80 backdrop-blur-xl border-t border-white/5"
+    class="shrink-0 z-50 bg-court-900/80 backdrop-blur-xl border-t border-white/5"
     style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom))"
   >
     <div class="flex items-stretch h-14">

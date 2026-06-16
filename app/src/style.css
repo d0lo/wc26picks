@@ -25,6 +25,11 @@
 }
 
 @layer base {
+  html, body, #app {
+    height: 100vh;
+    height: 100dvh;
+  }
+
   input, select, textarea {
     font-size: max(16px, 1em);
   }

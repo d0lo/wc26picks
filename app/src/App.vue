@@ -120,9 +120,9 @@ function onNameSaved() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-court-950 text-zinc-100 font-sans antialiased">
+  <div class="flex flex-col bg-court-950 text-zinc-100 font-sans antialiased overflow-hidden" style="height: 100dvh; height: 100vh">
     <!-- Global loading spinner -->
-    <div v-if="loading" class="flex items-center justify-center min-h-screen">
+    <div v-if="loading" class="flex-1 flex items-center justify-center">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
     </div>
 
@@ -130,7 +130,7 @@ function onNameSaved() {
       <!-- Persistent header (authenticated non-auth pages) -->
       <AppHeader v-if="showChrome" :user="user" @profile="showProfile = true" />
 
-      <!-- Profile modal (global) -->
+      <!-- Profile modal (uses position:fixed internally, unaffected by layout) -->
       <ProfileModal
         v-if="showProfile && user"
         :user="user"
@@ -139,10 +139,12 @@ function onNameSaved() {
         @name-saved="onNameSaved"
       />
 
-      <!-- Page content -->
-      <RouterView v-slot="{ Component }">
-        <component :is="Component" @done="onUsernameDone" />
-      </RouterView>
+      <!-- Scrollable content area -->
+      <main id="main-scroll" class="flex-1 overflow-y-auto" style="-webkit-overflow-scrolling: touch">
+        <RouterView v-slot="{ Component }">
+          <component :is="Component" @done="onUsernameDone" />
+        </RouterView>
+      </main>
 
       <!-- Tab bar -->
       <TabBar
