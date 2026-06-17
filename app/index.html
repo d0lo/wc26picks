@@ -17,12 +17,18 @@
     <script>
       // iOS Safari only composites real page pixels behind its translucent
       // status bar / home indicator chrome once the document has a non-zero
-      // scroll position. Run this before Vue mounts (screen still blank)
-      // so the one-time nudge isn't visible as a jump on the rendered app.
+      // scroll position — any viewport resize (e.g. the keyboard opening or
+      // closing) resets that and briefly falls back to flat chrome until
+      // re-nudged, so this re-runs on every resize, not just once at load.
       // `body` is 1px taller than `html` (see style.css) for real scroll room.
-      document.documentElement.style.overflow = 'scroll'
-      window.scrollTo(0, 1)
-      document.documentElement.style.overflow = 'hidden'
+      function nudgeScroll() {
+        document.documentElement.style.overflow = 'scroll'
+        window.scrollTo(0, 1)
+        document.documentElement.style.overflow = 'hidden'
+      }
+      nudgeScroll()
+      window.addEventListener('resize', nudgeScroll)
+      window.visualViewport?.addEventListener('resize', nudgeScroll)
     </script>
     <script type="module" src="/src/main.js"></script>
   </body>
