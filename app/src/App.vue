@@ -56,6 +56,12 @@ onMounted(async () => {
     if (u) {
       loading.value = true
       dataReady.value = false
+    } else {
+      // Reset modal state left open from the previous session (e.g. account
+      // deletion or logout via ProfileModal) so it doesn't reappear on the
+      // next sign-in, when `user` becomes truthy again.
+      showProfile.value = false
+      editNameMode.value = false
     }
     user.value = u
     if (u) {

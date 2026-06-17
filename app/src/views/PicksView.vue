@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, computed, inject, onMounted, watch, nextTick } from 'vue'
+import { reactive, ref, computed, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 const appVersion = __APP_VERSION__
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
@@ -269,14 +269,11 @@ const rightPinnedGroups = computed(() => pinnedGroups.value.slice(6))
 const propsSectionRef = ref(null)
 const wildcardsSectionRef = ref(null)
 let firstWildcardRef = null
-const picksHeaderRef = ref(null)
 let lastExpandedOverlayHeight = 0
 let cachedRowHeight = 0
 
 function getHeaderBottom() {
-  const el = picksHeaderRef.value?.headerEl
-  if (el) return el.getBoundingClientRect().bottom
-  return 60
+  return document.querySelector('header')?.getBoundingClientRect().bottom ?? 64
 }
 
 function updatePinned() {
@@ -327,10 +324,10 @@ onMounted(() => {
   updatePinned()
   window.addEventListener('scroll', updatePinned, { passive: true })
   window.addEventListener('resize', updatePinned, { passive: true })
-  return () => {
-    window.removeEventListener('scroll', updatePinned)
-    window.removeEventListener('resize', updatePinned)
-  }
+})
+onUnmounted(() => {
+  window.removeEventListener('scroll', updatePinned)
+  window.removeEventListener('resize', updatePinned)
 })
 
 // ── Position styles ────────────────────────────────────────────────────
@@ -343,25 +340,14 @@ const POS_COLORS = [
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4" style="padding-top: calc(4rem + env(safe-area-inset-top)); padding-bottom: max(6rem, calc(6rem + env(safe-area-inset-bottom)))">
+  <div>
 
-    <button
-      v-if="isUpdate"
-      @click="router.push('/leaderboard')"
-      class="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-medium transition-colors mt-3 mb-1"
-    >
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M19 12H5"/><path d="M12 5l-7 7 7 7"/>
-      </svg>
-      Back to Home
-    </button>
-
-    <!-- ── Mobile: sticky top rows ── -->
+    <!-- ── Mobile: sticky top rows — zero-height anchor avoids layout shift ── -->
+    <div class="min-[964px]:hidden sticky top-0 z-[60]" style="height: 0; overflow: visible">
     <div
       ref="overlayRef"
       v-if="pinnedGroups.length"
-      class="min-[964px]:hidden fixed left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
-      :style="{ top: 'calc(4rem + env(safe-area-inset-top))' }"
+      class="absolute top-0 left-0 right-0 px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
     >
       <!-- layer wrapper: grid sits in flow to drive height; ticker overlays on top -->
       <div class="relative">
@@ -421,6 +407,7 @@ const POS_COLORS = [
         </div>
       </div>
     </div>
+    </div><!-- end sticky anchor -->
 
     <!-- ── Desktop: fixed left panel ── -->
       <!-- wide: single left panel, 2 cols -->
@@ -488,6 +475,20 @@ const POS_COLORS = [
           </TransitionGroup>
         </div>
       </template>
+
+    <!-- ── Content ── -->
+    <div class="max-w-2xl mx-auto px-4 pt-4 pb-10">
+
+    <button
+      v-if="isUpdate"
+      @click="router.push('/leaderboard')"
+      class="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-medium transition-colors mt-3 mb-1"
+    >
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 12H5"/><path d="M12 5l-7 7 7 7"/>
+      </svg>
+      Back to Home
+    </button>
 
     <!-- ── SECTION 1: Group Standings ── -->
     <div v-if="!loaded" class="flex justify-center py-20">
@@ -725,6 +726,7 @@ const POS_COLORS = [
       <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
     </div>
 
+    </div><!-- end content wrapper -->
   </div>
 </template>
 

@@ -89,7 +89,6 @@ const overlayContentVisible = ref(false)
 const overlayGridRef = ref(null)
 const overlayTickerRef = ref(null)
 const pinnedGroups = ref([])
-const headerBottomPx = ref(64)
 let lastExpandedOverlayHeight = 0
 let cachedRowHeight = 40
 let leaveAnimating = false
@@ -103,13 +102,8 @@ watch(() => pinnedGroups.value.length, (n, o) => {
   }
 })
 
-function measureHeader() {
-  const header = document.querySelector('header')
-  if (header) headerBottomPx.value = header.getBoundingClientRect().bottom
-}
-
 function getHeaderBottom() {
-  return headerBottomPx.value
+  return document.querySelector('header')?.getBoundingClientRect().bottom ?? 64
 }
 
 function animateOverlayHeight(el, from, to, clearAfter, onDone) {
@@ -187,36 +181,23 @@ function updatePinned() {
 }
 
 onMounted(() => {
-  measureHeader()
   window.addEventListener('scroll', updatePinned, { passive: true })
-  window.addEventListener('resize', measureHeader, { passive: true })
   window.addEventListener('resize', updatePinned, { passive: true })
 })
 onUnmounted(() => {
   window.removeEventListener('scroll', updatePinned)
-  window.removeEventListener('resize', measureHeader)
   window.removeEventListener('resize', updatePinned)
 })
 </script>
 
 <template>
-  <div
-    class="max-w-2xl mx-auto px-4"
-    style="padding-top: calc(4rem + env(safe-area-inset-top)); padding-bottom: max(6rem, calc(6rem + env(safe-area-inset-bottom)))"
-  >
-    <!-- Loading -->
-    <div v-if="loading" class="flex justify-center py-20">
-      <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
-    </div>
-
-    <template v-else>
-
-      <!-- Sticky group overlay (mobile) -->
+  <div>
+    <!-- Zero-height sticky anchor — no layout shift; overlay panel is absolute inside it -->
+    <div class="min-[964px]:hidden sticky top-0 z-[60]" style="height: 0; overflow: visible">
       <div
         ref="overlayRef"
         v-if="pinnedGroups.length"
-        class="min-[964px]:hidden fixed left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
-        :style="{ top: headerBottomPx + 'px' }"
+        class="absolute top-0 left-0 right-0 px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
       >
         <div class="relative">
           <div ref="overlayGridRef">
@@ -262,6 +243,13 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+    </div><!-- end sticky anchor -->
+
+    <div class="max-w-2xl mx-auto px-4 pt-4 pb-10">
+      <div v-if="loading" class="flex justify-center py-20">
+        <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+      <template v-if="!loading">
 
       <!-- My score card (only when I have submitted) -->
       <div v-if="submission" class="mt-4 mb-5">
@@ -394,15 +382,16 @@ onUnmounted(() => {
         <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
       </div>
 
-    </template>
+      </template><!-- end !loading -->
 
-    <PicksModal
-      v-if="selectedUser"
-      :uid="selectedUser.uid"
-      :name="selectedUser.name"
-      :photoURL="selectedUser.photoURL"
-      @close="selectedUser = null"
-    />
+      <PicksModal
+        v-if="selectedUser"
+        :uid="selectedUser.uid"
+        :name="selectedUser.name"
+        :photoURL="selectedUser.photoURL"
+        @close="selectedUser = null"
+      />
+    </div><!-- end content wrapper -->
   </div>
 </template>
 
