@@ -30,6 +30,11 @@
     height: 100dvh; /* iOS 15.4+, Chrome 108+ */
     overflow: hidden;
     touch-action: pan-x pan-y; /* allow scrolling/panning, block pinch + double-tap zoom */
+    /* WebKit implicitly pads body with env(safe-area-inset-*) when
+       viewport-fit=cover is set, leaving an unpainted strip under the
+       home indicator. Reset it so content can paint edge-to-edge. */
+    margin: 0;
+    padding: 0;
   }
 
   input, select, textarea {
