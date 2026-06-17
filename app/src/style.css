@@ -16,6 +16,17 @@
   50%       { transform: rotate(-20deg) scale(1.15); }
 }
 
+@keyframes tab-bounce {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.35); }
+  60%  { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+
+.tab-bounce {
+  animation: tab-bounce 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
 @layer components {
   .splash-text {
     display: inline-block;
@@ -49,32 +60,6 @@
   body {
     background-color: #080e0a;
     color: #f1f5f9;
-  }
-
-  /* iOS doesn't reliably composite real page pixels behind the
-     status bar / home indicator, so paint our own frosted strip there
-     instead of relying on that — static, no JS, no scroll dependency. */
-  body::before,
-  body::after {
-    content: '';
-    position: fixed;
-    left: 0;
-    right: 0;
-    z-index: 9999;
-    pointer-events: none;
-    background-color: rgba(8, 14, 10, 0.6);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-  }
-
-  body::before {
-    top: 0;
-    height: env(safe-area-inset-top);
-  }
-
-  body::after {
-    bottom: 0;
-    height: env(safe-area-inset-bottom);
   }
 
   select option {
