@@ -38,8 +38,15 @@
   height: 9rem;
   z-index: 40;
   pointer-events: none;
-  backdrop-filter: blur(3px);
-  mask-image: linear-gradient(to top, black 0%, black 25%, transparent 60%);
+  /* Smooth darkness/opacity ramp, unmasked so it stays continuous
+     even though the blur layers below cut off in harder bands. */
+  background-image: linear-gradient(
+    to top,
+    rgba(8, 14, 10, 0.92) 0%,
+    rgba(8, 14, 10, 0.55) 35%,
+    rgba(8, 14, 10, 0.15) 70%,
+    transparent 100%
+  );
 }
 
 .scroll-fade::before,
@@ -51,12 +58,12 @@
 
 .scroll-fade::before {
   backdrop-filter: blur(10px);
-  mask-image: linear-gradient(to top, black 0%, black 15%, transparent 40%);
+  mask-image: linear-gradient(to top, black 0%, black 30%, transparent 55%);
 }
 
 .scroll-fade::after {
   backdrop-filter: blur(24px);
-  mask-image: linear-gradient(to top, black 0%, transparent 22%);
+  mask-image: linear-gradient(to top, black 0%, transparent 28%);
 }
 
 @layer components {
