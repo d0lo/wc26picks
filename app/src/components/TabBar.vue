@@ -26,7 +26,7 @@ function onTap(id) {
 <template>
   <nav class="fixed inset-x-0 bottom-0 z-50 px-4" style="padding-bottom: max(1rem, calc(0.75rem + env(safe-area-inset-bottom)))">
     <div
-      class="relative flex items-stretch h-16 mx-auto max-w-xs rounded-full bg-court-900/55 backdrop-blur-2xl backdrop-saturate-150 border border-white/10 shadow-2xl shadow-black/50 px-1.5"
+      class="relative flex items-stretch h-16 mx-auto max-w-[10rem] rounded-full bg-court-900/55 backdrop-blur-2xl backdrop-saturate-150 border border-white/10 shadow-2xl shadow-black/50 px-1.5"
     >
       <!-- Sliding active pill -->
       <div
@@ -40,12 +40,13 @@ function onTap(id) {
         :key="tab.id"
         type="button"
         @click="onTap(tab.id)"
-        class="relative z-10 flex-1 flex flex-col items-center justify-center gap-0.5 active:scale-90 transition-transform"
+        class="relative z-10 flex-1 flex items-center justify-center active:scale-90 transition-transform"
         :class="activeTab === tab.id ? 'text-emerald-400' : 'text-zinc-500'"
         :aria-current="activeTab === tab.id ? 'page' : undefined"
+        :aria-label="tab.label"
       >
         <span
-          class="flex flex-col items-center gap-0.5 transition-colors"
+          class="flex items-center justify-center transition-colors"
           :class="{ 'tab-bounce': bouncingTab === tab.id }"
           @animationend="bouncingTab = null"
         >
@@ -56,28 +57,18 @@ function onTap(id) {
             <path d="M9 10h6M9 14h4"/>
           </svg>
 
-          <!-- Leaderboard icon (trophy) -->
+          <!-- Leaderboard icon (home) -->
           <svg v-else-if="tab.id === 'leaderboard'" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M6 2h12v8a6 6 0 0 1-12 0V2z"/>
-            <path d="M6 5H3a2 2 0 0 0 0 4h3"/>
-            <path d="M18 5h3a2 2 0 0 1 0 4h-3"/>
-            <path d="M12 16v4"/>
-            <path d="M8 20h8"/>
+            <path d="M3 11l9-8 9 8"/>
+            <path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/>
+            <path d="M9 21v-6h6v6"/>
           </svg>
 
-          <!-- Live icon (lightning bolt) -->
-          <svg v-else-if="tab.id === 'live'" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M13 2L4.5 13H12L11 22L19.5 11H12L13 2z"
-              :fill="activeTab === 'live' ? 'currentColor' : 'none'"
-              :stroke="activeTab === 'live' ? 'none' : 'currentColor'"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
+          <!-- Live icon (stadium) -->
+          <svg v-else-if="tab.id === 'live'" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <ellipse cx="12" cy="12" rx="9" ry="6"/>
+            <rect x="6" y="9" width="12" height="6" rx="2"/>
           </svg>
-
-          <span class="text-[10px] font-semibold leading-none">{{ tab.label }}</span>
         </span>
       </button>
     </div>
