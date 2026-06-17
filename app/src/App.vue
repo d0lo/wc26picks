@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, provide, watch, onMounted } from 'vue'
+import { ref, computed, provide, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
@@ -35,7 +35,22 @@ watch(picksLocked, (locked) => {
   }
 })
 
+// iOS Safari only composites real page content behind the status bar/toolbar
+// chrome once scrollY > 0 — at the true top it shows a flat fallback color.
+function nudgeScroll() {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      if (window.scrollY === 0 && document.documentElement.scrollHeight > window.innerHeight) {
+        window.scrollTo(0, 1)
+      }
+    })
+  })
+}
+
+router.afterEach(nudgeScroll)
+
 onMounted(async () => {
+  nudgeScroll()
   // Config is public — fetch before auth so splash page shows lock time immediately
   getDoc(doc(db, 'config', 'public')).then(snap => {
     if (snap.exists()) picksLockTime.value = snap.data().picksLockAt ?? null
