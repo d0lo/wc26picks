@@ -151,7 +151,15 @@ const indicatorStyle = computed(() => {
 </script>
 
 <template>
-  <nav class="fixed inset-x-0 bottom-0 z-50 px-4" style="padding-bottom: max(1rem, calc(0.75rem + env(safe-area-inset-bottom)))">
+  <nav
+    class="sticky bottom-0 z-50 px-4"
+    style="
+      --tb-pb: max(1rem, calc(0.75rem + env(safe-area-inset-bottom)));
+      padding-bottom: var(--tb-pb);
+      height: calc(4rem + var(--tb-pb));
+      margin-top: calc(-4rem - var(--tb-pb));
+    "
+  >
     <div
       ref="pillEl"
       class="relative flex items-stretch h-16 mx-auto max-w-[10rem] rounded-full bg-court-900/10 backdrop-blur-sm backdrop-saturate-150 border border-white/20 shadow-2xl shadow-black/50 px-1.5"
