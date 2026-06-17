@@ -26,19 +26,18 @@ onMounted(async () => {
     loading.value = false
   }
 })
-
-function onBackdropClick(e) {
-  if (e.target === e.currentTarget) emit('close')
-}
 </script>
 
 <template>
-  <div
-    class="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end"
-    @click="onBackdropClick"
-  >
+  <div class="fixed inset-0 z-[100] flex items-end">
+    <!-- Glass backdrop lives on an absolute child, not the fixed element
+         itself — Safari samples background/backdrop-filter set directly on
+         position:fixed elements at the viewport edge to tint its own
+         translucent toolbar. Same fix as AppHeader (see 80e673a). -->
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')"></div>
+
     <div
-      class="fixed bottom-0 left-0 right-0 overflow-y-auto rounded-t-3xl bg-court-900 border-t border-court-700"
+      class="relative w-full overflow-y-auto rounded-t-3xl bg-court-900 border-t border-court-700"
       style="max-height: calc(90dvh - env(safe-area-inset-top)); padding-bottom: env(safe-area-inset-bottom)"
     >
 

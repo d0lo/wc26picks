@@ -78,7 +78,7 @@ function fmtDate(ts) {
 function openUser(s) {
   const uid = s.uid ?? s.id
   if (uid === user.value?.uid) return
-  selectedUser.value = { uid, name: s.name, photoURL: s.photoURL ?? null }
+  selectedUser.value = { uid, name: fmtName(s.name), photoURL: s.photoURL ?? null }
 }
 
 // ── Sticky group overlay ───────────────────────────────────────────────
