@@ -62,7 +62,7 @@ function requestClose() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[100] flex items-end">
+  <div class="fixed inset-0 z-[100]">
     <!-- Glass backdrop lives on an absolute child, not the fixed element
          itself — Safari samples background/backdrop-filter set directly on
          position:fixed elements at the viewport edge to tint its own
@@ -74,9 +74,10 @@ function requestClose() {
     ></div>
 
     <div
-      class="relative w-full max-h-[85vh] overflow-y-auto overscroll-contain rounded-t-3xl bg-court-900 border-t border-court-700 transition-transform duration-300"
+      class="fixed bottom-0 left-0 right-0 overflow-y-auto overscroll-contain rounded-t-3xl bg-court-900 border-t border-court-700 transition-transform duration-300"
       :class="open ? 'translate-y-0' : 'translate-y-full'"
       :style="{
+        maxHeight: 'calc(90dvh - env(safe-area-inset-top))',
         paddingBottom: 'env(safe-area-inset-bottom)',
         transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
       }"
