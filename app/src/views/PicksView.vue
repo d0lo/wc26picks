@@ -322,11 +322,11 @@ function updatePinned() {
 
 onMounted(() => {
   updatePinned()
-  document.getElementById('main-scroll')?.addEventListener('scroll', updatePinned, { passive: true })
+  window.addEventListener('scroll', updatePinned, { passive: true })
   window.addEventListener('resize', updatePinned, { passive: true })
 })
 onUnmounted(() => {
-  document.getElementById('main-scroll')?.removeEventListener('scroll', updatePinned)
+  window.removeEventListener('scroll', updatePinned)
   window.removeEventListener('resize', updatePinned)
 })
 

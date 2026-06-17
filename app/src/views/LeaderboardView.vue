@@ -181,13 +181,11 @@ function updatePinned() {
 }
 
 onMounted(() => {
-  const el = document.getElementById('main-scroll')
-  el?.addEventListener('scroll', updatePinned, { passive: true })
+  window.addEventListener('scroll', updatePinned, { passive: true })
   window.addEventListener('resize', updatePinned, { passive: true })
 })
 onUnmounted(() => {
-  const el = document.getElementById('main-scroll')
-  el?.removeEventListener('scroll', updatePinned)
+  window.removeEventListener('scroll', updatePinned)
   window.removeEventListener('resize', updatePinned)
 })
 </script>

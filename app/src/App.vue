@@ -126,9 +126,9 @@ function onNameSaved() {
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-court-950 text-zinc-100 font-sans antialiased overflow-hidden">
+  <div class="min-h-screen bg-court-950 text-zinc-100 font-sans antialiased">
     <!-- Global loading spinner -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center">
+    <div v-if="loading" class="min-h-screen flex items-center justify-center">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
     </div>
 
@@ -145,15 +145,8 @@ function onNameSaved() {
         @name-saved="onNameSaved"
       />
 
-      <!-- Scrollable content area -->
-      <main
-        id="main-scroll"
-        class="flex-1 overflow-y-auto"
-        :style="{
-          '-webkit-overflow-scrolling': 'touch',
-          paddingBottom: showChrome ? 'calc(6rem + env(safe-area-inset-bottom))' : 0,
-        }"
-      >
+      <!-- Content area — natural document scroll, padded to clear the fixed tab bar -->
+      <main :style="{ paddingBottom: showChrome ? 'calc(6rem + env(safe-area-inset-bottom))' : 0 }">
         <RouterView v-slot="{ Component }">
           <component :is="Component" @done="onUsernameDone" />
         </RouterView>

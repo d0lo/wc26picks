@@ -5,7 +5,7 @@ defineEmits(['profile'])
 
 <template>
   <header
-    class="shrink-0 z-50 flex items-center justify-between px-4 border-b border-court-700 bg-court-950/95 backdrop-blur-md"
+    class="sticky top-0 z-50 flex items-center justify-between px-4 border-b border-court-700 bg-court-950/95 backdrop-blur-md"
     style="padding-top: max(1rem, calc(1rem + env(safe-area-inset-top))); padding-bottom: 1rem;"
   >
     <!-- Logo -->
