@@ -37,7 +37,10 @@ function onBackdropClick(e) {
     class="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end"
     @click="onBackdropClick"
   >
-    <div class="fixed bottom-0 left-0 right-0 max-h-[90vh] overflow-y-auto rounded-t-3xl bg-court-900 border-t border-court-700">
+    <div
+      class="fixed bottom-0 left-0 right-0 overflow-y-auto rounded-t-3xl bg-court-900 border-t border-court-700"
+      style="max-height: calc(90dvh - env(safe-area-inset-top)); padding-bottom: env(safe-area-inset-bottom)"
+    >
 
       <!-- Sheet header -->
       <div class="sticky top-0 z-10 bg-court-900 border-b border-court-700 px-4 py-4 flex items-center gap-3">
