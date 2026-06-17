@@ -26,7 +26,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
+  <div class="min-h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
     <div class="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,#0d2918,transparent)]"></div>
     <div class="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_110%,#0a1f12,transparent)]"></div>
     <div

@@ -36,20 +36,6 @@
 }
 
 @layer base {
-  html, body, #app {
-    /* Natural document scroll (not an internal fixed-height container) —
-       lets iOS Safari's chrome collapse on scroll like any normal page.
-       A fixed-height + overflow:hidden shell here would stop the page
-       from ever scrolling, so Safari's bottom toolbar never auto-hides
-       and permanently eats into the viewport behind the fixed tab bar. */
-    touch-action: pan-x pan-y; /* allow scrolling/panning, block pinch + double-tap zoom */
-    /* WebKit implicitly pads body with env(safe-area-inset-*) when
-       viewport-fit=cover is set, leaving an unpainted strip under the
-       home indicator. Reset it so content can paint edge-to-edge. */
-    margin: 0;
-    padding: 0;
-  }
-
   input, select, textarea {
     font-size: max(16px, 1em);
   }
