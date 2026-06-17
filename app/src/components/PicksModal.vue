@@ -33,22 +33,14 @@ function updateMaxHeight() {
 
 // True modal behaviour — the page behind can't scroll while this is open,
 // which also stops the sheet's own scroll from rubber-banding into it.
-let savedScrollY = 0
+// Locking via <html>'s overflow (not body's position) so body never moves
+// and keeps the safe-area padding override in style.css intact — that
+// override only holds while body stays the document's actual scroll root.
 function lockBodyScroll() {
-  savedScrollY = window.scrollY
-  document.body.style.position = 'fixed'
-  document.body.style.top = `-${savedScrollY}px`
-  document.body.style.left = '0'
-  document.body.style.right = '0'
-  document.body.style.width = '100%'
+  document.documentElement.style.overflow = 'hidden'
 }
 function unlockBodyScroll() {
-  document.body.style.position = ''
-  document.body.style.top = ''
-  document.body.style.left = ''
-  document.body.style.right = ''
-  document.body.style.width = ''
-  window.scrollTo(0, savedScrollY)
+  document.documentElement.style.overflow = ''
 }
 
 onMounted(async () => {
