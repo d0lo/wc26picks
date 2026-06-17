@@ -48,6 +48,8 @@ let lastX = 0
 let lastY = 0
 let lastT = 0
 let pointerId = null
+let smoothVx = 0
+let smoothVy = 0
 
 function onGrab(e) {
   const pillRect = pillEl.value.getBoundingClientRect()
@@ -57,6 +59,8 @@ function onGrab(e) {
   lastX = e.clientX
   lastY = e.clientY
   lastT = performance.now()
+  smoothVx = 0
+  smoothVy = 0
   pointerId = e.pointerId
   dragMoved = false
   dragging.value = true
@@ -74,8 +78,10 @@ function onDragMove(e) {
   const dx = e.clientX - lastX
   const dy = e.clientY - lastY
   if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragMoved = true
-  const vx = Math.abs(dx) / dt
-  const vy = Math.abs(dy) / dt
+  // Heavily smoothed (low-pass filtered) velocity — raw per-event deltas
+  // are too noisy and made the squash/stretch feel twitchy.
+  smoothVx = smoothVx * 0.85 + (Math.abs(dx) / dt) * 0.15
+  smoothVy = smoothVy * 0.85 + (Math.abs(dy) / dt) * 0.15
   lastX = e.clientX
   lastY = e.clientY
   lastT = now
@@ -85,20 +91,20 @@ function onDragMove(e) {
   dragLeft.value = clamp(dragLeft.value + dx, 3, maxLeft)
 
   // Squash/stretch: fast horizontal motion widens + thins, fast vertical
-  // motion heightens + thins — a simple liquid-blob feel from raw velocity.
-  const sx = clamp(1 + vx * 2.6, 1, 1.7)
-  const sy = clamp(1 + vy * 2.6, 1, 1.7)
-  stretchX.value = clamp(sx / Math.sqrt(sy), 0.7, 1.7)
-  stretchY.value = clamp(sy / Math.sqrt(sx), 0.7, 1.7)
+  // motion heightens + thins — a subtle liquid-blob feel from velocity.
+  const sx = clamp(1 + smoothVx * 1.3, 1, 1.35)
+  const sy = clamp(1 + smoothVy * 1.3, 1, 1.35)
+  stretchX.value = clamp(sx / Math.sqrt(sy), 0.85, 1.35)
+  stretchY.value = clamp(sy / Math.sqrt(sx), 0.85, 1.35)
 
-  // Magnify whichever tab icon the pointer is nearest to.
+  // Subtly magnify whichever tab icon the pointer is nearest to.
   for (const tab of visibleTabs.value) {
     const btn = buttonEls[tab.id]
     if (!btn) continue
     const r = btn.getBoundingClientRect()
     const center = r.left + r.width / 2
     const dist = Math.abs(e.clientX - center)
-    magnify[tab.id] = 1 + Math.max(0, 1 - dist / 70) * 0.35
+    magnify[tab.id] = 1 + Math.max(0, 1 - dist / 110) * 0.12
   }
 }
 
@@ -166,7 +172,7 @@ const indicatorStyle = computed(() => {
         :aria-label="tab.label"
       >
         <span
-          class="flex items-center justify-center transition-transform"
+          class="flex items-center justify-center transition-transform duration-200"
           :class="{ 'tab-bounce': bouncingTab === tab.id }"
           :style="bouncingTab !== tab.id ? { transform: `scale(${magnify[tab.id] || 1})` } : null"
           @animationend="bouncingTab = null"
