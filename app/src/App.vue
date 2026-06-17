@@ -146,13 +146,20 @@ function onNameSaved() {
       />
 
       <!-- Scrollable content area -->
-      <main id="main-scroll" class="flex-1 overflow-y-auto" style="-webkit-overflow-scrolling: touch">
+      <main
+        id="main-scroll"
+        class="flex-1 overflow-y-auto"
+        :style="{
+          '-webkit-overflow-scrolling': 'touch',
+          paddingBottom: showChrome ? 'calc(6rem + env(safe-area-inset-bottom))' : 0,
+        }"
+      >
         <RouterView v-slot="{ Component }">
           <component :is="Component" @done="onUsernameDone" />
         </RouterView>
       </main>
 
-      <!-- Tab bar -->
+      <!-- Tab bar (fixed, floats over scrollable content) -->
       <TabBar
         v-if="showChrome"
         :activeTab="activeTab"
