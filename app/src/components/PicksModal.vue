@@ -20,17 +20,6 @@ const loading = ref(true)
 const open = ref(false)
 const closing = ref(false)
 
-// Cap the sheet to the actually-visible area in real pixels — vh/dvh both
-// reflect the layout viewport, which on mobile Safari can be taller than
-// what's currently visible above the address-bar chrome, leaving the
-// sheet's bottom edge hidden behind it. visualViewport.height is the one
-// number that always matches what's on screen.
-const sheetMaxHeight = ref(0)
-function updateMaxHeight() {
-  const vh = window.visualViewport?.height ?? window.innerHeight
-  sheetMaxHeight.value = Math.round(vh * 0.9)
-}
-
 // True modal behaviour — the page behind can't scroll while this is open,
 // which also stops the sheet's own scroll from rubber-banding into it.
 // Locking via <html>'s overflow (not body's position) so body never moves
@@ -44,9 +33,6 @@ function unlockBodyScroll() {
 }
 
 onMounted(async () => {
-  updateMaxHeight()
-  window.visualViewport?.addEventListener('resize', updateMaxHeight)
-  window.addEventListener('resize', updateMaxHeight)
   lockBodyScroll()
   requestAnimationFrame(() => { open.value = true })
   try {
@@ -62,8 +48,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  window.visualViewport?.removeEventListener('resize', updateMaxHeight)
-  window.removeEventListener('resize', updateMaxHeight)
   unlockBodyScroll()
 })
 
@@ -90,10 +74,9 @@ function requestClose() {
     ></div>
 
     <div
-      class="relative w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-court-900 border-t border-court-700 transition-transform duration-300"
+      class="relative w-full max-h-[85vh] overflow-y-auto overscroll-contain rounded-t-3xl bg-court-900 border-t border-court-700 transition-transform duration-300"
       :class="open ? 'translate-y-0' : 'translate-y-full'"
       :style="{
-        maxHeight: sheetMaxHeight + 'px',
         paddingBottom: 'env(safe-area-inset-bottom)',
         transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
       }"
@@ -148,6 +131,11 @@ function requestClose() {
           :props="data.props"
         />
       </div>
+
+      <!-- Fades the cut edge of scrollable content into the sheet's own
+           background, so a mid-list cutoff reads as "scroll for more"
+           instead of a flat dead zone at the bottom. -->
+      <div class="pointer-events-none sticky bottom-0 inset-x-0 h-10 bg-gradient-to-t from-court-900 to-transparent"></div>
 
     </div>
   </div>
