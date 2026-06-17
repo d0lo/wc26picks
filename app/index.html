@@ -14,6 +14,16 @@
   </head>
   <body>
     <div id="app"></div>
+    <script>
+      // iOS Safari only composites real page pixels behind its translucent
+      // status bar / home indicator chrome once the document has a non-zero
+      // scroll position. Run this before Vue mounts (screen still blank)
+      // so the one-time nudge isn't visible as a jump on the rendered app.
+      // `body` is 1px taller than `html` (see style.css) for real scroll room.
+      document.documentElement.style.overflow = 'scroll'
+      window.scrollTo(0, 1)
+      document.documentElement.style.overflow = 'hidden'
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
