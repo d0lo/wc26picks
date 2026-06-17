@@ -25,7 +25,7 @@
 }
 
 @layer base {
-  html, body, #app {
+  html, #app {
     height: 100vh;  /* fallback */
     height: 100dvh; /* iOS 15.4+, Chrome 108+ */
     overflow: hidden;
@@ -33,6 +33,15 @@
     /* WebKit implicitly pads body with env(safe-area-inset-*) when
        viewport-fit=cover is set, leaving an unpainted strip under the
        home indicator. Reset it so content can paint edge-to-edge. */
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    /* 1px taller than html so main.js can nudge a non-zero scroll
+       position once on launch — see comment there for why. */
+    height: calc(100vh + 1px);
+    height: calc(100dvh + 1px);
     margin: 0;
     padding: 0;
   }

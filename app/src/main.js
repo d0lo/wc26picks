@@ -5,14 +5,18 @@ import './style.css'
 
 createApp(App).use(router).mount('#app')
 
-// WebKit bug 191872: on cold launch of a standalone iOS web app,
-// env(safe-area-inset-*) / dvh metrics are sometimes resolved against a
-// stale viewport snapshot and only correct themselves after a scroll
-// gesture. Nudging the scroll position (a no-op, since the page doesn't
-// scroll) forces WebKit to recompute real viewport metrics immediately
-// instead of waiting for the user to touch the screen. No measuring or
-// caching — just a reflow trigger.
+// iOS Safari only composites real page pixels behind its translucent
+// status bar / home indicator chrome once the document has a non-zero
+// scroll position — a page permanently pinned at scrollY 0 (which
+// `overflow: hidden` on <html> otherwise keeps us at) gets flat default
+// chrome instead. `body` is 1px taller than `html` (see style.css) so
+// there's exactly 1px of real scroll room: briefly allow scrolling,
+// nudge to that 1px offset once, then lock it back to non-scrollable so
+// the page still can't be dragged/bounced by the user.
 requestAnimationFrame(() => {
+  document.documentElement.style.overflow = 'scroll'
   window.scrollTo(0, 1)
-  window.scrollTo(0, 0)
+  requestAnimationFrame(() => {
+    document.documentElement.style.overflow = 'hidden'
+  })
 })
