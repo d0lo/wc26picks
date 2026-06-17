@@ -159,6 +159,9 @@ function onNameSaved() {
         </RouterView>
       </main>
 
+      <!-- Blur fade where content scrolls under the tab bar -->
+      <div v-if="showChrome" class="scroll-fade"></div>
+
       <!-- Tab bar (fixed, floats over scrollable content) -->
       <TabBar
         v-if="showChrome"
