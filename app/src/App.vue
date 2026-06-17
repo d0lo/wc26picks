@@ -5,7 +5,6 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
 import AppHeader from './components/AppHeader.vue'
-import TabBar from './components/TabBar.vue'
 import ProfileModal from './components/ProfileModal.vue'
 
 const router = useRouter()
@@ -29,25 +28,10 @@ provide('picksLocked', picksLocked)
 provide('picksLockTime', picksLockTime)
 provide('hasSubmitted', hasSubmitted)
 
-// Show header + tab bar on all authenticated pages except login/username
+// Show header on all authenticated pages except login/username
 const showChrome = computed(() =>
   !!user.value && !['/login', '/username'].includes(route.path)
 )
-
-// Derive active tab from route path
-const activeTab = computed(() => {
-  if (route.path === '/picks') return 'picks'
-  if (route.path === '/leaderboard') return 'leaderboard'
-  if (route.path === '/live') return 'live'
-  return null
-})
-
-// showPicksTab: show Picks tab when picks not locked, or user has already submitted
-const showPicksTab = computed(() => !picksLocked.value || hasSubmitted.value)
-
-function onTabNavigate(tab) {
-  router.push('/' + tab)
-}
 
 router.beforeEach((to) => {
   if (!dataReady.value) return
@@ -143,14 +127,6 @@ function onNameSaved() {
       <RouterView v-slot="{ Component }">
         <component :is="Component" @done="onUsernameDone" />
       </RouterView>
-
-      <!-- Tab bar -->
-      <TabBar
-        v-if="showChrome"
-        :activeTab="activeTab"
-        :showPicksTab="showPicksTab"
-        @navigate="onTabNavigate"
-      />
     </template>
   </div>
 </template>
