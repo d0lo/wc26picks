@@ -152,17 +152,16 @@ const indicatorStyle = computed(() => {
 
 <template>
   <nav
-    class="sticky bottom-0 z-50 px-4"
+    class="fixed inset-x-0 bottom-0 z-50 px-4"
     style="
       --tb-pb: max(1rem, calc(0.75rem + env(safe-area-inset-bottom)));
       padding-bottom: var(--tb-pb);
       height: calc(4rem + var(--tb-pb));
-      margin-top: calc(-4rem - var(--tb-pb));
     "
   >
     <div
       ref="pillEl"
-      class="relative flex items-stretch h-16 mx-auto max-w-[10rem] rounded-full bg-court-900/10 backdrop-blur-sm backdrop-saturate-150 border border-white/20 shadow-2xl shadow-black/50 px-1.5"
+      class="absolute top-0 inset-x-0 mx-auto flex items-stretch h-16 max-w-[10rem] rounded-full bg-court-900/10 backdrop-blur-sm backdrop-saturate-150 border border-white/20 shadow-2xl shadow-black/50 px-1.5"
     >
       <!-- Sliding active pill -->
       <div ref="indicatorEl" class="absolute top-1.5 bottom-1.5 rounded-full bg-white/10 border border-white/10" :style="indicatorStyle"></div>

@@ -152,8 +152,7 @@ function onNameSaved() {
         </RouterView>
       </main>
 
-      <!-- Tab bar (sticky + negative margin, floats over scrollable content
-           while staying in-flow so Safari renders it under the toolbar) -->
+      <!-- Tab bar (fixed, floats over scrollable content) -->
       <TabBar
         v-if="showChrome"
         :activeTab="activeTab"
