@@ -27,45 +27,6 @@
   animation: tab-bounce 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Progressive blur fade above the tab bar: content scrolls into increasing
-   blur instead of cutting off sharply. Each layer (self, ::before, ::after)
-   stacks a stronger, narrower blur on top of the last for a smooth gradient
-   since CSS can't interpolate backdrop-filter blur radius directly. */
-.scroll-fade {
-  position: fixed;
-  inset-inline: 0;
-  bottom: 0;
-  height: 4.5rem;
-  z-index: 40;
-  pointer-events: none;
-  /* Smooth darkness/opacity ramp, unmasked so it stays continuous
-     even though the blur layers below cut off in harder bands. */
-  background-image: linear-gradient(
-    to top,
-    rgba(8, 14, 10, 0.97) 0%,
-    rgba(8, 14, 10, 0.85) 30%,
-    rgba(8, 14, 10, 0.4) 65%,
-    transparent 100%
-  );
-}
-
-.scroll-fade::before,
-.scroll-fade::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
-
-.scroll-fade::before {
-  backdrop-filter: blur(10px);
-  mask-image: linear-gradient(to top, black 0%, black 20%, transparent 40%);
-}
-
-.scroll-fade::after {
-  backdrop-filter: blur(24px);
-  mask-image: linear-gradient(to top, black 0%, transparent 18%);
-}
-
 @layer components {
   .splash-text {
     display: inline-block;

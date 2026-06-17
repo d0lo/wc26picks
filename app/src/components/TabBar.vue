@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 const props = defineProps({
   activeTab: String,   // 'picks' | 'leaderboard' | 'live'
@@ -17,37 +17,158 @@ const visibleTabs = computed(() => tabs.filter(t => t.id !== 'picks' || props.sh
 const activeIndex = computed(() => Math.max(0, visibleTabs.value.findIndex(t => t.id === props.activeTab)))
 
 const bouncingTab = ref(null)
+let dragMoved = false
 function onTap(id) {
+  if (dragMoved) { dragMoved = false; return } // trailing click after a real drag — ignore
   bouncingTab.value = id
   emit('navigate', id)
 }
+
+const clamp = (v, min, max) => Math.min(Math.max(v, min), max)
+
+// --- Draggable, velocity-morphing indicator ---
+// Only the active tab's button visually sits on top of the indicator, so
+// that's the only button we arm as a drag handle for it.
+const pillEl = ref(null)
+const indicatorEl = ref(null)
+
+const dragging = ref(false)
+const grabbed = ref(false)
+const dragLeft = ref(0)
+const indicatorWidthPx = ref(0)
+const stretchX = ref(1)
+const stretchY = ref(1)
+const magnify = reactive({})
+const buttonEls = {}
+function setButtonRef(id, el) {
+  if (el) buttonEls[id] = el
+}
+
+let lastX = 0
+let lastY = 0
+let lastT = 0
+let pointerId = null
+
+function onGrab(e) {
+  const pillRect = pillEl.value.getBoundingClientRect()
+  const indRect = indicatorEl.value.getBoundingClientRect()
+  indicatorWidthPx.value = indRect.width
+  dragLeft.value = indRect.left - pillRect.left
+  lastX = e.clientX
+  lastY = e.clientY
+  lastT = performance.now()
+  pointerId = e.pointerId
+  dragMoved = false
+  dragging.value = true
+  grabbed.value = true
+  e.currentTarget.setPointerCapture(e.pointerId)
+  window.addEventListener('pointermove', onDragMove)
+  window.addEventListener('pointerup', onDragEnd)
+  window.addEventListener('pointercancel', onDragEnd)
+}
+
+function onDragMove(e) {
+  if (!dragging.value || e.pointerId !== pointerId) return
+  const now = performance.now()
+  const dt = Math.max(now - lastT, 1)
+  const dx = e.clientX - lastX
+  const dy = e.clientY - lastY
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragMoved = true
+  const vx = Math.abs(dx) / dt
+  const vy = Math.abs(dy) / dt
+  lastX = e.clientX
+  lastY = e.clientY
+  lastT = now
+
+  const pillRect = pillEl.value.getBoundingClientRect()
+  const maxLeft = pillRect.width - indicatorWidthPx.value - 3
+  dragLeft.value = clamp(dragLeft.value + dx, 3, maxLeft)
+
+  // Squash/stretch: fast horizontal motion widens + thins, fast vertical
+  // motion heightens + thins — a simple liquid-blob feel from raw velocity.
+  const sx = clamp(1 + vx * 2.6, 1, 1.7)
+  const sy = clamp(1 + vy * 2.6, 1, 1.7)
+  stretchX.value = clamp(sx / Math.sqrt(sy), 0.7, 1.7)
+  stretchY.value = clamp(sy / Math.sqrt(sx), 0.7, 1.7)
+
+  // Magnify whichever tab icon the pointer is nearest to.
+  for (const tab of visibleTabs.value) {
+    const btn = buttonEls[tab.id]
+    if (!btn) continue
+    const r = btn.getBoundingClientRect()
+    const center = r.left + r.width / 2
+    const dist = Math.abs(e.clientX - center)
+    magnify[tab.id] = 1 + Math.max(0, 1 - dist / 70) * 0.35
+  }
+}
+
+function onDragEnd(e) {
+  if (!dragging.value || e.pointerId !== pointerId) return
+  dragging.value = false
+  grabbed.value = false
+  stretchX.value = 1
+  stretchY.value = 1
+  for (const id of Object.keys(magnify)) delete magnify[id]
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', onDragEnd)
+  window.removeEventListener('pointercancel', onDragEnd)
+
+  const pillRect = pillEl.value.getBoundingClientRect()
+  const tabWidth = pillRect.width / visibleTabs.value.length
+  const centerX = dragLeft.value + indicatorWidthPx.value / 2
+  const nearestIndex = clamp(Math.floor(centerX / tabWidth), 0, visibleTabs.value.length - 1)
+  const newTab = visibleTabs.value[nearestIndex].id
+  if (newTab !== props.activeTab) emit('navigate', newTab)
+  bouncingTab.value = newTab
+}
+
+const indicatorStyle = computed(() => {
+  const baseScale = grabbed.value ? 1.12 : 1
+  const transform = `scale(${baseScale * stretchX.value}, ${baseScale * stretchY.value})`
+
+  if (dragging.value) {
+    return {
+      left: `${dragLeft.value}px`,
+      width: `${indicatorWidthPx.value}px`,
+      transform,
+      transition: 'none',
+    }
+  }
+  return {
+    width: `calc(${100 / visibleTabs.value.length}% - 6px)`,
+    left: `calc(${activeIndex.value * (100 / visibleTabs.value.length)}% + 3px)`,
+    transform,
+    transition:
+      'left 300ms cubic-bezier(0.34, 1.56, 0.64, 1), width 300ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+  }
+})
 </script>
 
 <template>
   <nav class="fixed inset-x-0 bottom-0 z-50 px-4" style="padding-bottom: max(1rem, calc(0.75rem + env(safe-area-inset-bottom)))">
     <div
-      class="relative flex items-stretch h-16 mx-auto max-w-[10rem] rounded-full bg-court-900/25 backdrop-blur-3xl backdrop-saturate-150 border border-white/15 shadow-2xl shadow-black/50 px-1.5"
+      ref="pillEl"
+      class="relative flex items-stretch h-16 mx-auto max-w-[10rem] rounded-full bg-court-900/10 backdrop-blur-sm backdrop-saturate-150 border border-white/20 shadow-2xl shadow-black/50 px-1.5"
     >
       <!-- Sliding active pill -->
-      <div
-        class="absolute top-1.5 bottom-1.5 rounded-full bg-white/10 border border-white/10 transition-[left] duration-300"
-        style="transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1)"
-        :style="{ width: `calc(${100 / visibleTabs.length}% - 6px)`, left: `calc(${activeIndex * (100 / visibleTabs.length)}% + 3px)` }"
-      ></div>
+      <div ref="indicatorEl" class="absolute top-1.5 bottom-1.5 rounded-full bg-white/10 border border-white/10" :style="indicatorStyle"></div>
 
       <button
         v-for="tab in visibleTabs"
         :key="tab.id"
+        :ref="el => setButtonRef(tab.id, el)"
         type="button"
         @click="onTap(tab.id)"
-        class="relative z-10 flex-1 flex items-center justify-center active:scale-90 transition-transform"
-        :class="activeTab === tab.id ? 'text-emerald-400' : 'text-zinc-500'"
+        @pointerdown="activeTab === tab.id ? onGrab($event) : null"
+        class="relative z-10 flex-1 flex items-center justify-center active:scale-90 transition-transform touch-none"
+        :class="[activeTab === tab.id ? 'text-emerald-400 cursor-grab active:cursor-grabbing' : 'text-zinc-500']"
         :aria-current="activeTab === tab.id ? 'page' : undefined"
         :aria-label="tab.label"
       >
         <span
-          class="flex items-center justify-center transition-colors"
+          class="flex items-center justify-center transition-transform"
           :class="{ 'tab-bounce': bouncingTab === tab.id }"
+          :style="bouncingTab !== tab.id ? { transform: `scale(${magnify[tab.id] || 1})` } : null"
           @animationend="bouncingTab = null"
         >
           <!-- Picks icon (clipboard) -->
