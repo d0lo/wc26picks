@@ -46,6 +46,14 @@
   }
 
   body {
+    /* With viewport-fit=cover, Safari auto-inserts a padding-bottom equal
+       to env(safe-area-inset-bottom) and paints it with its own default
+       (not our background-color) — any explicit padding here, even 0,
+       overrides that so our background/content reach the true edge and
+       can render under the translucent bottom toolbar like the rest of
+       the page, instead of leaving a flat gap above it. */
+    margin: 0;
+    padding: 0;
     background-color: #080e0a;
     color: #f1f5f9;
   }
