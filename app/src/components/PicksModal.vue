@@ -14,7 +14,14 @@ const emit = defineEmits(['close'])
 const data = ref(null)
 const loading = ref(true)
 
+// Starts false so the sheet paints off-screen, then flips true a frame
+// later to trigger the CSS transition into view (a smooth slide-up
+// instead of an instant pop-in).
+const open = ref(false)
+const closing = ref(false)
+
 onMounted(async () => {
+  requestAnimationFrame(() => { open.value = true })
   try {
     const snap = await getDoc(doc(db, 'picks', props.uid))
     if (snap.exists()) {
@@ -26,6 +33,15 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+// Play the close transition before telling the parent to unmount us —
+// the parent's v-if would otherwise tear us down instantly.
+function requestClose() {
+  if (closing.value) return
+  closing.value = true
+  open.value = false
+  setTimeout(() => emit('close'), 300)
+}
 </script>
 
 <template>
@@ -34,11 +50,16 @@ onMounted(async () => {
          itself — Safari samples background/backdrop-filter set directly on
          position:fixed elements at the viewport edge to tint its own
          translucent toolbar. Same fix as AppHeader (see 80e673a). -->
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')"></div>
+    <div
+      class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300"
+      :class="open ? 'opacity-100' : 'opacity-0'"
+      @click="requestClose"
+    ></div>
 
     <div
-      class="relative w-full overflow-y-auto rounded-t-3xl bg-court-900 border-t border-court-700"
-      style="max-height: calc(90dvh - env(safe-area-inset-top)); padding-bottom: env(safe-area-inset-bottom)"
+      class="relative w-full overflow-y-auto rounded-t-3xl bg-court-900 border-t border-court-700 transition-transform duration-300"
+      :class="open ? 'translate-y-0' : 'translate-y-full'"
+      style="max-height: calc(90% - env(safe-area-inset-top)); padding-bottom: env(safe-area-inset-bottom); transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1)"
     >
 
       <!-- Sheet header -->
@@ -58,7 +79,7 @@ onMounted(async () => {
         <!-- Close -->
         <button
           type="button"
-          @click="emit('close')"
+          @click="requestClose"
           class="text-zinc-400 hover:text-white transition-colors"
           aria-label="Close"
         >
