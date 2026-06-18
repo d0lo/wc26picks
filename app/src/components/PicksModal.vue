@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import PicksSummary from './PicksSummary.vue'
@@ -14,7 +14,27 @@ const emit = defineEmits(['close'])
 const data = ref(null)
 const loading = ref(true)
 
+// Starts false so the sheet paints off-screen, then flips true a frame
+// later to trigger the CSS transition into view (a smooth slide-up
+// instead of an instant pop-in).
+const open = ref(false)
+const closing = ref(false)
+
+// True modal behaviour — the page behind can't scroll while this is open,
+// which also stops the sheet's own scroll from rubber-banding into it.
+// Locking via <html>'s overflow (not body's position) so body never moves
+// and keeps the safe-area padding override in style.css intact — that
+// override only holds while body stays the document's actual scroll root.
+function lockBodyScroll() {
+  document.documentElement.style.overflow = 'hidden'
+}
+function unlockBodyScroll() {
+  document.documentElement.style.overflow = ''
+}
+
 onMounted(async () => {
+  lockBodyScroll()
+  requestAnimationFrame(() => { open.value = true })
   try {
     const snap = await getDoc(doc(db, 'picks', props.uid))
     if (snap.exists()) {
@@ -27,19 +47,40 @@ onMounted(async () => {
   }
 })
 
-function onBackdropClick(e) {
-  if (e.target === e.currentTarget) emit('close')
+onUnmounted(() => {
+  unlockBodyScroll()
+})
+
+// Play the close transition before telling the parent to unmount us —
+// the parent's v-if would otherwise tear us down instantly.
+function requestClose() {
+  if (closing.value) return
+  closing.value = true
+  open.value = false
+  setTimeout(() => emit('close'), 300)
 }
 </script>
 
 <template>
-  <div
-    class="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end"
-    @click="onBackdropClick"
-  >
+  <div class="fixed inset-0 z-[100]">
+    <!-- Glass backdrop lives on an absolute child, not the fixed element
+         itself — Safari samples background/backdrop-filter set directly on
+         position:fixed elements at the viewport edge to tint its own
+         translucent toolbar. Same fix as AppHeader (see 80e673a). -->
     <div
-      class="fixed bottom-0 left-0 right-0 overflow-y-auto rounded-t-3xl bg-court-900 border-t border-court-700"
-      style="max-height: calc(90dvh - env(safe-area-inset-top)); padding-bottom: env(safe-area-inset-bottom)"
+      class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300"
+      :class="open ? 'opacity-100' : 'opacity-0'"
+      @click="requestClose"
+    ></div>
+
+    <div
+      class="fixed bottom-0 left-0 right-0 overflow-y-auto overscroll-contain rounded-t-3xl bg-court-900 border-t border-court-700 transition-transform duration-300"
+      :class="open ? 'translate-y-0' : 'translate-y-full'"
+      :style="{
+        maxHeight: 'calc(90dvh - env(safe-area-inset-top))',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
+      }"
     >
 
       <!-- Sheet header -->
@@ -59,7 +100,7 @@ function onBackdropClick(e) {
         <!-- Close -->
         <button
           type="button"
-          @click="emit('close')"
+          @click="requestClose"
           class="text-zinc-400 hover:text-white transition-colors"
           aria-label="Close"
         >
@@ -91,6 +132,11 @@ function onBackdropClick(e) {
           :props="data.props"
         />
       </div>
+
+      <!-- Fades the cut edge of scrollable content into the sheet's own
+           background, so a mid-list cutoff reads as "scroll for more"
+           instead of a flat dead zone at the bottom. -->
+      <div class="pointer-events-none sticky bottom-0 inset-x-0 h-10 bg-gradient-to-t from-court-900 to-transparent"></div>
 
     </div>
   </div>

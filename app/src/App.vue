@@ -128,7 +128,7 @@ function onNameSaved() {
 <template>
   <div class="min-h-screen bg-court-950 text-zinc-100 font-sans antialiased">
     <!-- Global loading spinner -->
-    <div v-if="loading" class="min-h-screen flex items-center justify-center">
+    <div v-if="loading" class="flex items-center justify-center min-h-screen">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
     </div>
 

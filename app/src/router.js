@@ -35,4 +35,12 @@ router.beforeEach(async (to) => {
   }
 })
 
+// Memory history never touches window scroll — without this, a scroll
+// position picked up on one page (e.g. an autofocused input pushing the
+// page up) carries straight into the next route, leaving content start
+// scrolled out from under the sticky header.
+router.afterEach(() => {
+  window.scrollTo(0, 0)
+})
+
 export default router
