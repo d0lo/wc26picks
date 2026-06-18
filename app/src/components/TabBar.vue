@@ -151,12 +151,19 @@ const indicatorStyle = computed(() => {
 </script>
 
 <template>
+  <!-- position: sticky, not fixed — iOS Safari excludes fixed elements from
+       its edge-to-edge compositing under the translucent bottom toolbar and
+       paints a flat black bar there instead. Sticky stays in document flow
+       (so Safari composites real content/this nav under the toolbar) while
+       the negative margin-top cancels its own flow height, keeping the
+       floating-over-content visual. -->
   <nav
-    class="fixed inset-x-0 bottom-0 z-50 px-4"
+    class="sticky bottom-0 z-50 px-4"
     style="
       --tb-pb: max(1rem, calc(0.75rem + env(safe-area-inset-bottom)));
       padding-bottom: var(--tb-pb);
       height: calc(4rem + var(--tb-pb));
+      margin-top: calc(-4rem - var(--tb-pb));
     "
   >
     <div
