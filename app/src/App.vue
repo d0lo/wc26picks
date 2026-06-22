@@ -126,9 +126,9 @@ function onNameSaved() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-court-950 text-zinc-100 font-sans antialiased">
+  <div class="min-h-dvh flex flex-col bg-court-950 text-zinc-100 font-sans antialiased">
     <!-- Global loading spinner -->
-    <div v-if="loading" class="flex items-center justify-center min-h-screen">
+    <div v-if="loading" class="flex-1 flex items-center justify-center">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
     </div>
 
@@ -145,8 +145,9 @@ function onNameSaved() {
         @name-saved="onNameSaved"
       />
 
-      <!-- Content area — natural document scroll, padded to clear the fixed tab bar -->
-      <main :style="{ paddingBottom: showChrome ? 'calc(6rem + env(safe-area-inset-bottom))' : 0 }">
+      <!-- flex-1 so short pages still push the sticky tab bar to the
+           viewport bottom instead of leaving it floating mid-page. -->
+      <main class="flex-1" :style="{ paddingBottom: showChrome ? 'calc(6rem + env(safe-area-inset-bottom))' : 0 }">
         <RouterView v-slot="{ Component }">
           <component :is="Component" @done="onUsernameDone" />
         </RouterView>
