@@ -21,6 +21,48 @@ const loading = computed(() => pickQuery.isLoading.value)
 const open = ref(false)
 const closing = ref(false)
 
+// Pull-to-dismiss: when the sheet is scrolled to the top and the user
+// keeps dragging downward (the gesture that would otherwise do nothing,
+// since there's no more content above), follow the finger 1:1, then
+// either snap back or finish the close depending on how far they pulled.
+const dragOffset = ref(0)
+const CLOSE_THRESHOLD = 100
+let touchStartY = 0
+let dragStartY = 0
+let isDraggingToClose = false
+
+function onTouchStart(e) {
+  touchStartY = e.touches[0].clientY
+  isDraggingToClose = false
+}
+
+function onTouchMove(e) {
+  const y = e.touches[0].clientY
+  if (!isDraggingToClose) {
+    if (e.currentTarget.scrollTop <= 0 && y > touchStartY) {
+      isDraggingToClose = true
+      dragStartY = y
+    } else {
+      return
+    }
+  }
+  dragOffset.value = Math.max(0, y - dragStartY)
+  e.preventDefault()
+}
+
+function onTouchEnd() {
+  if (!isDraggingToClose) return
+  isDraggingToClose = false
+  const shouldClose = dragOffset.value > CLOSE_THRESHOLD
+  dragOffset.value = 0
+  if (shouldClose) requestClose()
+}
+
+function onTouchCancel() {
+  isDraggingToClose = false
+  dragOffset.value = 0
+}
+
 // True modal behaviour — the page behind can't scroll while this is open,
 // which also stops the sheet's own scroll from rubber-banding into it.
 // Locking via <html>'s overflow (not body's position) so body never moves
@@ -65,13 +107,18 @@ function requestClose() {
     ></div>
 
     <div
-      class="fixed bottom-0 left-0 right-0 overflow-y-auto overscroll-contain rounded-t-3xl bg-court-900 border-t border-court-700 transition-transform duration-300"
-      :class="open ? 'translate-y-0' : 'translate-y-full'"
+      class="fixed bottom-0 left-0 right-0 overflow-y-auto overscroll-contain rounded-t-3xl bg-court-900 border-t border-court-700"
+      :class="[open ? 'translate-y-0' : 'translate-y-full', dragOffset ? '' : 'transition-transform duration-300']"
       :style="{
         maxHeight: 'calc(90dvh - env(safe-area-inset-top))',
         paddingBottom: 'env(safe-area-inset-bottom)',
         transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
+        transform: dragOffset ? `translateY(${dragOffset}px)` : undefined,
       }"
+      @touchstart="onTouchStart"
+      @touchmove="onTouchMove"
+      @touchend="onTouchEnd"
+      @touchcancel="onTouchCancel"
     >
 
       <!-- Sheet header -->
