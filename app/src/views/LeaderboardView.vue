@@ -2,15 +2,16 @@
 import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 const appVersion = __APP_VERSION__
-import { useQuery } from '@tanstack/vue-query'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { GROUPS, TEAM_BY_ID } from '../data.js'
-import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions } from '../queries.js'
+import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, queryKeys } from '../queries.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 
 const router = useRouter()
 const user = inject('user')
 const picksLocked = inject('picksLocked')
+const queryClient = useQueryClient()
 
 const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
 const scoresQuery = useQuery(scoresQueryOptions())
@@ -20,6 +21,17 @@ const submission = computed(() => pickQuery.data.value ?? null)
 const scores = computed(() => scoresQuery.data.value ?? [])
 const submitters = computed(() => picksListQuery.data.value ?? [])
 const loading = computed(() => pickQuery.isLoading.value || scoresQuery.isLoading.value || picksListQuery.isLoading.value)
+
+// The picks-list query already fetches every user's full pick doc (groups,
+// wildcards, props) — seed each individual pick(uid) cache entry from it so
+// opening PicksModal for any submitter is an instant cache hit instead of
+// a fresh Firestore read.
+watch(picksListQuery.data, (list) => {
+  if (!list) return
+  for (const p of list) {
+    queryClient.setQueryData(queryKeys.pick(p.id), p)
+  }
+}, { immediate: true })
 
 const selectedUser = ref(null)  // { uid, name, photoURL } | null
 
