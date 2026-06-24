@@ -15,6 +15,7 @@ export function useGroupOverlay({
   getWildcardsSectionEl,
   getAnchorEl,
   getScrollTarget,
+  columns = 2,
 }) {
   const overlayRef = ref(null)
   const overlayGridRef = ref(null)
@@ -78,7 +79,7 @@ export function useGroupOverlay({
     const refs = getGroupCardRefs?.()
     if (!refs) return
 
-    const rowCount = Math.ceil(pinnedGroups.value.length / 2)
+    const rowCount = Math.ceil(pinnedGroups.value.length / columns)
     if (overlayRef.value && rowCount > 0 && !overlayCollapsed.value && !leaveAnimating) {
       const h = overlayRef.value.getBoundingClientRect().height
       if (h > 0) cachedRowHeight = h / rowCount
@@ -87,7 +88,7 @@ export function useGroupOverlay({
 
     const newRows = []
     const pairRows = []
-    for (let i = 0; i < GROUPS.length; i += 2) pairRows.push(GROUPS.slice(i, i + 2))
+    for (let i = 0; i < GROUPS.length; i += columns) pairRows.push(GROUPS.slice(i, i + columns))
     for (const row of pairRows) {
       const el = refs[row[0]]
       if (!el) break

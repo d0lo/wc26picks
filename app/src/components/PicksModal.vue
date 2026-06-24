@@ -183,6 +183,7 @@ function requestClose() {
         :get-anchor-el="getAnchorEl"
         :get-scroll-target="getScrollTarget"
         :mobile-only="false"
+        :columns="2"
       />
 
       <!-- Content -->

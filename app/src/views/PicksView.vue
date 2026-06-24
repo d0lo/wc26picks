@@ -265,6 +265,7 @@ const POS_COLORS = [
       :get-group-card-refs="getGroupCardRefs"
       :get-wildcards-section-el="getWildcardsSectionEl"
       :get-anchor-el="getHeaderEl"
+      :columns="1"
     />
 
     <!-- ── Desktop: fixed left panel ── -->

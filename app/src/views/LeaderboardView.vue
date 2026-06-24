@@ -108,6 +108,7 @@ function resolveTeamFlag(teamId) {
       :get-group-card-refs="getGroupCardRefs"
       :get-wildcards-section-el="getWildcardsSectionEl"
       :get-anchor-el="getHeaderEl"
+      :columns="2"
     />
 
     <div class="max-w-2xl mx-auto px-4 pt-4 pb-10">
