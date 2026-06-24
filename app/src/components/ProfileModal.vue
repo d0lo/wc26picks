@@ -2,10 +2,13 @@
 import { ref, computed } from 'vue'
 import { signOut, deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, updateProfile } from 'firebase/auth'
 import { doc, deleteDoc, updateDoc } from 'firebase/firestore'
+import { useQueryClient } from '@tanstack/vue-query'
 import { auth, db, googleProvider } from '../firebase.js'
+import { queryKeys } from '../queries.js'
 
 const props = defineProps({ user: Object, editName: Boolean })
 const emit = defineEmits(['close', 'name-saved'])
+const queryClient = useQueryClient()
 
 const busy = ref(false)
 const error = ref('')
@@ -31,6 +34,8 @@ async function saveName() {
     // Keep submission doc in sync so leaderboard reflects the new name
     const subRef = doc(db, 'picks', props.user.uid)
     await updateDoc(subRef, { name }).catch(() => {})
+    queryClient.invalidateQueries({ queryKey: queryKeys.pick(props.user.uid) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
     emit('name-saved')
     emit('close')
   } catch {
@@ -58,6 +63,8 @@ async function reauthAndDelete() {
     }
     // Best-effort cleanup — don't let a Firestore failure block account deletion
     await deleteDoc(doc(db, 'picks', props.user.uid)).catch(() => {})
+    queryClient.removeQueries({ queryKey: queryKeys.pick(props.user.uid) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
     await deleteUser(props.user)
   } catch {
     error.value = 'Could not delete account. Please try again.'

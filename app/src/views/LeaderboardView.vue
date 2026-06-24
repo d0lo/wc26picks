@@ -2,9 +2,9 @@
 import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 const appVersion = __APP_VERSION__
-import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
-import { db } from '../firebase.js'
+import { useQuery } from '@tanstack/vue-query'
 import { GROUPS, TEAM_BY_ID } from '../data.js'
+import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions } from '../queries.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 
@@ -12,30 +12,16 @@ const router = useRouter()
 const user = inject('user')
 const picksLocked = inject('picksLocked')
 
-const submission = ref(null)
-const scores = ref([])
-const submitters = ref([])
-const loading = ref(true)
+const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
+const scoresQuery = useQuery(scoresQueryOptions())
+const picksListQuery = useQuery(picksListQueryOptions())
+
+const submission = computed(() => pickQuery.data.value ?? null)
+const scores = computed(() => scoresQuery.data.value ?? [])
+const submitters = computed(() => picksListQuery.data.value ?? [])
+const loading = computed(() => pickQuery.isLoading.value || scoresQuery.isLoading.value || picksListQuery.isLoading.value)
+
 const selectedUser = ref(null)  // { uid, name, photoURL } | null
-
-async function fetchData() {
-  try {
-    const [subSnap, scoresSnap, submittersSnap] = await Promise.all([
-      getDoc(doc(db, 'picks', user.value.uid)),
-      getDocs(query(collection(db, 'scores'), orderBy('total', 'desc'), limit(50))),
-      getDocs(query(collection(db, 'picks'), orderBy('submittedAt', 'asc'))),
-    ])
-    if (subSnap.exists()) submission.value = subSnap.data()
-    scores.value = scoresSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-    submitters.value = submittersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-  } catch {
-    // Firestore unavailable — show empty state
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(fetchData)
 
 const hasScores = computed(() => scores.value.length > 0)
 

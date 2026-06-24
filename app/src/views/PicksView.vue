@@ -2,10 +2,12 @@
 import { reactive, ref, computed, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 const appVersion = __APP_VERSION__
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
+import { pickQueryOptions, queryKeys } from '../queries.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
 
@@ -13,6 +15,7 @@ const router = useRouter()
 const user = inject('user')
 const picksLocked = inject('picksLocked')
 const picksLockTime = inject('picksLockTime')
+const queryClient = useQueryClient()
 
 function fmtLockTime(ts) {
   if (!ts) return null
@@ -53,17 +56,13 @@ function picksChanged() {
 }
 
 // ── Pre-populate from existing pick ───────────────────────────────────
-onMounted(async () => {
-  let snap
-  try {
-    snap = await getDoc(doc(db, 'picks', user.value.uid))
-  } catch {
-    loaded.value = true
-    return
-  }
-  if (snap.exists()) {
+const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
+
+watch(pickQuery.isFetched, (fetched) => {
+  if (!fetched) return
+  const data = pickQuery.data.value
+  if (data) {
     isUpdate.value = true
-    const data = snap.data()
     if (data.groups) {
       for (const [g, teamIds] of Object.entries(data.groups)) {
         // teamIds are UUIDs — map back to team names for the drag-drop UI
@@ -76,7 +75,7 @@ onMounted(async () => {
     savedSnapshot.value = makeSnapshot()
   }
   loaded.value = true
-})
+}, { immediate: true })
 
 // ── Drag and drop ──────────────────────────────────────────────────────
 const drag = reactive({ group: null, item: null })
@@ -210,6 +209,8 @@ async function submit() {
         PROPS.map(p => [p.key, propAnswers[p.key] === '' ? null : propAnswers[p.key]])
       ),
     }, { merge: true })
+    queryClient.invalidateQueries({ queryKey: queryKeys.pick(user.value.uid) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
     router.push('/leaderboard')
   } catch {
     submitError.value = 'Save failed — check your connection and try again.'

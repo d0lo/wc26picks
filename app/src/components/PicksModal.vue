@@ -1,7 +1,7 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { doc, getDoc } from 'firebase/firestore'
-import { db } from '../firebase.js'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
+import { pickQueryOptions } from '../queries.js'
 import PicksSummary from './PicksSummary.vue'
 
 const props = defineProps({
@@ -11,8 +11,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['close'])
 
-const data = ref(null)
-const loading = ref(true)
+const pickQuery = useQuery(computed(() => pickQueryOptions(props.uid)))
+const data = computed(() => pickQuery.data.value ?? null)
+const loading = computed(() => pickQuery.isLoading.value)
 
 // Starts false so the sheet paints off-screen, then flips true a frame
 // later to trigger the CSS transition into view (a smooth slide-up
@@ -32,19 +33,9 @@ function unlockBodyScroll() {
   document.documentElement.style.overflow = ''
 }
 
-onMounted(async () => {
+onMounted(() => {
   lockBodyScroll()
   requestAnimationFrame(() => { open.value = true })
-  try {
-    const snap = await getDoc(doc(db, 'picks', props.uid))
-    if (snap.exists()) {
-      data.value = snap.data()
-    }
-  } catch {
-    // Firestore unavailable — show no picks state
-  } finally {
-    loading.value = false
-  }
 })
 
 onUnmounted(() => {
