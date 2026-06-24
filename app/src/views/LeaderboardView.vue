@@ -88,7 +88,7 @@ function getGroupCardRefs() {
   return picksSummaryRef.value?.groupCardRefs
 }
 function getWildcardsSectionEl() {
-  return picksSummaryRef.value?.wildcardsSectionRef?.value
+  return picksSummaryRef.value?.wildcardsSectionRef
 }
 function getHeaderEl() {
   return document.querySelector('header')

@@ -10,7 +10,7 @@ const props = defineProps({
   getAnchorEl: Function,            // () => HTMLElement | null — header to sit below
   getScrollTarget: Function,        // () => HTMLElement | Window — defaults to window
   mobileOnly: { type: Boolean, default: true }, // hide at desktop widths where a side-rail panel takes over instead
-  columns: { type: Number, default: 2 }, // must match the consumer's actual group-card grid column count
+  columns: { type: Number, default: 2 }, // how many groups pin per scroll-row — must match the consumer's actual group-card grid column count
 })
 
 const {
@@ -40,8 +40,8 @@ defineExpose({ pinnedGroups })
       <div class="relative">
         <div ref="overlayGridRef">
           <div
-            class="grid gap-x-6 w-fit mx-auto transition-opacity duration-200"
-            :class="[columns === 1 ? 'grid-cols-1' : 'grid-cols-2', overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100']"
+            class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
+            :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'"
           >
             <TransitionGroup name="pin" tag="div" class="contents">
               <div
