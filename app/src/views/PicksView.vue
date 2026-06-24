@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, computed, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { reactive, ref, computed, inject, watch } from 'vue'
 import { useRouter } from 'vue-router'
 const appVersion = __APP_VERSION__
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
@@ -10,6 +10,7 @@ import { ROSTERS } from '../rosters.js'
 import { pickQueryOptions, queryKeys } from '../queries.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
+import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
 
 const router = useRouter()
 const user = inject('user')
@@ -219,117 +220,29 @@ async function submit() {
 }
 
 // ── Sticky group preview ───────────────────────────────────────────────
+// Mobile sticky overlay (grid/ticker) is rendered + tracked by
+// GroupOverlayPanel; the desktop side-rail panels below just mirror its
+// pinnedGroups, exposed via template ref, to avoid a second scroll tracker.
 const groupCardRefs = reactive({})
-const overlayRef = ref(null)
-const overlayCollapsed = ref(false)
-const overlayContentVisible = ref(false) // true = ticker visible, false = grid visible
-const overlayGridRef = ref(null)
-const overlayTickerRef = ref(null)
-
-function animateOverlayHeight(el, from, to, clearAfter, onDone) {
-  el.style.height = from + 'px'
-  el.offsetHeight
-  el.style.transition = 'height 280ms cubic-bezier(0.4, 0, 0.2, 1)'
-  el.style.height = to + 'px'
-  el.addEventListener('transitionend', () => {
-    el.style.transition = ''
-    if (clearAfter) el.style.height = ''
-    onDone?.()
-  }, { once: true })
-}
-
-function setOverlayCollapsed(val) {
-  if (overlayCollapsed.value === val) return
-  const el = overlayRef.value
-  if (!el) return
-
-  if (val) {
-    // COLLAPSE: animate height down, keep it pinned, then fade swap to ticker
-    const from = el.offsetHeight
-    const to = 36
-    overlayCollapsed.value = true
-    animateOverlayHeight(el, from, to, false, () => {
-      overlayContentVisible.value = true
-    })
-  } else {
-    // EXPAND: fade swap to grid, animate height up, then clear inline height
-    overlayContentVisible.value = false
-    nextTick(() => {
-      const from = parseFloat(el.style.height) || el.offsetHeight
-      overlayCollapsed.value = false
-      nextTick(() => {
-        const to = overlayGridRef.value?.offsetHeight ?? from
-        animateOverlayHeight(el, from, to, true, null)
-      })
-    })
-  }
-}
-const pinnedGroups = ref([])
+const wildcardsSectionRef = ref(null)
+const propsSectionRef = ref(null)
+const overlayPanelRef = ref(null)
+const pinnedGroups = computed(() => overlayPanelRef.value?.pinnedGroups ?? [])
 const leftPinnedGroups = computed(() => pinnedGroups.value.slice(0, 6))
 const rightPinnedGroups = computed(() => pinnedGroups.value.slice(6))
-const propsSectionRef = ref(null)
-const wildcardsSectionRef = ref(null)
-let firstWildcardRef = null
-let lastExpandedOverlayHeight = 0
-let cachedRowHeight = 0
 
-function getHeaderBottom() {
-  return document.querySelector('header')?.getBoundingClientRect().bottom ?? 64
+function getGroupCardRefs() {
+  return groupCardRefs
 }
-
-function updatePinned() {
-  const headerBottom = getHeaderBottom()
-  const count = pinnedGroups.value.length
-
-  // Update cached row height when we have enough rows to measure reliably
-  if (!overlayCollapsed.value && overlayRef.value && count > 0) {
-    cachedRowHeight = overlayRef.value.getBoundingClientRect().height / count
-  }
-
-  const rowHeight = cachedRowHeight || 52
-  // Threshold = where the overlay bottom will be once the next group joins
-  const threshold = headerBottom + (count + 1) * rowHeight
-
-  pinnedGroups.value = GROUPS.filter(g => {
-    const el = groupCardRefs[g]
-    if (!el) return false
-    const r = el.getBoundingClientRect()
-    return (r.top + r.bottom) / 2 < threshold
-  })
-
-  if (!overlayRef.value) return
-  const overlayRect = overlayRef.value.getBoundingClientRect()
-
-  // Cache height while expanded so we can use it after collapsing
-  if (!overlayCollapsed.value) {
-    lastExpandedOverlayHeight = overlayRect.height
-  }
-
-  if (!overlayCollapsed.value && firstWildcardRef) {
-    const r = firstWildcardRef.getBoundingClientRect()
-    if ((r.top + r.bottom) / 2 < overlayRect.bottom) {
-      setOverlayCollapsed(true)
-    }
-  }
-
-  // Uncollapse when scrolling back up: wildcards top must clear the expanded overlay bottom
-  if (overlayCollapsed.value && wildcardsSectionRef.value && lastExpandedOverlayHeight) {
-    const expandedBottom = overlayRect.top + lastExpandedOverlayHeight
-    if (wildcardsSectionRef.value.getBoundingClientRect().top > expandedBottom) {
-      setOverlayCollapsed(false)
-    }
-  }
+function getWildcardsSectionEl() {
+  return wildcardsSectionRef.value
 }
-
-onMounted(() => {
-  updatePinned()
-  window.addEventListener('scroll', updatePinned, { passive: true })
-  window.addEventListener('resize', updatePinned, { passive: true })
-})
-onUnmounted(() => {
-  window.removeEventListener('scroll', updatePinned)
-  window.removeEventListener('resize', updatePinned)
-})
+function getHeaderEl() {
+  return document.querySelector('header')
+}
+function resolveTeamFlag(team) {
+  return TEAM_FLAG[team] ?? '🏳️'
+}
 
 // ── Position styles ────────────────────────────────────────────────────
 const POS_COLORS = [
@@ -343,72 +256,16 @@ const POS_COLORS = [
 <template>
   <div>
 
-    <!-- ── Mobile: sticky top rows — zero-height anchor avoids layout shift ── -->
-    <div class="min-[964px]:hidden sticky top-0 z-[60]" style="height: 0; overflow: visible">
-    <div
-      ref="overlayRef"
-      v-if="pinnedGroups.length"
-      class="absolute top-0 left-0 right-0 px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
-    >
-      <!-- layer wrapper: grid sits in flow to drive height; ticker overlays on top -->
-      <div class="relative">
-        <!-- expanded: centered grid — always in flow for height measurement -->
-        <div ref="overlayGridRef">
-          <div class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
-               :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'">
-            <TransitionGroup name="pin" tag="div" class="contents">
-              <div
-                v-for="group in pinnedGroups" :key="group"
-                class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
-              >
-                <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500 w-4 shrink-0">{{ group }}</span>
-                <div class="flex gap-1 items-center">
-                  <span
-                    v-for="(team, i) in order[group]" :key="team"
-                    class="relative group/flag cursor-default hover:z-[200]"
-                  >
-                    <span
-                      class="text-xl leading-none transition-opacity"
-                      :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
-                    >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
-                    <span class="pointer-events-none absolute bottom-full left-1/2 -tranzinc-x-1/2 mb-1.5 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold bg-white text-black shadow-lg opacity-0 group-hover/flag:opacity-100 transition-opacity z-[200]">
-                      {{ team }}<span class="text-zinc-400 font-normal"> · #{{ FIFA_RANKING[team] ?? '–' }}</span>
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </TransitionGroup>
-          </div>
-        </div>
-
-        <!-- collapsed: horizontal ticker — absolutely overlaid, fades in after height collapse -->
-        <div
-          ref="overlayTickerRef"
-          class="absolute top-0 overflow-hidden transition-opacity duration-200 flex items-center"
-          style="height: 36px; left: -1rem; right: -1rem;"
-          :class="overlayContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'"
-        >
-          <div
-            class="shelf-ticker flex gap-5 w-max"
-            :style="{ animationDuration: `${pinnedGroups.length * 2.5}s` }"
-          >
-            <template v-for="pass in 2" :key="pass">
-              <div v-for="group in pinnedGroups" :key="`${pass}-${group}`" class="flex items-center gap-1.5 shrink-0">
-                <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500">{{ group }}</span>
-                <div class="flex gap-0.5 items-center">
-                  <span
-                    v-for="(team, i) in order[group]" :key="team"
-                    class="text-lg leading-none transition-opacity"
-                    :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
-                  >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
-                </div>
-              </div>
-            </template>
-          </div>
-        </div>
-      </div>
-    </div>
-    </div><!-- end sticky anchor -->
+    <!-- ── Mobile: sticky top rows ── -->
+    <GroupOverlayPanel
+      ref="overlayPanelRef"
+      :groups="order"
+      :wildcards="wildcards"
+      :resolve-flag="resolveTeamFlag"
+      :get-group-card-refs="getGroupCardRefs"
+      :get-wildcards-section-el="getWildcardsSectionEl"
+      :get-anchor-el="getHeaderEl"
+    />
 
     <!-- ── Desktop: fixed left panel ── -->
       <!-- wide: single left panel, 2 cols -->
@@ -595,8 +452,7 @@ const POS_COLORS = [
 
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <button
-          v-for="(group, idx) in GROUPS" :key="group"
-          :ref="idx === 0 ? (el) => { firstWildcardRef = el } : undefined"
+          v-for="group in GROUPS" :key="group"
           type="button"
           @click="!picksLocked && toggleWildcard(group)"
           :disabled="picksLocked || wcDisabled(group)"

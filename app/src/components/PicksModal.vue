@@ -2,7 +2,9 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { pickQueryOptions } from '../queries.js'
+import { TEAM_BY_ID } from '../data.js'
 import PicksSummary from './PicksSummary.vue'
+import GroupOverlayPanel from './GroupOverlayPanel.vue'
 
 const props = defineProps({
   uid: String,
@@ -14,6 +16,28 @@ const emit = defineEmits(['close'])
 const pickQuery = useQuery(computed(() => pickQueryOptions(props.uid)))
 const data = computed(() => pickQuery.data.value ?? null)
 const loading = computed(() => pickQuery.isLoading.value)
+
+// ── Sticky group overlay (anchored below the sheet's own header, scrolling
+// within the sheet rather than the page) ────────────────────────────────
+const sheetRef = ref(null)
+const modalHeaderRef = ref(null)
+const picksSummaryRef = ref(null)
+
+function getGroupCardRefs() {
+  return picksSummaryRef.value?.groupCardRefs
+}
+function getWildcardsSectionEl() {
+  return picksSummaryRef.value?.wildcardsSectionRef?.value
+}
+function getAnchorEl() {
+  return modalHeaderRef.value
+}
+function getScrollTarget() {
+  return sheetRef.value
+}
+function resolveTeamFlag(teamId) {
+  return TEAM_BY_ID[teamId]?.flag ?? '🏳️'
+}
 
 // Starts false so the sheet paints off-screen, then flips true a frame
 // later to trigger the CSS transition into view (a smooth slide-up
@@ -107,6 +131,7 @@ function requestClose() {
     ></div>
 
     <div
+      ref="sheetRef"
       class="fixed bottom-0 left-0 right-0 overflow-y-auto overscroll-contain rounded-t-3xl bg-court-900 border-t border-court-700"
       :class="[open ? 'translate-y-0' : 'translate-y-full', dragOffset ? '' : 'transition-transform duration-300']"
       :style="{
@@ -122,7 +147,7 @@ function requestClose() {
     >
 
       <!-- Sheet header -->
-      <div class="sticky top-0 z-10 bg-court-900 border-b border-court-700 px-4 py-4 flex items-center gap-3">
+      <div ref="modalHeaderRef" class="sticky top-0 z-10 bg-court-900 border-b border-court-700 px-4 py-4 flex items-center gap-3">
         <!-- Avatar -->
         <div class="w-9 h-9 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-court-700">
           <img
@@ -148,6 +173,18 @@ function requestClose() {
         </button>
       </div>
 
+      <GroupOverlayPanel
+        v-if="data"
+        :groups="data.groups"
+        :wildcards="data.wildcards"
+        :resolve-flag="resolveTeamFlag"
+        :get-group-card-refs="getGroupCardRefs"
+        :get-wildcards-section-el="getWildcardsSectionEl"
+        :get-anchor-el="getAnchorEl"
+        :get-scroll-target="getScrollTarget"
+        :mobile-only="false"
+      />
+
       <!-- Content -->
       <div class="px-4 py-5">
         <!-- Loading -->
@@ -165,6 +202,7 @@ function requestClose() {
         <!-- Picks summary -->
         <PicksSummary
           v-else
+          ref="picksSummaryRef"
           :groups="data.groups"
           :wildcards="data.wildcards"
           :props="data.props"
