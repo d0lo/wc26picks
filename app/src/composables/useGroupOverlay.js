@@ -25,10 +25,10 @@ export function useGroupOverlay({
   const pinnedGroups = ref([])
   const anchorTop = ref(0)
 
-  let lastExpandedOverlayHeight = 0
   let cachedRowHeight = 40
   let leaveAnimating = false
   let leaveTimer = null
+  let pendingCollapse = null
 
   watch(() => pinnedGroups.value.length, (n, o) => {
     if (n < o) {
@@ -51,13 +51,19 @@ export function useGroupOverlay({
   }
 
   function setOverlayCollapsed(val) {
-    if (overlayCollapsed.value === val) return
+    // Guard against re-entrant calls firing mid-transition: scroll events
+    // keep arriving while the expand path's nextTicks are still pending,
+    // and overlayCollapsed.value doesn't flip until partway through —
+    // without this, a second call restarts the animation from a stale
+    // "from" height, which visibly flickers.
+    if (overlayCollapsed.value === val || pendingCollapse === val) return
     const el = overlayRef.value
     if (!el) return
+    pendingCollapse = val
     if (val) {
       const from = el.offsetHeight
       overlayCollapsed.value = true
-      animateOverlayHeight(el, from, 36, false, () => { overlayContentVisible.value = true })
+      animateOverlayHeight(el, from, 36, false, () => { overlayContentVisible.value = true; pendingCollapse = null })
     } else {
       overlayContentVisible.value = false
       nextTick(() => {
@@ -65,7 +71,7 @@ export function useGroupOverlay({
         overlayCollapsed.value = false
         nextTick(() => {
           const to = overlayGridRef.value?.offsetHeight ?? from
-          animateOverlayHeight(el, from, to, true, null)
+          animateOverlayHeight(el, from, to, true, () => { pendingCollapse = null })
         })
       })
     }
@@ -101,14 +107,16 @@ export function useGroupOverlay({
 
     if (!overlayRef.value) return
     const overlayRect = overlayRef.value.getBoundingClientRect()
-    if (!overlayCollapsed.value) lastExpandedOverlayHeight = overlayRect.height
 
     const wcEl = getWildcardsSectionEl?.()
-    if (wcEl && lastExpandedOverlayHeight) {
-      // Boundary is the bottom edge of the FULLY EXPANDED overlay, even while
-      // currently collapsed — keeps the collapse/expand trigger symmetric
-      // instead of comparing against the already-shrunk ticker height.
-      const expandedBottom = overlayRect.top + lastExpandedOverlayHeight
+    // overlayGridRef's own height is never touched by the collapse/expand
+    // animation (only the outer overlayRef's inline height is), so it's a
+    // stable read of "how tall the overlay would be fully expanded" even
+    // mid-transition — unlike overlayRef's own rect, which would otherwise
+    // feed back a half-animated height into the boundary calc and flicker.
+    const expandedHeight = overlayGridRef.value?.getBoundingClientRect().height
+    if (wcEl && expandedHeight) {
+      const expandedBottom = overlayRect.top + expandedHeight
       const wcTop = wcEl.getBoundingClientRect().top
       if (!overlayCollapsed.value && wcTop < expandedBottom) setOverlayCollapsed(true)
       else if (overlayCollapsed.value && wcTop > expandedBottom) setOverlayCollapsed(false)
