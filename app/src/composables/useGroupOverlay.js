@@ -86,24 +86,36 @@ export function useGroupOverlay({
     if (!refs) return
 
     const rowCount = Math.ceil(pinnedGroups.value.length / columns)
-    if (overlayRef.value && rowCount > 0 && !overlayCollapsed.value && !leaveAnimating) {
+    // Skip while a collapse/expand transition is in flight (pendingCollapse
+    // !== null): overlayRef's height is mid-animation then, so sampling it
+    // would feed a moving target into cachedRowHeight and make the
+    // about-to-reveal rows flicker as the threshold shifts under them.
+    if (overlayRef.value && rowCount > 0 && !overlayCollapsed.value && !leaveAnimating && pendingCollapse === null) {
       const h = overlayRef.value.getBoundingClientRect().height
       if (h > 0) cachedRowHeight = h / rowCount
     }
     const rowHeight = cachedRowHeight
 
-    const newRows = []
-    const pairRows = []
-    for (let i = 0; i < GROUPS.length; i += columns) pairRows.push(GROUPS.slice(i, i + columns))
-    for (const row of pairRows) {
-      const el = refs[row[0]]
-      if (!el) break
-      const r = el.getBoundingClientRect()
-      const threshold = headerBottom + (newRows.length + 1) * rowHeight
-      if ((r.top + r.bottom) / 2 < threshold) newRows.push(row)
-      else break
+    // Also freeze which rows are pinned while a transition is in flight: the
+    // container is animating toward a height computed for a specific row
+    // set, so letting that set change mid-flight (firing the rows'
+    // enter/leave transitions at the same time the container is resizing)
+    // is what reads as the last row(s) flickering. Catches up the instant
+    // the transition completes.
+    if (pendingCollapse === null) {
+      const newRows = []
+      const pairRows = []
+      for (let i = 0; i < GROUPS.length; i += columns) pairRows.push(GROUPS.slice(i, i + columns))
+      for (const row of pairRows) {
+        const el = refs[row[0]]
+        if (!el) break
+        const r = el.getBoundingClientRect()
+        const threshold = headerBottom + (newRows.length + 1) * rowHeight
+        if ((r.top + r.bottom) / 2 < threshold) newRows.push(row)
+        else break
+      }
+      pinnedGroups.value = newRows.flat()
     }
-    pinnedGroups.value = newRows.flat()
 
     if (!overlayRef.value) return
     const overlayRect = overlayRef.value.getBoundingClientRect()
