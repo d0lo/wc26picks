@@ -44,6 +44,10 @@ export function scoresQueryOptions() {
       return snap.docs.map(d => ({ id: d.id, ...d.data() }))
     },
     staleTime: 0,
+    // Override the app-wide refetchOnWindowFocus:false default — scores are
+    // the one query meant to stay maximally fresh, so returning to a
+    // backgrounded tab should trigger a refetch.
+    refetchOnWindowFocus: true,
   }
 }
 
