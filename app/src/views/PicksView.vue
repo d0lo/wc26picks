@@ -338,17 +338,6 @@ const POS_COLORS = [
     <!-- ── Content ── -->
     <div class="max-w-2xl mx-auto px-4 pt-4 pb-10">
 
-    <button
-      v-if="isUpdate"
-      @click="router.push('/leaderboard')"
-      class="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-medium transition-colors mt-3 mb-1"
-    >
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M19 12H5"/><path d="M12 5l-7 7 7 7"/>
-      </svg>
-      Back to Home
-    </button>
-
     <!-- ── SECTION 1: Group Standings ── -->
     <div v-if="!loaded" class="flex justify-center py-20">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
