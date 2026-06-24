@@ -104,13 +104,14 @@ export function useGroupOverlay({
     if (!overlayCollapsed.value) lastExpandedOverlayHeight = overlayRect.height
 
     const wcEl = getWildcardsSectionEl?.()
-    if (!overlayCollapsed.value && wcEl) {
-      const r = wcEl.getBoundingClientRect()
-      if ((r.top + r.bottom) / 2 < overlayRect.bottom) setOverlayCollapsed(true)
-    }
-    if (overlayCollapsed.value && wcEl && lastExpandedOverlayHeight) {
+    if (wcEl && lastExpandedOverlayHeight) {
+      // Boundary is the bottom edge of the FULLY EXPANDED overlay, even while
+      // currently collapsed — keeps the collapse/expand trigger symmetric
+      // instead of comparing against the already-shrunk ticker height.
       const expandedBottom = overlayRect.top + lastExpandedOverlayHeight
-      if (wcEl.getBoundingClientRect().top > expandedBottom) setOverlayCollapsed(false)
+      const wcTop = wcEl.getBoundingClientRect().top
+      if (!overlayCollapsed.value && wcTop < expandedBottom) setOverlayCollapsed(true)
+      else if (overlayCollapsed.value && wcTop > expandedBottom) setOverlayCollapsed(false)
     }
   }
 
