@@ -31,6 +31,14 @@ provide('picksLocked', picksLocked)
 provide('picksLockTime', picksLockTime)
 provide('hasSubmitted', hasSubmitted)
 
+// Lets any view open the global ProfileModal directly into edit-name mode
+// (e.g. the inline pencil button next to "you" on the leaderboard).
+function openProfile(editMode = false) {
+  editNameMode.value = editMode
+  showProfile.value = true
+}
+provide('openProfile', openProfile)
+
 // Show header + tab bar on all authenticated pages except login/username
 const showChrome = computed(() =>
   !!user.value && !['/login', '/username'].includes(route.path)
@@ -136,7 +144,7 @@ function onNameSaved() {
 
     <template v-else>
       <!-- Persistent header (authenticated non-auth pages) -->
-      <AppHeader v-if="showChrome" :user="user" @profile="showProfile = true" />
+      <AppHeader v-if="showChrome" :user="user" @profile="openProfile(false)" />
 
       <!-- Profile modal (global) -->
       <ProfileModal
