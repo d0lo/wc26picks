@@ -4,9 +4,10 @@ import { useRouter } from 'vue-router'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { GROUP_TEAMS, GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
+import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
-import { pickQueryOptions, configQueryOptions, queryKeys } from '../queries.js'
+import { pickQueryOptions, queryKeys } from '../queries.js'
+import { useScoring } from '../composables/useScoring.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
@@ -184,23 +185,10 @@ function wcDisabled(group) {
 }
 
 // ── Scoring config (admin-editable point values, read-only here) ───────
-const configQuery = useQuery(configQueryOptions())
-const scoring = computed(() => configQuery.data.value?.scoring ?? null)
-const groupExactLabel = computed(() => {
-  const g = scoring.value?.groupExact
-  return g ? `${g[1]} · ${g[2]} · ${g[3]} · ${g[4]} pts` : '– pts'
-})
+const { scoring, propsByCategory, groupExactLabel } = useScoring()
 
 // ── Progress ───────────────────────────────────────────────────────────
 const doneProps = computed(() => PROPS.filter(p => propAnswers[p.key] !== '').length)
-const propsByCategory = computed(() =>
-  orderedPropCategories()
-    .map(c => ({
-      ...c,
-      props: PROPS.filter(p => p.category === c.key).map(p => ({ ...p, points: scoring.value?.props?.[p.key] ?? null })),
-    }))
-    .filter(c => c.props.length)
-)
 const canSubmit = computed(
   () => !picksLocked.value && wildcards.value.length === 8 && doneProps.value === PROPS.length
 )

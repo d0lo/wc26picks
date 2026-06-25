@@ -1,9 +1,8 @@
 <script setup>
-import { reactive, ref, computed } from 'vue'
-import { useQuery } from '@tanstack/vue-query'
-import { GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
+import { reactive, ref } from 'vue'
+import { GROUPS, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
-import { configQueryOptions } from '../queries.js'
+import { useScoring } from '../composables/useScoring.js'
 
 defineProps({
   groups: Object,    // { A: [uuid1, uuid2, uuid3, uuid4], ... }
@@ -16,17 +15,7 @@ for (const [teamName, players] of Object.entries(ROSTERS)) {
   for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
 }
 
-const configQuery = useQuery(configQueryOptions())
-const scoring = computed(() => configQuery.data.value?.scoring ?? null)
-
-const propsByCategory = computed(() =>
-  orderedPropCategories()
-    .map(c => ({
-      ...c,
-      props: PROPS.filter(p => p.category === c.key).map(p => ({ ...p, points: scoring.value?.props?.[p.key] ?? null })),
-    }))
-    .filter(c => c.props.length)
-)
+const { propsByCategory } = useScoring()
 
 const groupCardRefs = reactive({})
 const wildcardsSectionRef = ref(null)

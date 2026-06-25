@@ -4,9 +4,10 @@ import { useRouter } from 'vue-router'
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import PicksHeader from '../components/PicksHeader.vue'
 import { db } from '../firebase.js'
-import { GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
+import { GROUPS, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import ProfileModal from '../components/ProfileModal.vue'
+import { useScoring } from '../composables/useScoring.js'
 
 // Build player-by-id lookup
 const PLAYER_BY_ID = {}
@@ -14,9 +15,7 @@ for (const [teamName, players] of Object.entries(ROSTERS)) {
   for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
 }
 
-const propsByCategory = computed(() =>
-  orderedPropCategories().map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
-)
+const { propsByCategory } = useScoring()
 
 const showProfile = ref(false)
 const editNameMode = ref(false)
@@ -489,7 +488,7 @@ function fmtDate(ts) {
               <div v-for="prop in cat.props" :key="prop.key" class="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
                 <div class="shrink-0">
                   <div class="text-[11px] text-zinc-400">{{ prop.label }}</div>
-                  <div class="text-[10px] text-amber-400/60 font-mono">{{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}</div>
+                  <div v-if="prop.points != null" class="text-[10px] text-amber-400/60 font-mono">{{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}</div>
                 </div>
                 <div class="text-[11px] text-right text-white font-medium flex items-center gap-1 justify-end">
                   <template v-if="prop.type === 'player' && submission.props[prop.key]">
