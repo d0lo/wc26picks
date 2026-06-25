@@ -117,8 +117,7 @@ Base: `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/`
 
 | Endpoint | Used by |
 |---|---|
-| `GET /scoreboard` | Feature 1 — polled every 60s during match windows |
-| `GET /scoreboard?dates=YYYYMMDD` | Feature 1 — next-day prefetch |
+| `GET /scoreboard` | Feature 1 — fetched by the self-gating poller (see below), not a fixed window |
 | `GET /teams` | Feature 1 setup — maps team names to ESPN IDs |
 | `GET /teams/{id}/roster` | Feature 4 — player stats attribution |
 | `GET /summary?event={eventId}` | Features 1, 2, 3, 4 — full match detail |
@@ -134,9 +133,12 @@ Key field: `events[].status.type.state` → `"pre"` / `"in"` / `"post"` — use 
 All live data lives under a single `liveData` collection to keep read costs minimal.
 
 ```
-liveData/scoreboard               written every ~60s by Feature 1 scheduler
+liveData/scoreboard               written by Feature 1's self-gating poller (see below)
   today: string                   YYYYMMDD of last write
   events: EventSummary[]          one per match (see shape below)
+  scheduleDate: string             YYYYMMDD the cached kickoffs[] belongs to
+  kickoffs: { eventId, date, state }[]  per-match kickoff cache, used to decide when to wake
+  state: "idle" | "polling"        "polling" = at least one match is "in" as of the last fetch
 
 liveData/matches/{eventId}        written once per match by Feature 1 trigger
   eventId: string
@@ -181,14 +183,18 @@ group: string   e.g. "Group A"
 ### Feature 1 — Live Match Engine (`feature/live-match-engine`)
 
 **What to build:**
-- Cloud Scheduled Function `espnScoreboardPoller` — runs every 60s during match hours (14:00–23:00 UTC on match days). Fetches ESPN `/scoreboard`, normalises the response, writes to `liveData/scoreboard`.
+- Cloud Scheduled Function `espnPoller` — runs every minute, all day, every day. Each tick is a single cheap Firestore read that decides whether an ESPN call is actually warranted this minute (see gating logic below); most ticks short-circuit with no ESPN call. When it does fetch, it normalises the response and writes to `liveData/scoreboard`.
 - Cloud Firestore Trigger `onScoreboardWrite` — on each scoreboard write, for any match that flipped to `state: "in"` or `"post"` since the previous write, fetch ESPN `/summary?event={id}` and write to `liveData/matches/{eventId}`. Also update `liveData/groups/{letter}` from the standings block in the summary.
 - Vue component `<LiveScoreboard>` — subscribes to `liveData/scoreboard` via `onSnapshot`. Renders a card grid of today's matches: team crests, score, live clock or kickoff time, status badge. Stateless/dumb — all data flows in as props from the parent that owns the listener.
-- Wire `<LiveScoreboard>` into `DashboardView` above the leaderboard.
+- Wire `<LiveScoreboard>` into `LiveView` (the actual "Live" tab — `DashboardView` is dead code, not in the router).
 
 **Cloud Functions location:** `firebase/functions/` — init with `firebase init functions` using JavaScript if the directory doesn't exist yet.
 
-**Scheduling note:** Use Firebase `pubsub.schedule` with `timeZone: "UTC"`. Only poll when there are matches — check `liveData/scoreboard.today` to skip unnecessary ESPN calls on off-days.
+**Polling strategy — goal: exactly one active polling chain runs while matches are ongoing, woken by kickoff time, asleep otherwise.** No fixed match-hours window, no client-driven fetching. `liveData/scoreboard` carries `scheduleDate`, `kickoffs[]` (cached per-match kickoff times + last-known state), and `state: "idle" | "polling"`. Each minute's tick fetches ESPN only if:
+  1. `state === "polling"` — a chain is already live; its regular tick already covers every match for the day at once, so a second match kicking off mid-chain does **not** trigger an extra fetch — the active chain picks it up on its next tick.
+  2. the cached `scheduleDate` isn't today — fetch once to learn today's kickoff times (also catches a cold-start mid-day where a match is already "in").
+  3. a cached kickoff time has passed and that match isn't `"post"` yet — this is the "first fetch at kickoff" trigger; if the real kickoff is delayed, it just checks again next minute until the state actually flips.
+  After any fetch, recompute `state`: `"polling"` if any event is `"in"`, else `"idle"` — so the chain stops itself the instant the last match of the day finishes, rather than running until a fixed end-of-window time.
 
 ---
 
