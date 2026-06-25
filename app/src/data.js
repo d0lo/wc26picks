@@ -184,7 +184,7 @@ export const PROPS = [
   { key: 'youngPlayer',     label: 'Young Player of the Tournament',     type: 'player', points: 4, hint: 'Best U-21 player', maxAge: 21, category: 'tournament' },
   { key: 'breakoutPlayer',  label: 'Breakout Player of the Tournament',  type: 'player', points: 6, hint: 'The under-the-radar player who has a standout tournament (media consensus)', category: 'tournament' },
   { key: 'mostGroupGoals',  label: 'Most Goals in Group Stage',          type: 'team',   points: 3, hint: 'Team that scores the most goals in the group stage', category: 'group' },
-  { key: 'hatTrickScorer',  label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'First player to score a hat trick', category: 'tournament' },
+  { key: 'hatTrickScorer',  label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'Player to score a hat trick', category: 'tournament' },
   { key: 'mostAssists',     label: 'Most Assists',                       type: 'player', points: 4, hint: 'Player with the most assists', category: 'tournament' },
   { key: 'mostYellowCards', label: 'Team with Most Yellow Cards',        type: 'team',   points: 3, hint: 'Most disciplinary cards received', category: 'tournament' },
   { key: 'cleanGroupTeam',  label: 'Clean Group',                        type: 'team',   points: 5, hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team', category: 'group' },
