@@ -66,7 +66,7 @@ function normalizeStandingEntry(entry) {
   }
 }
 
-// Maps an ESPN /summary response into the liveData/matches/{eventId} doc
+// Maps an ESPN /summary response into the matches/{eventId} doc
 // (eventId, fetchedAt added by the caller, which owns the Firestore timestamp).
 export function normalizeMatch(summary) {
   const comp = summary.header.competitions[0]
@@ -95,23 +95,27 @@ export function normalizeMatch(summary) {
       }
     })
 
-  const rosters = (summary.rosters || []).map((side) =>
-    (side.roster || []).map((p) => ({
+  // Firestore arrays can't directly contain other arrays, so each side is
+  // wrapped in a map keyed by homeAway instead of a bare nested array.
+  const rosters = (summary.rosters || []).map((side) => ({
+    homeAway: side.homeAway,
+    players: (side.roster || []).map((p) => ({
       playerId: p.athlete?.id ?? null,
       name: p.athlete?.displayName ?? null,
       starter: !!p.starter,
       position: p.position?.abbreviation ?? null,
       jersey: p.jersey ?? null,
-    }))
-  )
+    })),
+  }))
 
-  const teamStats = (summary.boxscore?.teams || []).map((t) =>
-    (t.statistics || []).map((s) => ({
+  const teamStats = (summary.boxscore?.teams || []).map((t) => ({
+    homeAway: t.homeAway,
+    stats: (t.statistics || []).map((s) => ({
       name: s.name,
       label: s.label,
       displayValue: s.displayValue,
-    }))
-  )
+    })),
+  }))
 
   const groupStandings = (summary.standings?.groups?.[0]?.standings?.entries || []).map(normalizeStandingEntry)
 

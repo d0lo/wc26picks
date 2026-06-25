@@ -81,7 +81,7 @@ async function processMatchUpdate(eventId) {
     const summary = await fetchSummary(eventId)
     const match = normalizeMatch(summary)
 
-    await db.doc(`liveData/matches/${eventId}`).set(
+    await db.doc(`matches/${eventId}`).set(
       { eventId, fetchedAt: FieldValue.serverTimestamp(), ...match },
       { merge: true }
     )
@@ -91,7 +91,7 @@ async function processMatchUpdate(eventId) {
       const letter = parseGroupLetter(groupName)
       if (letter) {
         await db
-          .doc(`liveData/groups/${letter}`)
+          .doc(`groups/${letter}`)
           .set({ letter, updatedAt: FieldValue.serverTimestamp(), entries: match.groupStandings }, { merge: true })
       }
     }
