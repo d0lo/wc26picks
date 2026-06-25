@@ -15,6 +15,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.1'
+
       - name: Bump version
         run: |
           # Skip if this is the version bump commit itself
