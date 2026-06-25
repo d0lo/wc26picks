@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
+import { GROUP_TEAMS, GROUPS, PROPS, PROP_CATEGORIES, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import { pickQueryOptions, queryKeys } from '../queries.js'
 import CountrySelect from '../components/CountrySelect.vue'
@@ -185,6 +185,9 @@ function wcDisabled(group) {
 
 // ── Progress ───────────────────────────────────────────────────────────
 const doneProps = computed(() => PROPS.filter(p => propAnswers[p.key] !== '').length)
+const propsByCategory = computed(() =>
+  PROP_CATEGORIES.map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
+)
 const canSubmit = computed(
   () => !picksLocked.value && wildcards.value.length === 8 && doneProps.value === PROPS.length
 )
@@ -478,15 +481,19 @@ const POS_COLORS = [
       </div>
     </section>
 
-    <!-- ── SECTION 3: Group Stage Props ── -->
-    <section ref="propsSectionRef" class="mb-10">
+    <!-- ── SECTION 3: Props (by category) ── -->
+    <section
+      v-for="cat in propsByCategory" :key="cat.key"
+      :ref="cat.key === 'group' ? 'propsSectionRef' : undefined"
+      class="mb-10"
+    >
       <div class="flex items-baseline justify-between mb-5">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Group Stage Props</h2>
-        <span class="text-[10px] text-zinc-400 font-mono">3–10 pts</span>
+        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">{{ cat.label }}</h2>
+        <span class="text-[10px] text-zinc-400 font-mono">{{ Math.min(...cat.props.map(p => p.points)) }}–{{ Math.max(...cat.props.map(p => p.points)) }} pts</span>
       </div>
       <div class="space-y-2">
         <div
-          v-for="prop in PROPS" :key="prop.key"
+          v-for="prop in cat.props" :key="prop.key"
           class="bg-court-800 border border-court-700 rounded-2xl p-4"
         >
           <div class="relative mb-3">

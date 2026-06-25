@@ -1,6 +1,6 @@
 <script setup>
-import { reactive, ref } from 'vue'
-import { GROUPS, PROPS, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
+import { reactive, ref, computed } from 'vue'
+import { GROUPS, PROPS, PROP_CATEGORIES, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 
 defineProps({
@@ -13,6 +13,10 @@ const PLAYER_BY_ID = {}
 for (const [teamName, players] of Object.entries(ROSTERS)) {
   for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
 }
+
+const propsByCategory = computed(() =>
+  PROP_CATEGORIES.map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
+)
 
 const groupCardRefs = reactive({})
 const wildcardsSectionRef = ref(null)
@@ -67,36 +71,38 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
       </div>
     </section>
 
-    <!-- Group Stage Props — individual cards -->
-    <section v-if="props">
-      <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Group Stage Props</h2>
-      <div class="space-y-2">
-        <div
-          v-for="prop in PROPS" :key="prop.key"
-          class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
-        >
-          <div class="min-w-0">
-            <div class="text-[11px] text-zinc-400 mb-0.5">{{ prop.label }}</div>
-            <div class="text-sm font-bold text-white truncate flex items-center gap-1">
-              <template v-if="prop.type === 'player' && props[prop.key]">
-                <span>{{ TEAM_FLAG[PLAYER_BY_ID[props[prop.key]]?.team] ?? '' }}</span>
-                <span>{{ PLAYER_BY_ID[props[prop.key]]?.name ?? '—' }}</span>
-              </template>
-              <template v-else-if="prop.type === 'team' && props[prop.key] !== null && props[prop.key]">
-                <span>{{ TEAM_BY_ID[props[prop.key]]?.flag ?? '🏳️' }}</span>
-                <span>{{ TEAM_BY_ID[props[prop.key]]?.name }}</span>
-              </template>
-              <template v-else>
-                <span>{{ props[prop.key] === null ? '🚫 No Team' : '—' }}</span>
-              </template>
+    <!-- Props — individual cards, grouped by category -->
+    <template v-if="props">
+      <section v-for="cat in propsByCategory" :key="cat.key">
+        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">{{ cat.label }}</h2>
+        <div class="space-y-2">
+          <div
+            v-for="prop in cat.props" :key="prop.key"
+            class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
+          >
+            <div class="min-w-0">
+              <div class="text-[11px] text-zinc-400 mb-0.5">{{ prop.label }}</div>
+              <div class="text-sm font-bold text-white truncate flex items-center gap-1">
+                <template v-if="prop.type === 'player' && props[prop.key]">
+                  <span>{{ TEAM_FLAG[PLAYER_BY_ID[props[prop.key]]?.team] ?? '' }}</span>
+                  <span>{{ PLAYER_BY_ID[props[prop.key]]?.name ?? '—' }}</span>
+                </template>
+                <template v-else-if="prop.type === 'team' && props[prop.key] !== null && props[prop.key]">
+                  <span>{{ TEAM_BY_ID[props[prop.key]]?.flag ?? '🏳️' }}</span>
+                  <span>{{ TEAM_BY_ID[props[prop.key]]?.name }}</span>
+                </template>
+                <template v-else>
+                  <span>{{ props[prop.key] === null ? '🚫 No Team' : '—' }}</span>
+                </template>
+              </div>
+            </div>
+            <div class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
+              {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
             </div>
           </div>
-          <div class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
-            {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
-          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </template>
 
   </div>
 </template>

@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import PicksHeader from '../components/PicksHeader.vue'
 import { db } from '../firebase.js'
-import { GROUPS, PROPS, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
+import { GROUPS, PROPS, PROP_CATEGORIES, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import ProfileModal from '../components/ProfileModal.vue'
 
@@ -13,6 +13,10 @@ const PLAYER_BY_ID = {}
 for (const [teamName, players] of Object.entries(ROSTERS)) {
   for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
 }
+
+const propsByCategory = computed(() =>
+  PROP_CATEGORIES.map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
+)
 
 const showProfile = ref(false)
 const editNameMode = ref(false)
@@ -475,11 +479,14 @@ function fmtDate(ts) {
             </div>
           </div>
 
-          <!-- Props -->
-          <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
-            <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-3">Group Stage Props</div>
+          <!-- Props, grouped by category -->
+          <div
+            v-for="cat in propsByCategory" :key="cat.key"
+            class="bg-court-800 border border-court-700 rounded-2xl p-4"
+          >
+            <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-3">{{ cat.label }}</div>
             <div class="divide-y divide-court-700">
-              <div v-for="prop in PROPS" :key="prop.key" class="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+              <div v-for="prop in cat.props" :key="prop.key" class="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
                 <div class="shrink-0">
                   <div class="text-[11px] text-zinc-400">{{ prop.label }}</div>
                   <div class="text-[10px] text-amber-400/60 font-mono">{{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}</div>
