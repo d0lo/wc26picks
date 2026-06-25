@@ -13,45 +13,48 @@ function utcDateString(date) {
   return date.toISOString().slice(0, 10).replace(/-/g, '')
 }
 
-// Runs every minute, 14:00-23:00 UTC (the daily World Cup match window).
-// Skips the actual ESPN call once we already know today has no matches, via
-// either today's own first poll or yesterday's next-day prefetch.
-export const espnScoreboardPoller = onSchedule({ schedule: '* 14-23 * * *', timeZone: 'UTC' }, async () => {
+// Decides whether this tick is worth an ESPN call. Three cases:
+//   - a match is already live ("polling" state) — always fetch, the single
+//     active chain's regular tick covers every match for the day at once,
+//     including any other match that kicks off while this one is still live.
+//   - we haven't learned today's schedule yet — fetch once to pick it up
+//     (also catches a match already "in" if this is a cold start mid-day).
+//   - a cached kickoff time has passed and that match isn't "post" yet —
+//     fetch to see if it actually started (handles real-world kickoff delay
+//     by simply checking again next minute until it flips to "in"/"post").
+function shouldFetch(data, today, now) {
+  if (data?.state === 'polling') return true
+  if (data?.scheduleDate !== today) return true
+  return (data?.kickoffs ?? []).some((k) => k.state !== 'post' && now >= new Date(k.date).getTime())
+}
+
+// Runs every minute, all day. Almost every tick is a single cheap Firestore
+// read that short-circuits with no ESPN call — the goal is exactly one
+// active "polling" chain covering all of today's matches at once, woken by
+// the nearest kickoff time and put back to sleep the instant nothing is live.
+export const espnPoller = onSchedule({ schedule: '* * * * *', timeZone: 'UTC' }, async () => {
   const scoreboardRef = db.doc('liveData/scoreboard')
   const today = utcDateString(new Date())
   const data = (await scoreboardRef.get()).data()
 
-  if (data?.today === today && data.hasMatches === false) {
-    logger.info(`No matches today (${today}) — skipping ESPN poll`)
-    return
-  }
-  if (data?.today !== today && data?.nextDay?.date === today && data.nextDay.hasMatches === false) {
-    await scoreboardRef.set(
-      { today, events: [], hasMatches: false, updatedAt: FieldValue.serverTimestamp() },
-      { merge: true }
-    )
-    logger.info(`Prefetch confirmed no matches today (${today}) — skipping ESPN poll`)
-    return
-  }
+  if (!shouldFetch(data, today, Date.now())) return
 
   const raw = await fetchScoreboard()
   const events = (raw.events || []).map(normalizeEvent)
+  const state = events.some((e) => e.status.state === 'in') ? 'polling' : 'idle'
+
   await scoreboardRef.set(
-    { today, events, hasMatches: events.length > 0, updatedAt: FieldValue.serverTimestamp() },
+    {
+      today,
+      scheduleDate: today,
+      events,
+      hasMatches: events.length > 0,
+      kickoffs: events.map((e) => ({ eventId: e.id, date: e.date, state: e.status.state })),
+      state,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
     { merge: true }
   )
-})
-
-// Runs once daily, shortly before the match window opens, so tomorrow's
-// off-day status (if any) is already known before the poller's first tick.
-export const espnNextDayPrefetch = onSchedule({ schedule: '50 13 * * *', timeZone: 'UTC' }, async () => {
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
-  const dateStr = utcDateString(tomorrow)
-  const raw = await fetchScoreboard(dateStr)
-  const events = raw.events || []
-  await db
-    .doc('liveData/scoreboard')
-    .set({ nextDay: { date: dateStr, hasMatches: events.length > 0 } }, { merge: true })
 })
 
 // Fires on every liveData/scoreboard write. For each match that just
