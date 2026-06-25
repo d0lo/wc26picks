@@ -34,7 +34,7 @@ watch(picksListQuery.data, (list) => {
   }
 }, { immediate: true })
 
-const selectedUser = ref(null)  // { uid, name, photoURL } | null
+const selectedUser = ref(null)  // { uid, name } | null
 
 const hasScores = computed(() => scores.value.length > 0)
 
@@ -76,8 +76,7 @@ function fmtDate(ts) {
 
 function openUser(s) {
   const uid = s.uid ?? s.id
-  if (uid === user.value?.uid) return
-  selectedUser.value = { uid, name: fmtName(s.name), photoURL: s.photoURL ?? null }
+  selectedUser.value = { uid, name: fmtName(s.name) }
 }
 
 // ── Sticky group overlay ───────────────────────────────────────────────
@@ -160,9 +159,9 @@ function resolveTeamFlag(teamId) {
           <div
             v-for="s in sortedSubmitters"
             :key="s.uid ?? s.id"
-            class="flex items-center gap-3 px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors"
+            class="flex items-center gap-3 px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors cursor-pointer"
             :class="[
-              (s.uid ?? s.id) === user?.uid ? 'bg-emerald-500/5' : 'hover:bg-court-700/20 cursor-pointer active:bg-court-700/30',
+              (s.uid ?? s.id) === user?.uid ? 'bg-emerald-500/5 hover:bg-emerald-500/10 active:bg-emerald-500/15' : 'hover:bg-court-700/20 active:bg-court-700/30',
             ]"
             @click="openUser(s)"
           >
@@ -198,9 +197,9 @@ function resolveTeamFlag(teamId) {
           <div
             v-for="(s, i) in scores"
             :key="s.id"
-            class="grid items-center px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors"
+            class="grid items-center px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors cursor-pointer"
             :class="[
-              s.id === user?.uid ? 'bg-emerald-500/5' : 'hover:bg-court-700/20 cursor-pointer active:bg-court-700/30',
+              s.id === user?.uid ? 'bg-emerald-500/5 hover:bg-emerald-500/10 active:bg-emerald-500/15' : 'hover:bg-court-700/20 active:bg-court-700/30',
             ]"
             style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 4rem"
             @click="openUser(s)"
@@ -255,7 +254,6 @@ function resolveTeamFlag(teamId) {
         v-if="selectedUser"
         :uid="selectedUser.uid"
         :name="selectedUser.name"
-        :photoURL="selectedUser.photoURL"
         @close="selectedUser = null"
       />
     </div><!-- end content wrapper -->

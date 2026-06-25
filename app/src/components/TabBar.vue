@@ -140,9 +140,15 @@ const indicatorStyle = computed(() => {
       transition: 'none',
     }
   }
+  // The pill has 6px of horizontal padding (px-1.5) that the flex buttons
+  // sit inset by, but isn't part of a plain 100%-based split — so the
+  // indicator's slot has to subtract that 12px before dividing, or outer
+  // tabs drift off-center while the middle tab (where the error cancels
+  // out by symmetry) looks fine.
+  const n = visibleTabs.value.length
   return {
-    width: `calc(${100 / visibleTabs.value.length}% - 6px)`,
-    left: `calc(${activeIndex.value * (100 / visibleTabs.value.length)}% + 3px)`,
+    width: `calc((100% - 12px) / ${n} - 6px)`,
+    left: `calc((100% - 12px) / ${n} * ${activeIndex.value} + 9px)`,
     transform,
     transition:
       'left 300ms cubic-bezier(0.34, 1.56, 0.64, 1), width 300ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1)',

@@ -9,7 +9,6 @@ import GroupOverlayPanel from './GroupOverlayPanel.vue'
 const props = defineProps({
   uid: String,
   name: String,
-  photoURL: String,
 })
 const emit = defineEmits(['close'])
 
@@ -196,13 +195,7 @@ function requestClose() {
         <div class="px-4 pb-4 flex items-center gap-3">
           <!-- Avatar -->
           <div class="w-9 h-9 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-court-700">
-            <img
-              v-if="photoURL"
-              :src="photoURL"
-              class="w-full h-full object-cover"
-              referrerpolicy="no-referrer"
-            />
-            <span v-else class="text-sm font-bold text-white">{{ name?.[0] ?? '?' }}</span>
+            <span class="text-sm font-bold text-white">{{ name?.[0] ?? '?' }}</span>
           </div>
           <!-- Name -->
           <span class="flex-1 text-sm font-bold text-white truncate">{{ name }}</span>
