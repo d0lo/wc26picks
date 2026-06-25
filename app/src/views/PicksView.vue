@@ -409,11 +409,11 @@ const POS_COLORS = [
               <!-- Flag -->
               <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
 
-              <!-- Team name -->
-              <span class="text-xs font-medium text-white flex-1 truncate">{{ team }}</span>
-
-              <!-- FIFA rank -->
-              <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
+              <!-- Team name + FIFA rank -->
+              <span class="flex-1 min-w-0 flex items-center gap-1.5">
+                <span class="text-xs font-medium text-white truncate">{{ team }}</span>
+                <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
+              </span>
 
               <!-- Drag handle -->
               <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">

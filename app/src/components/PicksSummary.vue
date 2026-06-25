@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, ref, computed } from 'vue'
-import { GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
+import { GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 
 defineProps({
@@ -44,10 +44,13 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
                 :class="['text-amber-400','text-zinc-400','text-amber-700','text-zinc-400'][i]"
               >{{ i + 1 }}</span>
               <span class="text-base leading-none shrink-0">{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
-              <span
-                class="truncate"
-                :class="i < 2 || (i === 2 && wildcards?.includes(g)) ? 'text-white font-bold' : 'text-zinc-300'"
-              >{{ TEAM_BY_ID[teamId]?.name ?? teamId }}</span>
+              <span class="flex items-center gap-1 min-w-0 flex-1">
+                <span
+                  class="truncate"
+                  :class="i < 2 || (i === 2 && wildcards?.includes(g)) ? 'text-white font-bold' : 'text-zinc-300'"
+                >{{ TEAM_BY_ID[teamId]?.name ?? teamId }}</span>
+                <span class="text-[8px] text-zinc-500 font-mono shrink-0">#{{ FIFA_RANKING[TEAM_BY_ID[teamId]?.name] ?? '–' }}</span>
+              </span>
             </div>
           </div>
         </div>
