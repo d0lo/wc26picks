@@ -96,9 +96,11 @@ export function normalizeMatch(summary) {
     })
 
   // Firestore arrays can't directly contain other arrays, so each side is
-  // wrapped in a map keyed by homeAway instead of a bare nested array.
+  // wrapped in a map. Keyed by teamId (resolved the same way as competitors)
+  // rather than homeAway, so consumers never need to join through
+  // `competitors` just to find out which team a roster/stat-line belongs to.
   const rosters = (summary.rosters || []).map((side) => ({
-    homeAway: side.homeAway,
+    teamId: (resolveTeam(side.team?.id) ?? fallbackTeam(side.team)).id,
     players: (side.roster || []).map((p) => ({
       playerId: p.athlete?.id ?? null,
       name: p.athlete?.displayName ?? null,
@@ -109,7 +111,7 @@ export function normalizeMatch(summary) {
   }))
 
   const teamStats = (summary.boxscore?.teams || []).map((t) => ({
-    homeAway: t.homeAway,
+    teamId: (resolveTeam(t.team?.id) ?? fallbackTeam(t.team)).id,
     stats: (t.statistics || []).map((s) => ({
       name: s.name,
       label: s.label,

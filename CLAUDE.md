@@ -144,8 +144,8 @@ matches/{eventId}                 written once per match by Feature 1 trigger
   header: object                  from ESPN summary.header
   competitors: Competitor[]       both teams with final scores
   scoringPlays: ScoringPlay[]     goals with scorer, minute, running score
-  rosters: { homeAway, players: RosterEntry[] }[]   lineup for both teams (starter + subs)
-  teamStats: { homeAway, stats: TeamStat[] }[]      possession, shots, passes, etc.
+  rosters: { teamId, players: RosterEntry[] }[]     lineup for both teams (starter + subs)
+  teamStats: { teamId, stats: TeamStat[] }[]        possession, shots, passes, etc.
   groupStandings: StandingEntry[] group table at time of match
   status: { state, description }  "pre" | "in" | "post"
 
