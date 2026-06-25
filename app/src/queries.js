@@ -16,7 +16,8 @@ export const queryKeys = {
 //     groupExact: { 1: number, 2: number, 3: number, 4: number }  // pts per exact predicted position
 //     perfectGroupBonus: number                                   // bonus when all 4 positions are exact
 //     wildcard: number                                            // pts per correct 3rd-place-advances pick
-//     props: { [propKey]: number }                                // pts per prop, keyed by data.js PROPS[].key
+//     props: Array<{ key, label, hint, type, points, positionFilter?, maxAge?, allowNone?, category }>
+//       // full prop catalog — not just point values, see composables/useScoring.js
 //   }
 export function configQueryOptions() {
   return {

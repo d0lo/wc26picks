@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { GROUPS, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import { useScoring } from '../composables/useScoring.js'
+import PropPointsBadge from './PropPointsBadge.vue'
 
 defineProps({
   groups: Object,    // { A: [uuid1, uuid2, uuid3, uuid4], ... }
@@ -98,9 +99,7 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
                 </template>
               </div>
             </div>
-            <div v-if="prop.points != null" class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
-              {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
-            </div>
+            <PropPointsBadge :points="prop.points" class="shrink-0" />
           </div>
         </div>
       </section>

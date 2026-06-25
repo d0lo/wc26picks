@@ -1,22 +1,19 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
-import { PROPS, orderedPropCategories } from '../data.js'
+import { orderedPropCategories } from '../data.js'
 import { configQueryOptions } from '../queries.js'
 
-// Reads config/public.scoring and merges its per-prop point values onto the
-// static PROPS list, grouped by category — shared by every view/component
-// that renders prop point badges, so the merge logic can't drift out of
-// sync between them again.
+// Reads config/public.scoring — the full prop catalog plus point values —
+// and groups it by category. Shared by every view/component that renders
+// props (PicksView, PicksSummary) so the catalog has exactly one reader.
 export function useScoring() {
   const configQuery = useQuery(configQueryOptions())
   const scoring = computed(() => configQuery.data.value?.scoring ?? null)
+  const props = computed(() => scoring.value?.props ?? [])
 
   const propsByCategory = computed(() =>
     orderedPropCategories()
-      .map(c => ({
-        ...c,
-        props: PROPS.filter(p => p.category === c.key).map(p => ({ ...p, points: scoring.value?.props?.[p.key] ?? null })),
-      }))
+      .map(c => ({ ...c, props: props.value.filter(p => p.category === c.key) }))
       .filter(c => c.props.length)
   )
 
@@ -25,5 +22,5 @@ export function useScoring() {
     return g ? `${g[1]} · ${g[2]} · ${g[3]} · ${g[4]} pts` : '– pts'
   })
 
-  return { scoring, propsByCategory, groupExactLabel }
+  return { scoring, props, propsByCategory, groupExactLabel, isLoading: configQuery.isLoading }
 }
