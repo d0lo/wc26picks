@@ -67,5 +67,6 @@ jobs:
             channelId: live
             projectId: wc26picks
             entryPoint: ./firebase
+            firebaseToolsVersion: 15.22.1
           attempt_limit: 3
           attempt_delay: 5000
