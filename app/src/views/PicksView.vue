@@ -448,24 +448,17 @@ const POS_COLORS = [
           type="button"
           @click="!picksLocked && toggleWildcard(group)"
           :disabled="picksLocked || wcDisabled(group)"
-          class="relative text-left p-3 rounded-xl border transition-all duration-150"
+          class="relative text-left p-3 rounded-xl border transition-all duration-150 bg-court-800 border-court-700"
           :class="[
-            wildcards.includes(group)
-              ? 'bg-emerald-500/10 border-emerald-400/30 shadow-[0_0_16px_-4px_rgba(56,189,248,0.2)]'
-              : wcDisabled(group)
-                ? 'bg-court-800 border-court-700 opacity-30 cursor-not-allowed'
-                : 'bg-court-800 border-court-700 hover:border-zinc-600 cursor-pointer active:scale-[0.98]',
+            wcDisabled(group)
+              ? 'opacity-30 cursor-not-allowed'
+              : 'hover:border-zinc-600 cursor-pointer active:scale-[0.98]',
           ]"
         >
-          <div
-            class="text-[10px] font-black tracking-[0.2em] mb-0.5"
-            :class="wildcards.includes(group) ? 'text-emerald-400' : 'text-zinc-400'"
-          >GROUP {{ group }}</div>
+          <div class="text-[10px] font-black tracking-[0.2em] mb-0.5 text-emerald-400">GROUP {{ group }}</div>
           <div class="flex items-center gap-1.5">
             <span class="text-sm leading-none">{{ TEAM_FLAG[thirdOf(group)] ?? '🏳️' }}</span>
-            <div
-              class="text-xs font-semibold truncate"
-              :class="wildcards.includes(group) ? 'text-white' : 'text-zinc-300'"
+            <div class="text-xs font-semibold truncate text-white"
             >{{ thirdOf(group) }}<span class="text-zinc-400 font-normal"> · #{{ FIFA_RANKING[thirdOf(group)] ?? '–' }}</span></div>
           </div>
 

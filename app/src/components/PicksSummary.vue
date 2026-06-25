@@ -54,13 +54,13 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
       </div>
     </div>
 
-    <!-- Best 3rd-Place Teams — expanded emerald cards -->
+    <!-- Best 3rd-Place Teams -->
     <section v-if="wildcards?.length" ref="wildcardsSectionRef">
       <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Best 3rd-Place Teams</h2>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div
           v-for="g in [...wildcards].sort()" :key="g"
-          class="flex items-center gap-2 bg-emerald-500/10 border border-emerald-400/20 rounded-xl px-3 py-2.5"
+          class="flex items-center gap-2 bg-court-800 border border-court-700 rounded-xl px-3 py-2.5"
         >
           <span class="text-lg leading-none">{{ TEAM_BY_ID[groups?.[g]?.[2]]?.flag ?? '🏳️' }}</span>
           <div>
