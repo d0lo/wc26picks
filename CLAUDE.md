@@ -92,6 +92,29 @@ Example row:
 
 ---
 
+## Scoring Configuration
+
+All point values (group-position predictions, the perfect-group bonus, wildcard picks, and every prop in `app/src/data.js` PROPS) are configurable at runtime via Firestore, not hardcoded — this is so values can be retuned without a code deploy, and so a future admin screen has a single doc to write to.
+
+```
+config/public
+  picksLockAt: Timestamp
+  scoring: {
+    groupExact: { 1: number, 2: number, 3: number, 4: number }  // pts per exact predicted position
+    perfectGroupBonus: number                                   // bonus when all 4 positions are exact
+    wildcard: number                                            // pts per correct 3rd-place-advances pick
+    props: { [propKey]: number }                                // pts per prop, keyed by PROPS[].key
+  }
+```
+
+Rules: `config/{docId}` is `allow read: if true; allow write: if false` — public read, write only via the Admin SDK (no client or Cloud Function writes it yet; seeded manually until an admin screen exists).
+
+- Client reads it once via `configQueryOptions()` in `app/src/queries.js` (TanStack Query, cached) and merges `scoring.props[key]` onto each `PROPS` entry for display (see `PicksView.vue`, `PicksSummary.vue`). `PROPS` itself carries no `points` field — that's the whole point of moving it to config.
+- Seed/update the doc with `scripts/seed-scoring-config.mjs` (same `GOOGLE_APPLICATION_CREDENTIALS` pattern as `scripts/seed.mjs`).
+- Any future Cloud Function that computes scores (Feature 2 below) must read point values from `config/public.scoring`, not hardcode them — that's the reason this config exists.
+
+---
+
 ## Live Tracking Feature Plan
 
 Five features that turn the picks app into a live World Cup tracker. Build them **in order** — each branch is listed below and each feature depends on the one before it being merged to `main` first.
@@ -195,11 +218,10 @@ group: string   e.g. "Group A"
 ### Feature 2 — Auto-Scoring Engine (`feature/auto-scoring-engine`)
 
 **What to build:**
-- Cloud Firestore Trigger `onMatchComplete` — triggers on `matches/{eventId}` writes where `status.state === "post"`. Reads the match result, resolves which group and finishing positions it implies, then reads all `submissions/{uid}` documents and awards group-prediction points into `scores/{uid}.breakdown.groups`.
+- Cloud Firestore Trigger `onMatchComplete` — triggers on `matches/{eventId}` writes where `status.state === "post"`. Reads the match result, resolves which group it belongs to, then recomputes that group's score fresh from the **current** `groups/{letter}` standings (live/incremental — never gated on the group being fully finished) and overwrites `scores/{uid}.breakdown.groups[letter]` for every `picks/{uid}` document. The write must be a full idempotent overwrite, not additive, since the final two matches in a group always kick off together and finish moments apart, firing this trigger twice in quick succession for the same group.
+- Reads point values from `config/public.scoring` (see Scoring Configuration above) — `groupExact` for exact-position points, `perfectGroupBonus` for the all-4-correct bonus, `wildcard` for 3rd-place-advances picks. Never hardcode these.
 - Scoring logic lives in a shared `lib/scoring.js` module so it can be unit tested independently.
 - No new Vue components needed — the existing leaderboard in `DashboardView` already listens to `scores/*` via `onSnapshot` and will animate score changes automatically.
-
-**Before implementing:** confirm the exact points table with the user (points for exact position match, partial credit for correct top-2 etc.) — do not guess.
 
 ---
 

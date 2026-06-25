@@ -177,17 +177,20 @@ export const FIFA_RANKING = {
   Curacao:              82,
 }
 
+// Point values are NOT defined here — they're configurable at runtime from
+// Firestore config/public.scoring.props (see queries.js configQueryOptions),
+// so values can be retuned without a code deploy.
 export const PROPS = [
-  { key: 'goldenBoot',      label: 'Golden Boot',                        type: 'player', points: 5, hint: 'Tournament top scorer', category: 'tournament' },
-  { key: 'goldenGlove',     label: 'Golden Glove',                       type: 'player', points: 4, hint: 'Best goalkeeper', positionFilter: 'G', category: 'tournament' },
-  { key: 'goldenBall',      label: 'Golden Ball',                        type: 'player', points: 5, hint: 'Best player of the tournament', category: 'tournament' },
-  { key: 'youngPlayer',     label: 'Young Player of the Tournament',     type: 'player', points: 4, hint: 'Best U-21 player', maxAge: 21, category: 'tournament' },
-  { key: 'breakoutPlayer',  label: 'Breakout Player of the Tournament',  type: 'player', points: 6, hint: 'The under-the-radar player who has a standout tournament (media consensus)', category: 'tournament' },
-  { key: 'mostGroupGoals',  label: 'Most Goals in Group Stage',          type: 'team',   points: 3, hint: 'Team that scores the most goals in the group stage', category: 'group' },
-  { key: 'hatTrickScorer',  label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'Player to score a hat trick', category: 'tournament' },
-  { key: 'mostAssists',     label: 'Most Assists',                       type: 'player', points: 4, hint: 'Player with the most assists', category: 'tournament' },
-  { key: 'mostYellowCards', label: 'Team with Most Yellow Cards',        type: 'team',   points: 3, hint: 'Most disciplinary cards received', category: 'tournament' },
-  { key: 'cleanGroupTeam',  label: 'Clean Group',                        type: 'team',   points: 5, hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team', category: 'group' },
+  { key: 'goldenBoot',      label: 'Golden Boot',                        type: 'player', hint: 'Tournament top scorer', category: 'tournament' },
+  { key: 'goldenGlove',     label: 'Golden Glove',                       type: 'player', hint: 'Best goalkeeper', positionFilter: 'G', category: 'tournament' },
+  { key: 'goldenBall',      label: 'Golden Ball',                        type: 'player', hint: 'Best player of the tournament', category: 'tournament' },
+  { key: 'youngPlayer',     label: 'Young Player of the Tournament',     type: 'player', hint: 'Best U-21 player', maxAge: 21, category: 'tournament' },
+  { key: 'breakoutPlayer',  label: 'Breakout Player of the Tournament',  type: 'player', hint: 'The under-the-radar player who has a standout tournament (media consensus)', category: 'tournament' },
+  { key: 'mostGroupGoals',  label: 'Most Goals in Group Stage',          type: 'team',   hint: 'Team that scores the most goals in the group stage', category: 'group' },
+  { key: 'hatTrickScorer',  label: 'Hat Trick Scorer',                   type: 'player', hint: 'Player to score a hat trick', category: 'tournament' },
+  { key: 'mostAssists',     label: 'Most Assists',                       type: 'player', hint: 'Player with the most assists', category: 'tournament' },
+  { key: 'mostYellowCards', label: 'Team with Most Yellow Cards',        type: 'team',   hint: 'Most disciplinary cards received', category: 'tournament' },
+  { key: 'cleanGroupTeam',  label: 'Clean Group',                        type: 'team',   hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team', category: 'group' },
 ]
 
 export const PROP_CATEGORIES = [

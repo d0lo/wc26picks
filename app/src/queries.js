@@ -10,6 +10,14 @@ export const queryKeys = {
   picksList: ['picks', 'list'],
 }
 
+// config/public shape:
+//   picksLockAt: Timestamp
+//   scoring: {
+//     groupExact: { 1: number, 2: number, 3: number, 4: number }  // pts per exact predicted position
+//     perfectGroupBonus: number                                   // bonus when all 4 positions are exact
+//     wildcard: number                                            // pts per correct 3rd-place-advances pick
+//     props: { [propKey]: number }                                // pts per prop, keyed by data.js PROPS[].key
+//   }
 export function configQueryOptions() {
   return {
     queryKey: queryKeys.config,

@@ -1,7 +1,9 @@
 <script setup>
 import { reactive, ref, computed } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
 import { GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
+import { configQueryOptions } from '../queries.js'
 
 defineProps({
   groups: Object,    // { A: [uuid1, uuid2, uuid3, uuid4], ... }
@@ -14,8 +16,16 @@ for (const [teamName, players] of Object.entries(ROSTERS)) {
   for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
 }
 
+const configQuery = useQuery(configQueryOptions())
+const scoring = computed(() => configQuery.data.value?.scoring ?? null)
+
 const propsByCategory = computed(() =>
-  orderedPropCategories().map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
+  orderedPropCategories()
+    .map(c => ({
+      ...c,
+      props: PROPS.filter(p => p.category === c.key).map(p => ({ ...p, points: scoring.value?.props?.[p.key] ?? null })),
+    }))
+    .filter(c => c.props.length)
 )
 
 const groupCardRefs = reactive({})
@@ -99,7 +109,7 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
                 </template>
               </div>
             </div>
-            <div class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
+            <div v-if="prop.points != null" class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
               {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
             </div>
           </div>

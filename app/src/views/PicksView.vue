@@ -6,7 +6,7 @@ import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { GROUP_TEAMS, GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
-import { pickQueryOptions, queryKeys } from '../queries.js'
+import { pickQueryOptions, configQueryOptions, queryKeys } from '../queries.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
@@ -183,10 +183,23 @@ function wcDisabled(group) {
   return wildcards.value.length >= 8 && !wildcards.value.includes(group)
 }
 
+// ── Scoring config (admin-editable point values, read-only here) ───────
+const configQuery = useQuery(configQueryOptions())
+const scoring = computed(() => configQuery.data.value?.scoring ?? null)
+const groupExactLabel = computed(() => {
+  const g = scoring.value?.groupExact
+  return g ? `${g[1]} · ${g[2]} · ${g[3]} · ${g[4]} pts` : '– pts'
+})
+
 // ── Progress ───────────────────────────────────────────────────────────
 const doneProps = computed(() => PROPS.filter(p => propAnswers[p.key] !== '').length)
 const propsByCategory = computed(() =>
-  orderedPropCategories().map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
+  orderedPropCategories()
+    .map(c => ({
+      ...c,
+      props: PROPS.filter(p => p.category === c.key).map(p => ({ ...p, points: scoring.value?.props?.[p.key] ?? null })),
+    }))
+    .filter(c => c.props.length)
 )
 const canSubmit = computed(
   () => !picksLocked.value && wildcards.value.length === 8 && doneProps.value === PROPS.length
@@ -354,8 +367,8 @@ const POS_COLORS = [
           <p class="text-[11px] text-zinc-400 mt-1">Drag teams to set your predicted finish order.</p>
         </div>
         <div class="text-right shrink-0">
-          <div class="text-[10px] text-zinc-400 font-mono tabular-nums">3 · 3 · 1 · 1 pts</div>
-          <div class="text-[10px] text-zinc-500">Perfect Group: +1 pt</div>
+          <div class="text-[10px] text-zinc-400 font-mono tabular-nums">{{ groupExactLabel }}</div>
+          <div class="text-[10px] text-zinc-500">Perfect Group: +{{ scoring?.perfectGroupBonus ?? '–' }} pt</div>
         </div>
       </div>
 
@@ -432,7 +445,7 @@ const POS_COLORS = [
     <section ref="wildcardsSectionRef" class="mb-10">
       <div class="flex items-baseline justify-between mb-1">
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Best 3rd-Place Teams</h2>
-        <span class="text-[10px] text-zinc-400 font-mono">2 pts each</span>
+        <span class="text-[10px] text-zinc-400 font-mono">{{ scoring?.wildcard ?? '–' }} pts each</span>
       </div>
       <p class="text-[11px] text-zinc-400 mb-5">
         Pick 8 groups whose 3rd-place team advances.
@@ -482,7 +495,7 @@ const POS_COLORS = [
     >
       <div class="flex items-baseline justify-between mb-5">
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">{{ cat.label }}</h2>
-        <span class="text-[10px] text-zinc-400 font-mono">{{ Math.min(...cat.props.map(p => p.points)) }}–{{ Math.max(...cat.props.map(p => p.points)) }} pts</span>
+        <span v-if="cat.props.every(p => p.points != null)" class="text-[10px] text-zinc-400 font-mono">{{ Math.min(...cat.props.map(p => p.points)) }}–{{ Math.max(...cat.props.map(p => p.points)) }} pts</span>
       </div>
       <div class="space-y-2">
         <div
@@ -494,7 +507,7 @@ const POS_COLORS = [
               <div class="text-xs font-bold text-white">{{ prop.label }}</div>
               <div class="text-[11px] text-zinc-400 mt-0.5">{{ prop.hint }}</div>
             </div>
-            <div class="absolute top-0 right-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
+            <div v-if="prop.points != null" class="absolute top-0 right-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
               {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
             </div>
           </div>
