@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, ref, computed } from 'vue'
-import { GROUPS, PROPS, PROP_CATEGORIES, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
+import { GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 
 defineProps({
@@ -15,7 +15,7 @@ for (const [teamName, players] of Object.entries(ROSTERS)) {
 }
 
 const propsByCategory = computed(() =>
-  PROP_CATEGORIES.map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
+  orderedPropCategories().map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
 )
 
 const groupCardRefs = reactive({})

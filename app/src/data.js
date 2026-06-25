@@ -191,7 +191,19 @@ export const PROPS = [
 ]
 
 export const PROP_CATEGORIES = [
+  { key: 'tournament', label: 'Tournament Props' },
   { key: 'group',      label: 'Group Stage Props' },
   { key: 'knockout',   label: 'Knockout Props' },
-  { key: 'tournament', label: 'Tournament Props' },
 ]
+
+// Per FIFA's released match calendar: group stage runs through June 27,
+// 2026, Round of 32 June 28–July 3, Round of 16 July 4–7. Once the Round
+// of 16 kicks off, knockout props outrank group props in display order.
+export const ROUND_OF_16_START = new Date('2026-07-04')
+
+export function orderedPropCategories() {
+  const order = new Date() < ROUND_OF_16_START
+    ? ['tournament', 'group', 'knockout']
+    : ['tournament', 'knockout', 'group']
+  return order.map(key => PROP_CATEGORIES.find(c => c.key === key))
+}

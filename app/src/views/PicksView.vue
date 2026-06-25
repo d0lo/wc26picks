@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { GROUP_TEAMS, GROUPS, PROPS, PROP_CATEGORIES, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
+import { GROUP_TEAMS, GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import { pickQueryOptions, queryKeys } from '../queries.js'
 import CountrySelect from '../components/CountrySelect.vue'
@@ -186,7 +186,7 @@ function wcDisabled(group) {
 // ── Progress ───────────────────────────────────────────────────────────
 const doneProps = computed(() => PROPS.filter(p => propAnswers[p.key] !== '').length)
 const propsByCategory = computed(() =>
-  PROP_CATEGORIES.map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
+  orderedPropCategories().map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
 )
 const canSubmit = computed(
   () => !picksLocked.value && wildcards.value.length === 8 && doneProps.value === PROPS.length
