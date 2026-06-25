@@ -8,6 +8,12 @@ jobs:
   build_and_preview:
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
+    env:
+      # actions/checkout@v4 and FirebaseExtended/action-hosting-deploy@v0 are
+      # built for Node 20; GitHub's forced Node 24 runtime for them triggers
+      # an intermittent gaxios "Premature close" failure during the Firebase
+      # OAuth token exchange. Pin back to Node 20 until those actions update.
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
       - uses: actions/checkout@v4
       - name: Build Vue app
