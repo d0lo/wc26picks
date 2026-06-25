@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed, inject, watch } from 'vue'
 import { useRouter } from 'vue-router'
-const appVersion = __APP_VERSION__
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { TEAM_BY_ID } from '../data.js'
 import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, queryKeys } from '../queries.js'
@@ -249,10 +248,6 @@ function resolveTeamFlag(teamId) {
           :props="submission.props"
         />
       </section>
-
-      <div class="text-center py-4">
-        <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
-      </div>
 
       </template><!-- end !loading -->
 

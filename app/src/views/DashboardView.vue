@@ -1,7 +1,6 @@
 <script setup>
 import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-const appVersion = __APP_VERSION__
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import PicksHeader from '../components/PicksHeader.vue'
 import { db } from '../firebase.js'
@@ -506,10 +505,6 @@ function fmtDate(ts) {
       </section>
 
     </template>
-
-    <div v-if="!loading" class="text-center py-4">
-      <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
-    </div>
 
   </div>
 </template>

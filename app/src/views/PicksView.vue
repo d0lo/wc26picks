@@ -1,7 +1,6 @@
 <script setup>
 import { reactive, ref, computed, inject, watch } from 'vue'
 import { useRouter } from 'vue-router'
-const appVersion = __APP_VERSION__
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
@@ -568,10 +567,6 @@ const POS_COLORS = [
     </div>
 
     </template><!-- end loaded -->
-
-    <div v-if="loaded" class="text-center py-4">
-      <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
-    </div>
 
     </div><!-- end content wrapper -->
   </div>
