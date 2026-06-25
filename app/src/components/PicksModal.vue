@@ -87,6 +87,40 @@ function onTouchCancel() {
   dragOffset.value = 0
 }
 
+// Header drag handle — the header never scrolls, so this works no matter
+// where the content below is scrolled to (unlike the pull-to-dismiss
+// above, which only engages once scrolled to the top).
+let handleDragStartY = 0
+let isHandleDragging = false
+
+function onHandleTouchStart(e) {
+  handleDragStartY = e.touches[0].clientY
+  isHandleDragging = true
+  e.stopPropagation()
+}
+
+function onHandleTouchMove(e) {
+  if (!isHandleDragging) return
+  dragOffset.value = Math.max(0, e.touches[0].clientY - handleDragStartY)
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+function onHandleTouchEnd(e) {
+  if (!isHandleDragging) return
+  isHandleDragging = false
+  const shouldClose = dragOffset.value > CLOSE_THRESHOLD
+  dragOffset.value = 0
+  if (shouldClose) requestClose()
+  e.stopPropagation()
+}
+
+function onHandleTouchCancel(e) {
+  isHandleDragging = false
+  dragOffset.value = 0
+  e.stopPropagation()
+}
+
 // True modal behaviour — the page behind can't scroll while this is open,
 // which also stops the sheet's own scroll from rubber-banding into it.
 // Locking via <html>'s overflow (not body's position) so body never moves
@@ -147,30 +181,32 @@ function requestClose() {
     >
 
       <!-- Sheet header -->
-      <div ref="modalHeaderRef" class="sticky top-0 z-10 bg-court-900 border-b border-court-700 px-4 py-4 flex items-center gap-3">
-        <!-- Avatar -->
-        <div class="w-9 h-9 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-court-700">
-          <img
-            v-if="photoURL"
-            :src="photoURL"
-            class="w-full h-full object-cover"
-            referrerpolicy="no-referrer"
-          />
-          <span v-else class="text-sm font-bold text-white">{{ name?.[0] ?? '?' }}</span>
+      <div
+        ref="modalHeaderRef"
+        class="sticky top-0 z-10 bg-court-900 border-b border-court-700"
+        @touchstart="onHandleTouchStart"
+        @touchmove="onHandleTouchMove"
+        @touchend="onHandleTouchEnd"
+        @touchcancel="onHandleTouchCancel"
+      >
+        <!-- Drag handle -->
+        <div class="flex justify-center pt-2 pb-1">
+          <div class="w-1/2 h-1 rounded-full bg-court-600"></div>
         </div>
-        <!-- Name -->
-        <span class="flex-1 text-sm font-bold text-white truncate">{{ name }}</span>
-        <!-- Close -->
-        <button
-          type="button"
-          @click="requestClose"
-          class="text-zinc-400 hover:text-white transition-colors"
-          aria-label="Close"
-        >
-          <svg class="w-5 h-5" viewBox="0 0 14 14" fill="none">
-            <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
+        <div class="px-4 pb-4 flex items-center gap-3">
+          <!-- Avatar -->
+          <div class="w-9 h-9 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-court-700">
+            <img
+              v-if="photoURL"
+              :src="photoURL"
+              class="w-full h-full object-cover"
+              referrerpolicy="no-referrer"
+            />
+            <span v-else class="text-sm font-bold text-white">{{ name?.[0] ?? '?' }}</span>
+          </div>
+          <!-- Name -->
+          <span class="flex-1 text-sm font-bold text-white truncate">{{ name }}</span>
+        </div>
       </div>
 
       <GroupOverlayPanel
