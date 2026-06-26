@@ -6,6 +6,7 @@ import { doc, updateDoc, Timestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { configQueryOptions, queryKeys } from '../queries.js'
 import { PROP_CATEGORIES } from '../data.js'
+import { useDragList } from '../composables/useDragList.js'
 
 const router = useRouter()
 const queryClient = useQueryClient()
@@ -140,42 +141,56 @@ function restoreProp(prop) {
 }
 
 // --- Drag and drop: reorder within a category list, or move across lists
-// (which updates the prop's category). Mirrors the snapshot/revert-on-
-// invalid-drop pattern used in PicksView.vue's team-order drag.
-const drag = reactive({ propId: null, fromCategory: null })
+// (which updates the prop's category). Shares useDragList with PicksView's
+// team-order drag, so both float the grabbed row with the pointer and
+// reflow the rest via the same FLIP transition.
+const { drag, start: startDrag, onSettled } = useDragList()
+let dragFromCategory = null
 let dragSavedOrder = null
 
-function onDragStart(e, prop) {
+let dragMoved = false
+
+function onRowPointerDown(e, prop) {
   // A prop's dialog may be open while the user drags a *different* row —
   // that's fine. But dragging the row whose dialog is currently open would
   // let the in-flight draft and the reordered list disagree about identity,
   // so block it.
-  if (dialogPropId.value === prop.id) {
-    e.preventDefault()
-    return
-  }
-  drag.propId = prop.id
-  drag.fromCategory = prop.category
+  if (dialogPropId.value === prop.id) return
+  dragFromCategory = prop.category
   dragSavedOrder = activeProps.value.map(p => p.id)
-  e.dataTransfer.effectAllowed = 'move'
-}
-
-function indexInItems(id) {
-  return propsForm.items.findIndex(p => p.id === id)
-}
-
-function onDragOverRow(e, categoryKey, targetProp) {
-  e.preventDefault()
-  if (!drag.propId || drag.propId === targetProp.id) return
-  moveDraggedTo(categoryKey, indexInCategory(categoryKey, targetProp.id))
-}
-
-function onDragOverList(e, categoryKey) {
-  e.preventDefault()
-  if (!drag.propId) return
-  // Dragging over empty list space (below the last row) — append to the end.
-  const cat = propsByCategory.value.find(c => c.key === categoryKey)
-  if (cat && cat.props.length === 0) moveDraggedTo(categoryKey, 0)
+  dragMoved = false
+  startDrag(e, prop.id, {
+    containerSelector: '[data-prop-list]',
+    onMove(hit) {
+      dragMoved = true
+      const row = hit?.closest('[data-prop-row]')
+      const list = hit?.closest('[data-prop-list]')
+      if (row) {
+        const targetId = row.dataset.propRow
+        const categoryKey = row.dataset.category
+        if (targetId !== prop.id) moveDraggedTo(categoryKey, indexInCategory(categoryKey, targetId))
+      } else if (list) {
+        const categoryKey = list.dataset.propList
+        const cat = propsByCategory.value.find(c => c.key === categoryKey)
+        if (cat) moveDraggedTo(categoryKey, cat.props.length)
+      }
+    },
+    onEnd(inside) {
+      if (!inside) {
+        // Dropped outside every category list — revert order and category.
+        const dragged = propsForm.items.find(p => p.id === prop.id)
+        if (dragged) dragged.category = dragFromCategory
+        const others = propsForm.items.filter(p => p.id !== prop.id)
+        const restoreAt = dragSavedOrder.indexOf(prop.id)
+        const beforeId = dragSavedOrder[restoreAt + 1]
+        const insertAt = beforeId ? others.findIndex(p => p.id === beforeId) : others.length
+        others.splice(insertAt === -1 ? others.length : insertAt, 0, dragged)
+        propsForm.items.splice(0, propsForm.items.length, ...others)
+      }
+      dragFromCategory = null
+      dragSavedOrder = null
+    },
+  })
 }
 
 function indexInCategory(categoryKey, propId) {
@@ -185,7 +200,7 @@ function indexInCategory(categoryKey, propId) {
 }
 
 function moveDraggedTo(categoryKey, targetIndexInCategory) {
-  const dragged = propsForm.items.find(p => p.id === drag.propId)
+  const dragged = propsForm.items.find(p => p.id === drag.id)
   if (!dragged) return
   dragged.category = categoryKey
 
@@ -193,7 +208,7 @@ function moveDraggedTo(categoryKey, targetIndexInCategory) {
   // out, then splice it back in among the other props of the target
   // category at the requested position, preserving relative order of
   // everyone else (including untouched categories and archived items).
-  const others = propsForm.items.filter(p => p.id !== drag.propId)
+  const others = propsForm.items.filter(p => p.id !== drag.id)
   const catProps = others.filter(p => p.category === categoryKey && !p.archived)
   const insertAfterId = catProps[targetIndexInCategory - 1]?.id
   let insertAt
@@ -208,53 +223,18 @@ function moveDraggedTo(categoryKey, targetIndexInCategory) {
   propsForm.items.splice(0, propsForm.items.length, ...others)
 }
 
-function onDrop(e) {
-  e.preventDefault()
-  dragSavedOrder = null
+function onRowClick(prop) {
+  // A trailing click fires after a real drag (pointerup, then a synthetic
+  // click) — ignore it so dragging a row doesn't also pop its dialog open.
+  if (dragMoved) { dragMoved = false; return }
+  openDialog(prop)
 }
 
-function onDragEnd() {
-  // If the drop never actually landed on a valid target (e.g. dropped
-  // outside any list), revert to the pre-drag order/category.
-  if (dragSavedOrder) {
-    const dragged = propsForm.items.find(p => p.id === drag.propId)
-    if (dragged) dragged.category = drag.fromCategory
-  }
-  drag.propId = null
-  drag.fromCategory = null
-  dragSavedOrder = null
-}
-
-// --- Touch fallback (no native HTML5 DnD on mobile), mirroring PicksView.vue.
-function onTouchStart(e, prop) {
-  if (dialogPropId.value === prop.id) return
-  drag.propId = prop.id
-  drag.fromCategory = prop.category
-  dragSavedOrder = activeProps.value.map(p => p.id)
-}
-
-function onTouchMove(e) {
-  if (!drag.propId) return
-  e.preventDefault()
-  const touch = e.touches[0]
-  const el = document.elementFromPoint(touch.clientX, touch.clientY)
-  const row = el?.closest('[data-prop-row]')
-  const list = el?.closest('[data-prop-list]')
-  if (row) {
-    const targetId = row.dataset.propRow
-    const categoryKey = row.dataset.category
-    if (targetId !== drag.propId) moveDraggedTo(categoryKey, indexInCategory(categoryKey, targetId))
-  } else if (list) {
-    const categoryKey = list.dataset.propList
-    const cat = propsByCategory.value.find(c => c.key === categoryKey)
-    if (cat) moveDraggedTo(categoryKey, cat.props.length)
-  }
-}
-
-function onTouchEnd() {
-  dragSavedOrder = null
-  drag.propId = null
-  drag.fromCategory = null
+function rowStyle(prop) {
+  if (drag.id !== prop.id) return null
+  const style = { transform: `translate(${drag.dx}px, ${drag.dy}px)`, zIndex: 50 }
+  if (!drag.settling) style.transition = 'none'
+  return style
 }
 
 // --- Prop editor dialog: edits happen on a draft copy, only merged back
@@ -487,10 +467,10 @@ async function saveProps() {
             </button>
           </div>
 
-          <div
+          <TransitionGroup
+            tag="div"
+            name="drag-list"
             :data-prop-list="cat.key"
-            @dragover="onDragOverList($event, cat.key)"
-            @drop="onDrop"
             class="space-y-1.5 min-h-[2.5rem] rounded-xl"
           >
             <div
@@ -498,28 +478,28 @@ async function saveProps() {
               :key="prop.id"
               :data-prop-row="prop.id"
               :data-category="cat.key"
-              draggable="true"
-              @dragstart="onDragStart($event, prop)"
-              @dragover="onDragOverRow($event, cat.key, prop)"
-              @dragend="onDragEnd"
-              @drop="onDrop"
-              @touchstart="onTouchStart($event, prop)"
-              @touchmove="onTouchMove"
-              @touchend="onTouchEnd"
-              @click="openDialog(prop)"
-              class="flex items-center gap-3 bg-court-900 border border-court-700 rounded-xl px-3 py-2.5 cursor-pointer hover:border-court-600 transition-colors select-none"
-              :class="{ 'opacity-40': drag.propId === prop.id }"
+              @pointerdown="onRowPointerDown($event, prop)"
+              @transitionend="onSettled(prop.id)"
+              @click="onRowClick(prop)"
+              class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border touch-none cursor-grab active:cursor-grabbing"
+              :class="[
+                drag.id === prop.id
+                  ? ['opacity-30 bg-court-750 border-transparent shadow-xl shadow-black/40 cursor-grabbing', drag.settling && 'drag-settle']
+                  : 'bg-court-750 border-transparent hover:border-court-600'
+              ]"
+              :style="rowStyle(prop)"
             >
-              <svg class="w-3.5 h-3.5 text-zinc-600 shrink-0" viewBox="0 0 10 16" fill="currentColor">
-                <circle cx="2" cy="2" r="1.3"/><circle cx="8" cy="2" r="1.3"/>
-                <circle cx="2" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/>
-                <circle cx="2" cy="14" r="1.3"/><circle cx="8" cy="14" r="1.3"/>
+              <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+                <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
+                <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
+                <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
+                <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
               </svg>
-              <span class="flex-1 text-xs text-white truncate">{{ prop.label }}</span>
-              <span class="text-xs font-bold text-emerald-400 shrink-0">{{ prop.points }} pts</span>
+              <span class="flex-1 text-xs font-medium text-white truncate">{{ prop.label }}</span>
+              <span class="text-[10px] text-emerald-400 font-mono shrink-0">{{ prop.points }} pts</span>
             </div>
-            <p v-if="!cat.props.length" class="text-[11px] text-zinc-600 italic px-1 py-1">No props yet.</p>
-          </div>
+            <p v-if="!cat.props.length" key="empty" class="text-[11px] text-zinc-600 italic px-1 py-1">No props yet.</p>
+          </TransitionGroup>
         </div>
 
         <div v-if="archivedProps.length" class="mt-4 pt-4 border-t border-court-700">
@@ -669,3 +649,12 @@ async function saveProps() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.drag-list-move {
+  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.drag-settle {
+  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+</style>

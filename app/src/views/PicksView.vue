@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, computed, inject, watch } from 'vue'
+import { useDragList } from '../composables/useDragList.js'
 import { useRouter } from 'vue-router'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
@@ -96,90 +97,44 @@ watch(pickQuery.isFetched, (fetched) => {
 }, { immediate: true })
 
 // ── Drag and drop ──────────────────────────────────────────────────────
-const drag = reactive({ group: null, item: null })
-let _dragSaved = null // order snapshot before drag; cleared on valid drop
+// Pointer-based: the grabbed row floats with the pointer and the rest of
+// the group reflows with a FLIP transition (see useDragList.js). Releasing
+// outside the group's own card reverts to the order the drag started from.
+const { drag, start: startDrag, onSettled } = useDragList()
+const dragGroup = ref(null)
+let dragSavedOrder = null
 
-function onDragStart(e, group, team) {
-  drag.group = group
-  drag.item = team
-  _dragSaved = { group, order: [...order[group]] }
-  e.dataTransfer.effectAllowed = 'move'
+function onRowPointerDown(e, group, team) {
+  dragGroup.value = group
+  dragSavedOrder = [...order[group]]
+  startDrag(e, team, {
+    containerSelector: `[data-group="${group}"]`,
+    onMove(hit) {
+      const row = hit?.closest('[data-drag-row]')
+      if (!row || row.dataset.dragGroup !== group) return
+      const targetIdx = Number(row.dataset.dragIdx)
+      const arr = order[group]
+      const from = arr.indexOf(team)
+      if (from === -1 || from === targetIdx) return
+      arr.splice(from, 1)
+      arr.splice(targetIdx, 0, team)
+    },
+    onEnd(inside) {
+      if (!inside) order[group].splice(0, Infinity, ...dragSavedOrder)
+      dragGroup.value = null
+      dragSavedOrder = null
+    },
+  })
 }
 
-function onDragOver(e, group, idx) {
-  e.preventDefault()
-  if (drag.group !== group || !drag.item) return
-  const arr = order[group]
-  const from = arr.indexOf(drag.item)
-  if (from === idx) return
-  arr.splice(from, 1)
-  arr.splice(idx, 0, drag.item)
-}
-
-function onDrop(e) {
-  e.preventDefault()
-  _dragSaved = null // valid drop within group — keep new order
-}
-
-function onDragEnd() {
-  if (_dragSaved) {
-    // Dropped outside the group card — restore original order
-    order[_dragSaved.group].splice(0, Infinity, ..._dragSaved.order)
-  }
-  drag.group = null
-  drag.item = null
-  _dragSaved = null
-}
-
-// ── Touch drag (mobile) ────────────────────────────────────────────────
-const touch = reactive({ group: null, item: null })
-let _touchSaved = null // order snapshot before touch drag
-
-function onTouchStart(e, group, team) {
-  touch.group = group
-  touch.item = team
-  drag.group = group
-  drag.item = team
-  _touchSaved = { group, order: [...order[group]] }
-}
-
-function onTouchMove(e) {
-  if (!touch.item) return
-  e.preventDefault()
-  const t = e.touches[0]
-  // Temporarily hide the dragged element so elementFromPoint finds the target beneath
-  const dragged = e.currentTarget
-  dragged.style.visibility = 'hidden'
-  const el = document.elementFromPoint(t.clientX, t.clientY)
-  dragged.style.visibility = ''
-  if (!el) return
-  const row = el.closest('[data-drag-row]')
-  if (!row) return
-  const targetGroup = row.dataset.dragGroup
-  const targetIdx = Number(row.dataset.dragIdx)
-  if (targetGroup !== touch.group) return
-  const arr = order[touch.group]
-  const from = arr.indexOf(touch.item)
-  if (from === targetIdx) return
-  arr.splice(from, 1)
-  arr.splice(targetIdx, 0, touch.item)
-}
-
-function onTouchEnd(e) {
-  if (_touchSaved && touch.group) {
-    const t = e.changedTouches[0]
-    const el = document.elementFromPoint(t.clientX, t.clientY)
-    const groupEl = el?.closest('[data-group]')
-    if (groupEl?.dataset.group !== touch.group) {
-      // Finger lifted outside the group card — restore original order
-      order[_touchSaved.group].splice(0, Infinity, ..._touchSaved.order)
-    }
-  }
-  touch.group = null
-  touch.item = null
-  drag.group = null
-  drag.item = null
-  _touchSaved = null
+function rowStyle(group, team) {
+  if (drag.id !== team || dragGroup.value !== group) return null
+  const style = { transform: `translate(${drag.dx}px, ${drag.dy}px)`, zIndex: 50 }
+  // While actively floating, override the TransitionGroup "move" transition
+  // (it'd otherwise fight our per-frame transform) — `.drag-settle` takes
+  // over once released, when this no longer applies.
+  if (!drag.settling) style.transition = 'none'
+  return style
 }
 
 function resetGroup(group) {
@@ -406,27 +361,22 @@ const POS_COLORS = [
           </div>
 
           <!-- Draggable team rows -->
-          <TransitionGroup tag="div" :name="drag.group === group ? '' : 'drag-list'" class="space-y-1">
+          <TransitionGroup tag="div" name="drag-list" class="space-y-1">
             <div
               v-for="(team, idx) in order[group]" :key="team"
-              :draggable="!picksLocked"
               data-drag-row
               :data-drag-group="group"
               :data-drag-idx="idx"
-              @dragstart="!picksLocked && onDragStart($event, group, team)"
-              @dragover="!picksLocked && onDragOver($event, group, idx)"
-              @drop="!picksLocked && onDrop($event)"
-              @dragend="!picksLocked && onDragEnd()"
-              @touchstart.passive="!picksLocked && onTouchStart($event, group, team)"
-              @touchmove="!picksLocked && onTouchMove($event)"
-              @touchend="!picksLocked && onTouchEnd($event)"
-              class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border"
+              @pointerdown="!picksLocked && onRowPointerDown($event, group, team)"
+              @transitionend="onSettled(team)"
+              class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border touch-none"
               :class="[
                 picksLocked ? 'cursor-default bg-court-750 border-transparent opacity-60' :
-                  drag.group === group && drag.item === team
-                    ? 'opacity-30 bg-court-750 border-transparent cursor-grab active:cursor-grabbing'
+                  drag.id === team && dragGroup === group
+                    ? ['opacity-30 bg-court-750 border-transparent shadow-xl shadow-black/40 cursor-grabbing', drag.settling && 'drag-settle']
                     : 'bg-court-750 border-transparent hover:border-court-600 cursor-grab active:cursor-grabbing'
               ]"
+              :style="rowStyle(group, team)"
             >
               <!-- Position badge -->
               <div
@@ -603,6 +553,9 @@ const POS_COLORS = [
 
 <style scoped>
 .drag-list-move {
+  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.drag-settle {
   transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 .pin-enter-active { transition: all 0.15s ease-out; }
