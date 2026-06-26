@@ -148,6 +148,7 @@ function addProp(categoryKey) {
     category: categoryKey,
     points: 0,
     allowNone: false,
+    manual: false,
   })
   rebuildCategoryLists()
 }
@@ -262,6 +263,7 @@ async function saveScoring() {
 function cleanProp(p) {
   const base = { id: p.id, key: p.key ?? '', label: p.label, hint: p.hint ?? '', type: p.type, category: p.category, points: Number(p.points) }
   if (p.archived) base.archived = true
+  if (p.manual) base.manual = true
   if (p.type === 'player') {
     if (p.positionFilter) base.positionFilter = p.positionFilter
     if (p.maxAge !== undefined && p.maxAge !== '') base.maxAge = Number(p.maxAge)
@@ -531,6 +533,11 @@ async function saveProps() {
               <input v-model.number="draft.points" type="number" inputmode="numeric" class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-2 text-sm text-white" />
             </label>
           </div>
+
+          <label class="flex items-center gap-2">
+            <input v-model="draft.manual" type="checkbox" class="rounded border-court-700 bg-court-900" />
+            <span class="text-[11px] text-zinc-400">Manually graded (admin enters the correct answer)</span>
+          </label>
 
           <div v-if="draft.type === 'player'" class="grid grid-cols-2 gap-2">
             <label class="block">
