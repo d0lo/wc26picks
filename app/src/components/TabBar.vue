@@ -2,8 +2,9 @@
 import { computed, reactive, ref } from 'vue'
 
 const props = defineProps({
-  activeTab: String,   // 'picks' | 'leaderboard' | 'live'
+  activeTab: String,   // 'picks' | 'leaderboard' | 'live' | 'admin'
   showPicksTab: Boolean,
+  showAdminTab: Boolean,
 })
 const emit = defineEmits(['navigate'])
 
@@ -11,9 +12,13 @@ const tabs = [
   { id: 'picks', label: 'Picks' },
   { id: 'leaderboard', label: 'Leaderboard' },
   { id: 'live', label: 'Live' },
+  { id: 'admin', label: 'Admin' },
 ]
 
-const visibleTabs = computed(() => tabs.filter(t => t.id !== 'picks' || props.showPicksTab))
+const visibleTabs = computed(() => tabs
+  .filter(t => t.id !== 'picks' || props.showPicksTab)
+  .filter(t => t.id !== 'admin' || props.showAdminTab)
+)
 const activeIndex = computed(() => Math.max(0, visibleTabs.value.findIndex(t => t.id === props.activeTab)))
 
 const bouncingTab = ref(null)
@@ -212,6 +217,11 @@ const indicatorStyle = computed(() => {
           <!-- Live icon (Material Symbols Rounded — stadium) -->
           <svg v-else-if="tab.id === 'live'" width="22" height="22" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
             <path d="M120-712v-96q0-11 9.5-17t19.5-1l95 48q11 5 11 18t-11 18l-95 48q-10 5-19.5-1t-9.5-17Zm600 0v-96q0-11 9.5-17t19.5-1l95 48q11 5 11 18t-11 18l-95 48q-10 5-19.5-1t-9.5-17Zm-280-40v-96q0-11 9.5-17t19.5-1l95 48q11 5 11 18t-11 18l-95 48q-10 5-19.5-1t-9.5-17ZM406-81q-140-8-233-41.5T80-200v-360q0-25 31.5-46.5t85.5-38q54-16.5 127-26t156-9.5q83 0 156 9.5t127 26q54 16.5 85.5 38T880-560v360q0 45-93.5 78T553-81q-14 1-23.5-8.5T520-113v-127h-80v126q0 14-10 24t-24 9Zm74-439q97 0 167.5-11.5T760-558q0-5-76-23.5T480-600q-128 0-204 18.5T200-558q42 15 112.5 26.5T480-520ZM360-166v-74q0-33 23.5-56.5T440-320h80q33 0 56.5 23.5T600-240v74q80-8 131-23.5t69-27.5v-271q-55 22-138 35t-182 13q-99 0-182-13t-138-35v271q18 12 69 27.5T360-166Zm120-161Z"/>
+          </svg>
+
+          <!-- Admin icon (Material Symbols Rounded — settings/gear) -->
+          <svg v-else-if="tab.id === 'admin'" width="22" height="22" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
+            <path d="M444-80q-15 0-26-10t-13-25l-12-93q-17-7-31.5-16T334-244l-87 36q-14 6-29 1.5T194-225l-78-134q-8-13-5-28t16-25l75-57q-2-9-2-17.5v-19q0-8.5 2-17.5l-75-57q-13-10-16-25t5-28l78-134q8-13 23-17.5t29 1.5l87 36q14-11 28.5-20t31.5-16l12-93q2-15 13-25t26-10h72q15 0 26 10t13 25l12 93q17 7 31.5 16t28.5 20l87-36q14-6 29-1.5t23 17.5l78 134q8 13 5 28t-16 25l-75 57q2 9 2 17.5v19q0 8.5-2 17.5l75 57q13 10 16 25t-5 28l-78 134q-8 13-23 17.5t-29-1.5l-87-36q-14 11-28.5 20T639-208l-12 93q-2 15-13 25t-26 10h-72Zm36-260q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35Z"/>
           </svg>
         </span>
       </button>

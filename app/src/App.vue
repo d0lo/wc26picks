@@ -52,6 +52,7 @@ const activeTab = computed(() => {
   if (route.path === '/picks') return 'picks'
   if (route.path === '/leaderboard') return 'leaderboard'
   if (route.path === '/live') return 'live'
+  if (route.path === '/admin') return 'admin'
   return null
 })
 
@@ -204,6 +205,7 @@ function onNameSaved() {
         v-if="showChrome"
         :activeTab="activeTab"
         :showPicksTab="showPicksTab"
+        :showAdminTab="isAdmin"
         @navigate="onTabNavigate"
       />
     </template>
