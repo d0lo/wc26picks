@@ -28,7 +28,7 @@ const uid = userRecord.uid
 console.log('uid:', uid)
 
 const snap = await db.doc(`picks/${uid}`).get()
-if (!snap.exists()) {
+if (!snap.exists) {
   console.log('No picks doc found for this uid.')
   process.exit(0)
 }
@@ -48,4 +48,14 @@ if (data.props) {
   console.log('  props sample:', JSON.stringify(data.props).slice(0, 500))
 }
 console.log('submittedAt:', data.submittedAt)
+
+const userSnap = await db.doc(`users/${uid}`).get()
+if (!userSnap.exists) {
+  console.log('No users/{uid} doc found for this uid.')
+} else {
+  const userData = userSnap.data()
+  console.log('users doc keys:', Object.keys(userData))
+  console.log('users doc:', JSON.stringify(userData))
+  console.log('isAdmin in doc:', 'isAdmin' in userData)
+}
 process.exit(0)
