@@ -83,8 +83,12 @@ watch(picksLocked, (locked) => {
 let profileUnsub = null
 
 onMounted(async () => {
-  // Config is public — fetch before auth so splash page shows lock time immediately
-  queryClient.ensureQueryData(configQueryOptions()).then(data => {
+  // Config is public — fetch before auth so splash page shows lock time immediately.
+  // Routing below depends on picksLocked, so the auth callback must await this
+  // same promise rather than racing it — otherwise a fast auth resolution reads
+  // picksLocked as false (lock time not loaded yet) and routes a locked-out user
+  // straight to /picks.
+  const configReady = queryClient.ensureQueryData(configQueryOptions()).then(data => {
     picksLockTime.value = data?.picksLockAt ?? null
   }).catch(() => {})
 
@@ -126,6 +130,7 @@ onMounted(async () => {
         const [pickData, profile] = await Promise.all([
           queryClient.ensureQueryData(pickQueryOptions(u.uid)).catch(() => null),
           queryClient.ensureQueryData(userQueryOptions(u.uid)).catch(() => null),
+          configReady,
         ])
         const pickExists = !!pickData
         isAdmin.value = !!profile?.isAdmin
