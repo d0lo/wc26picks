@@ -391,8 +391,8 @@ async function emailSubmit() {
         <p v-if="error" class="mt-4 text-red-400 text-xs">{{ error }}</p>
       </template>
 
-      <p class="mt-6 text-zinc-400 text-xs leading-relaxed">
-        <span class="text-zinc-400">{{ picksLockTime && !picksLocked ? `Picks lock ${fmtLockTime(picksLockTime)}` : '—' }}</span>
+      <p v-if="picksLockTime && !picksLocked" class="mt-6 text-zinc-400 text-xs leading-relaxed">
+        Picks lock {{ fmtLockTime(picksLockTime) }}
       </p>
     </div>
   </div>
