@@ -48,7 +48,7 @@ function makeSnapshot() {
   return JSON.stringify({
     groups: Object.fromEntries(GROUPS.map(g => [g, [...order[g]]])),
     wildcards: [...wildcards.value].sort(),
-    props: Object.fromEntries(allProps.value.map(p => [p.key, propAnswers[p.key]])),
+    props: Object.fromEntries(allProps.value.map(p => [p.id, propAnswers[p.id]])),
   })
 }
 
@@ -188,12 +188,12 @@ function wcDisabled(group) {
 // ── Scoring config (admin-editable prop catalog + point values) ────────
 const { scoring, props: allProps, propsByCategory, groupExactLabel, isLoading: scoringLoading } = useScoring()
 
-// Prop keys arrive async from Firestore — seed an answer slot for each as
+// Prop ids arrive async from Firestore — seed an answer slot for each as
 // the catalog loads, without clobbering answers already merged in from a
 // saved pick (see the pickQuery watch below).
 watch(allProps, (list) => {
   for (const p of list) {
-    if (!(p.key in propAnswers)) propAnswers[p.key] = ''
+    if (!(p.id in propAnswers)) propAnswers[p.id] = ''
   }
 }, { immediate: true })
 
@@ -201,7 +201,7 @@ const ready = computed(() => loaded.value && !scoringLoading.value)
 const configMissing = computed(() => ready.value && allProps.value.length === 0)
 
 // ── Progress ───────────────────────────────────────────────────────────
-const doneProps = computed(() => allProps.value.filter(p => propAnswers[p.key] !== '').length)
+const doneProps = computed(() => allProps.value.filter(p => propAnswers[p.id] !== '').length)
 const canSubmit = computed(
   () => !picksLocked.value && allProps.value.length > 0 && wildcards.value.length === 8 && doneProps.value === allProps.value.length
 )
@@ -221,9 +221,10 @@ async function submit() {
       // Store team UUIDs, not names
       groups: Object.fromEntries(GROUPS.map(g => [g, order[g].map(name => TEAM_ID[name])])),
       wildcards: wildcards.value,
-      // Props already store UUIDs (from CountrySelect/PlayerSelect); cleanGroupTeam null-safe
+      // Keyed by prop.id (stable), not prop.key — see seed-scoring-config.mjs.
+      // Answers already store UUIDs (from CountrySelect/PlayerSelect); cleanGroupTeam null-safe
       props: Object.fromEntries(
-        allProps.value.map(p => [p.key, propAnswers[p.key] === '' ? null : propAnswers[p.key]])
+        allProps.value.map(p => [p.id, propAnswers[p.id] === '' ? null : propAnswers[p.id]])
       ),
     }, { merge: true })
     queryClient.invalidateQueries({ queryKey: queryKeys.pick(user.value.uid) })
@@ -507,7 +508,7 @@ const POS_COLORS = [
       </div>
       <div class="space-y-2">
         <div
-          v-for="prop in cat.props" :key="prop.key"
+          v-for="prop in cat.props" :key="prop.id"
           class="bg-court-800 border border-court-700 rounded-2xl p-4"
         >
           <div class="relative mb-3">
@@ -520,20 +521,20 @@ const POS_COLORS = [
 
           <CountrySelect
             v-if="prop.type === 'team'"
-            v-model="propAnswers[prop.key]"
+            v-model="propAnswers[prop.id]"
             :disabled="picksLocked"
             :allowNone="!!prop.allowNone"
           />
           <PlayerSelect
             v-else-if="prop.type === 'player'"
-            v-model="propAnswers[prop.key]"
+            v-model="propAnswers[prop.id]"
             :positionFilter="prop.positionFilter ?? null"
             :maxAge="prop.maxAge ?? null"
             :disabled="picksLocked"
           />
           <input
             v-else
-            v-model="propAnswers[prop.key]"
+            v-model="propAnswers[prop.id]"
             type="number"
             min="0"
             placeholder="e.g. 24"

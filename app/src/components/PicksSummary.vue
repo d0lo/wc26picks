@@ -80,22 +80,22 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">{{ cat.label }}</h2>
         <div class="space-y-2">
           <div
-            v-for="prop in cat.props" :key="prop.key"
+            v-for="prop in cat.props" :key="prop.id"
             class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
           >
             <div class="min-w-0">
               <div class="text-[11px] text-zinc-400 mb-0.5">{{ prop.label }}</div>
               <div class="text-sm font-bold text-white truncate flex items-center gap-1">
-                <template v-if="prop.type === 'player' && props[prop.key]">
-                  <span>{{ TEAM_FLAG[PLAYER_BY_ID[props[prop.key]]?.team] ?? '' }}</span>
-                  <span>{{ PLAYER_BY_ID[props[prop.key]]?.name ?? '—' }}</span>
+                <template v-if="prop.type === 'player' && props[prop.id]">
+                  <span>{{ TEAM_FLAG[PLAYER_BY_ID[props[prop.id]]?.team] ?? '' }}</span>
+                  <span>{{ PLAYER_BY_ID[props[prop.id]]?.name ?? '—' }}</span>
                 </template>
-                <template v-else-if="prop.type === 'team' && props[prop.key] !== null && props[prop.key]">
-                  <span>{{ TEAM_BY_ID[props[prop.key]]?.flag ?? '🏳️' }}</span>
-                  <span>{{ TEAM_BY_ID[props[prop.key]]?.name }}</span>
+                <template v-else-if="prop.type === 'team' && props[prop.id] !== null && props[prop.id]">
+                  <span>{{ TEAM_BY_ID[props[prop.id]]?.flag ?? '🏳️' }}</span>
+                  <span>{{ TEAM_BY_ID[props[prop.id]]?.name }}</span>
                 </template>
                 <template v-else>
-                  <span>{{ props[prop.key] === null ? '🚫 No Team' : '—' }}</span>
+                  <span>{{ props[prop.id] === null ? '🚫 No Team' : '—' }}</span>
                 </template>
               </div>
             </div>
