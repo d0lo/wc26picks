@@ -3,15 +3,49 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Kept writable for now — main's current app code still reads/writes
+    // this collection. Switch to read-only once the /picks migration on
+    // claude/admin-config-editor-tab-m9ot20 merges and main moves off it.
     match /submissions/{userId} {
       allow create, update: if request.auth != null && request.auth.uid == userId;
       allow read: if request.auth != null;
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
+    // New collection used by the in-progress /picks + /users migration.
+    // Deployed ahead of that branch's merge so its PR preview can be
+    // tested against live rules without breaking /submissions for
+    // current users.
+    match /picks/{userId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      // Owner can self-manage displayName/photoURL, but isAdmin is settable
+      // only server-side (Admin SDK bypasses rules) — never via client write.
+      allow create: if request.auth != null && request.auth.uid == userId
+        && !('isAdmin' in request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.get('isAdmin', false) == resource.data.get('isAdmin', false);
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /teams/{teamId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /players/{playerId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     match /config/{docId} {
       allow read: if true;
-      allow write: if false;
+      allow write: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
 
     match /outcomes/official {
@@ -22,6 +56,21 @@ service cloud.firestore {
     match /scores/{userId} {
       allow read: if request.auth != null;
       allow write: if false; // computed server-side or by admin
+    }
+
+    match /liveData/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false; // written only by Cloud Functions (admin SDK)
+    }
+
+    match /matches/{eventId} {
+      allow read: if request.auth != null;
+      allow write: if false; // written only by Cloud Functions (admin SDK)
+    }
+
+    match /groups/{letter} {
+      allow read: if request.auth != null;
+      allow write: if false; // written only by Cloud Functions (admin SDK)
     }
   }
 }
