@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, inject } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { signOut, deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, updateProfile } from 'firebase/auth'
 import { doc, deleteDoc, setDoc } from 'firebase/firestore'
@@ -26,6 +26,21 @@ const defaultDisplayName = computed(() => {
 
 const editingName = ref(props.editName)
 const newName = ref(props.editName ? defaultDisplayName.value : '')
+
+// Locks the page itself (not just this modal) from scrolling, same as
+// PicksModal — without this, focusing the name input opens the on-screen
+// keyboard, the browser scrolls the document to keep the input visible,
+// and that scroll offset survives after the modal closes (it's only the
+// keyboard that goes away), leaving the rest of the page — including the
+// sticky tab bar — visually stuck shifted up.
+function lockBodyScroll() {
+  document.documentElement.style.overflow = 'hidden'
+}
+function unlockBodyScroll() {
+  document.documentElement.style.overflow = ''
+}
+onMounted(lockBodyScroll)
+onUnmounted(unlockBodyScroll)
 
 async function saveName() {
   const name = newName.value.trim()
