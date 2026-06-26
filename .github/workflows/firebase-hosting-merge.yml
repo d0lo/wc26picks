@@ -65,3 +65,12 @@ jobs:
           channelId: live
           projectId: wc26picks
           entryPoint: ./firebase
+
+      - name: Deploy Firestore rules
+        if: always()
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only firestore:rules --project wc26picks
+        env:
+          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_WC26PICKS }}
+          PROJECT_PATH: ./firebase
