@@ -56,29 +56,42 @@ const scoringDirty = computed(() => snapshotScoring() !== savedSnapshot.scoring)
 const propsDirty = computed(() => snapshotProps() !== savedSnapshot.props)
 const anyDirty = computed(() => lockDirty.value || scoringDirty.value || propsDirty.value)
 
+// Custom confirm dialog (replaces window.confirm so it matches app styling).
+// confirmDiscard() resolves true/false once the user picks a button.
+const discardConfirm = reactive({ open: false, resolve: null })
+
 function confirmDiscard() {
-  return window.confirm('Are you sure you want to discard your changes?')
+  return new Promise((resolve) => {
+    discardConfirm.open = true
+    discardConfirm.resolve = resolve
+  })
 }
 
-function cancelLock() {
+function resolveDiscardConfirm(result) {
+  discardConfirm.open = false
+  discardConfirm.resolve?.(result)
+  discardConfirm.resolve = null
+}
+
+async function cancelLock() {
   if (!lockDirty.value) return
-  if (!confirmDiscard()) return
+  if (!(await confirmDiscard())) return
   lockTimeInput.value = savedSnapshot.lock
   saveStatus.lock = ''
   saveError.lock = ''
 }
 
-function cancelScoring() {
+async function cancelScoring() {
   if (!scoringDirty.value) return
-  if (!confirmDiscard()) return
+  if (!(await confirmDiscard())) return
   loadFromConfig(configQuery.data.value)
   saveStatus.scoring = ''
   saveError.scoring = ''
 }
 
-function cancelProps() {
+async function cancelProps() {
   if (!propsDirty.value) return
-  if (!confirmDiscard()) return
+  if (!(await confirmDiscard())) return
   // Any dialog editing a now-discarded draft must close — its OK would
   // otherwise resurrect a prop (or edit) the user just asked to discard.
   closeDialog()
@@ -89,9 +102,9 @@ function cancelProps() {
 
 // Warn before leaving the page entirely (route change) with unsaved changes
 // in any section.
-onBeforeRouteLeave(() => {
+onBeforeRouteLeave(async () => {
   if (!anyDirty.value) return true
-  return confirmDiscard()
+  return await confirmDiscard()
 })
 
 const POSITION_FILTERS = [
@@ -626,6 +639,30 @@ async function saveProps() {
             class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-court-700 hover:bg-court-600 text-white transition-colors"
           >
             Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Discard-changes confirm dialog -->
+    <div v-if="discardConfirm.open" class="fixed inset-0 z-[210] flex items-center justify-center p-4" @mousedown.self="resolveDiscardConfirm(false)">
+      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+      <div class="relative w-full max-w-xs mx-auto bg-court-800 border border-court-700 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden p-5">
+        <p class="text-sm text-white text-center mb-4">Are you sure you want to discard your changes?</p>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            @click="resolveDiscardConfirm(true)"
+            class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-red-500 hover:bg-red-400 text-white transition-colors"
+          >
+            Discard
+          </button>
+          <button
+            type="button"
+            @click="resolveDiscardConfirm(false)"
+            class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-court-700 hover:bg-court-600 text-white transition-colors"
+          >
+            Keep editing
           </button>
         </div>
       </div>
