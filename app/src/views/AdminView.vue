@@ -37,6 +37,26 @@ function snapshotScoring() { return JSON.stringify(scoringForm) }
 function snapshotProps() { return JSON.stringify(propsForm.items) }
 const savedSnapshot = reactive({ lock: '', scoring: '', props: '' })
 
+const activeProps = computed(() => propsForm.items.filter(p => !p.archived))
+const archivedProps = computed(() => propsForm.items.filter(p => p.archived))
+
+const propsByCategory = computed(() =>
+  PROP_CATEGORIES.map(c => ({ ...c, props: activeProps.value.filter(p => p.category === c.key) }))
+)
+
+// One reactive array per category, bound via vuedraggable with a shared
+// `group` so rows can be dragged between category lists, not just reordered
+// within one. After every drag-driven change, the dragged prop's category is
+// corrected to match wherever it landed and the canonical propsForm.items
+// order is rebuilt from the category lists.
+const categoryLists = reactive(Object.fromEntries(PROP_CATEGORIES.map(c => [c.key, []])))
+
+function rebuildCategoryLists() {
+  for (const cat of PROP_CATEGORIES) {
+    categoryLists[cat.key] = activeProps.value.filter(p => p.category === cat.key)
+  }
+}
+
 function loadFromConfig(data) {
   if (!data) return
   lockTimeInput.value = toLocalInputValue(data.picksLockAt)
@@ -118,13 +138,6 @@ const POSITION_FILTERS = [
   { value: 'F', label: 'Forward' },
 ]
 
-const activeProps = computed(() => propsForm.items.filter(p => !p.archived))
-const archivedProps = computed(() => propsForm.items.filter(p => p.archived))
-
-const propsByCategory = computed(() =>
-  PROP_CATEGORIES.map(c => ({ ...c, props: activeProps.value.filter(p => p.category === c.key) }))
-)
-
 function addProp(categoryKey) {
   propsForm.items.push({
     id: crypto.randomUUID(),
@@ -142,19 +155,6 @@ function addProp(categoryKey) {
 function restoreProp(prop) {
   delete prop.archived
   rebuildCategoryLists()
-}
-
-// --- Drag and drop: one reactive array per category, bound via vuedraggable
-// with a shared `group` so rows can be dragged between category lists, not
-// just reordered within one. After every drag-driven change, the dragged
-// prop's category is corrected to match wherever it landed and the canonical
-// propsForm.items order is rebuilt from the category lists.
-const categoryLists = reactive(Object.fromEntries(PROP_CATEGORIES.map(c => [c.key, []])))
-
-function rebuildCategoryLists() {
-  for (const cat of PROP_CATEGORIES) {
-    categoryLists[cat.key] = activeProps.value.filter(p => p.category === cat.key)
-  }
 }
 
 function onCategoryListChange(categoryKey, evt) {
