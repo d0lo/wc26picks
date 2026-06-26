@@ -2,10 +2,10 @@
 import { ref, computed, inject, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { doc, onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore'
+import { onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { TEAM_BY_ID } from '../data.js'
-import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, queryKeys } from '../queries.js'
+import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
@@ -55,7 +55,6 @@ watch(picksListQuery.data, (list) => {
 // the leaderboard updates immediately, instead of waiting on
 // scoresQueryOptions()'s refetchOnWindowFocus to fire on a tab refocus.
 let scoresUnsub = null
-let scoreboardUnsub = null
 
 function startLiveScores() {
   if (scoresUnsub) return
@@ -68,14 +67,17 @@ function stopLiveScores() {
   scoresUnsub = null
 }
 
-onMounted(() => {
-  scoreboardUnsub = onSnapshot(doc(db, 'liveData/scoreboard'), (snap) => {
-    if (snap.data()?.state === 'polling') startLiveScores()
-    else stopLiveScores()
-  })
-})
+// liveData/scoreboard listener is shared with LiveView via queries.js so the
+// two views don't each open their own onSnapshot on the same document.
+const scoreboardQuery = useQuery(scoreboardQueryOptions())
+watch(() => scoreboardQuery.data.value?.state, (state) => {
+  if (state === 'polling') startLiveScores()
+  else stopLiveScores()
+}, { immediate: true })
+
+onMounted(() => startScoreboardListener(queryClient))
 onUnmounted(() => {
-  scoreboardUnsub?.()
+  stopScoreboardListener()
   stopLiveScores()
 })
 

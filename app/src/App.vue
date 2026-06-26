@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
-import { configQueryOptions, pickQueryOptions, userQueryOptions } from './queries.js'
+import { configQueryOptions, pickQueryOptions, userQueryOptions, queryKeys } from './queries.js'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
 import ProfileModal from './components/ProfileModal.vue'
@@ -88,6 +88,7 @@ onMounted(async () => {
   }).catch(() => {})
 
   onAuthStateChanged(auth, async (u) => {
+    const prevUid = user.value?.uid
     if (u) {
       loading.value = true
       dataReady.value = false
@@ -99,6 +100,14 @@ onMounted(async () => {
       editNameMode.value = false
       profileUnsub?.()
       profileUnsub = null
+      // Drop the previous user's pick/profile from cache (and from the next
+      // localStorage persist) — on a shared device the next sign-in
+      // shouldn't briefly paint the prior user's cached data before its own
+      // fetch resolves.
+      if (prevUid) {
+        queryClient.removeQueries({ queryKey: queryKeys.pick(prevUid) })
+        queryClient.removeQueries({ queryKey: queryKeys.user(prevUid) })
+      }
     }
     user.value = u
     if (u) {
@@ -109,16 +118,15 @@ onMounted(async () => {
         photoURL: u.photoURL ?? null,
       }, { merge: true }).catch(() => {})
 
-      // Firestore read is best-effort — a permissions error must never skip the username flow
-      let pickExists = false
+      // pick and profile are independent reads — fetch them in parallel.
+      // Each is caught individually so a permissions error on either one is
+      // best-effort and must never skip the username flow below.
       try {
-        const data = await queryClient.ensureQueryData(pickQueryOptions(u.uid))
-        pickExists = !!data
-      } catch {
-        // picks/ not yet accessible — treat as no pick
-      }
-      try {
-        const profile = await queryClient.ensureQueryData(userQueryOptions(u.uid)).catch(() => null)
+        const [pickData, profile] = await Promise.all([
+          queryClient.ensureQueryData(pickQueryOptions(u.uid)).catch(() => null),
+          queryClient.ensureQueryData(userQueryOptions(u.uid)).catch(() => null),
+        ])
+        const pickExists = !!pickData
         isAdmin.value = !!profile?.isAdmin
         hasSubmitted.value = pickExists
         const isGoogle = u.providerData?.[0]?.providerId === 'google.com'

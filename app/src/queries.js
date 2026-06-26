@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocs, collection, query, orderBy, limit, where, documentId } from 'firebase/firestore'
+import { doc, getDoc, getDocs, onSnapshot, collection, query, orderBy, limit, where, documentId } from 'firebase/firestore'
 import { db } from './firebase.js'
 
 const FIVE_MINUTES = 5 * 60 * 1000
@@ -13,6 +13,7 @@ export const queryKeys = {
   user: (uid) => ['user', uid],
   usersList: ['users', 'list'],
   usersByIds: (sortedUids) => ['users', 'byIds', sortedUids],
+  scoreboard: ['liveData', 'scoreboard'],
 }
 
 // config/public shape:
@@ -156,4 +157,40 @@ export function removeUserFromCache(queryClient, uid) {
 export function removePickFromCache(queryClient, uid) {
   queryClient.removeQueries({ queryKey: queryKeys.pick(uid) })
   queryClient.setQueryData(queryKeys.picksList, (old) => old?.filter(p => p.id !== uid))
+}
+
+// liveData/scoreboard is realtime-only — there's no plain getDoc fetch for
+// it, it's always populated by startScoreboardListener() below. enabled:
+// false keeps useQuery from trying to run this queryFn itself; the active
+// query observer still reflects every setQueryData call the listener makes.
+export function scoreboardQueryOptions() {
+  return {
+    queryKey: queryKeys.scoreboard,
+    queryFn: () => null,
+    enabled: false,
+    staleTime: Infinity,
+  }
+}
+
+let scoreboardUnsub = null
+let scoreboardRefCount = 0
+
+// LiveView and LeaderboardView both need liveData/scoreboard live — refcount
+// so they share one Firestore listener instead of opening a second one for
+// the same document, and write into the shared cache entry above so either
+// (or both) can read it via scoreboardQueryOptions().
+export function startScoreboardListener(queryClient) {
+  scoreboardRefCount++
+  if (scoreboardUnsub) return
+  scoreboardUnsub = onSnapshot(doc(db, 'liveData/scoreboard'), (snap) => {
+    queryClient.setQueryData(queryKeys.scoreboard, snap.data() ?? null)
+  })
+}
+
+export function stopScoreboardListener() {
+  scoreboardRefCount = Math.max(0, scoreboardRefCount - 1)
+  if (scoreboardRefCount === 0) {
+    scoreboardUnsub?.()
+    scoreboardUnsub = null
+  }
 }

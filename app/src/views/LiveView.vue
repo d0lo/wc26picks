@@ -1,22 +1,16 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { doc, onSnapshot } from 'firebase/firestore'
-import { db } from '../firebase.js'
+import { computed, onMounted, onUnmounted } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { scoreboardQueryOptions, startScoreboardListener, stopScoreboardListener } from '../queries.js'
 import LiveScoreboard from '../components/LiveScoreboard.vue'
 
-const events = ref([])
-const hasMatches = ref(null)
-let unsubscribe = null
+const queryClient = useQueryClient()
+const scoreboardQuery = useQuery(scoreboardQueryOptions())
+const events = computed(() => scoreboardQuery.data.value?.events ?? [])
+const hasMatches = computed(() => scoreboardQuery.data.value?.hasMatches ?? null)
 
-onMounted(() => {
-  unsubscribe = onSnapshot(doc(db, 'liveData/scoreboard'), (snap) => {
-    const data = snap.data()
-    events.value = data?.events ?? []
-    hasMatches.value = data?.hasMatches ?? null
-  })
-})
-
-onUnmounted(() => unsubscribe?.())
+onMounted(() => startScoreboardListener(queryClient))
+onUnmounted(() => stopScoreboardListener())
 </script>
 
 <template>
