@@ -200,6 +200,16 @@ function commitDialog() {
 }
 
 function archiveDraft() {
+  // A prop that was never saved has nothing to preserve for existing
+  // picks — archiving it would just leave a dead, never-visible row
+  // sitting in the Archived list forever. Delete it outright instead.
+  const savedIds = new Set(JSON.parse(savedSnapshot.props).map(p => p.id))
+  if (!savedIds.has(draft.id)) {
+    propsForm.items = propsForm.items.filter(p => p.id !== draft.id)
+    closeDialog()
+    rebuildCategoryLists()
+    return
+  }
   draft.archived = true
   commitDialog()
 }
@@ -337,7 +347,7 @@ async function saveProps() {
           <label v-for="pos in [1, 2, 3, 4]" :key="pos" class="block">
             <span class="block text-[10px] text-zinc-400 mb-1">{{ pos }}{{ pos === 1 ? 'st' : pos === 2 ? 'nd' : pos === 3 ? 'rd' : 'th' }}</span>
             <input
-              v-model="scoringForm.groupExact[pos]"
+              v-model.number="scoringForm.groupExact[pos]"
               type="number"
               class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-1.5 text-sm text-white"
             />
@@ -347,7 +357,7 @@ async function saveProps() {
           <label class="block">
             <span class="block text-[10px] text-zinc-400 mb-1">Perfect group bonus</span>
             <input
-              v-model="scoringForm.perfectGroupBonus"
+              v-model.number="scoringForm.perfectGroupBonus"
               type="number"
               class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-1.5 text-sm text-white"
             />
@@ -355,7 +365,7 @@ async function saveProps() {
           <label class="block">
             <span class="block text-[10px] text-zinc-400 mb-1">Wildcard (per pick)</span>
             <input
-              v-model="scoringForm.wildcard"
+              v-model.number="scoringForm.wildcard"
               type="number"
               class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-1.5 text-sm text-white"
             />
@@ -515,7 +525,7 @@ async function saveProps() {
             </label>
             <label class="block">
               <span class="block text-[10px] text-zinc-500 mb-1">Points</span>
-              <input v-model="draft.points" type="number" class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-2 text-sm text-white" />
+              <input v-model.number="draft.points" type="number" class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-2 text-sm text-white" />
             </label>
           </div>
 
@@ -528,7 +538,7 @@ async function saveProps() {
             </label>
             <label class="block">
               <span class="block text-[10px] text-zinc-500 mb-1">Max age</span>
-              <input v-model="draft.maxAge" type="number" placeholder="No limit" class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-2 text-sm text-white" />
+              <input v-model.number="draft.maxAge" type="number" placeholder="No limit" class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-2 text-sm text-white" />
             </label>
           </div>
           <label v-else class="flex items-center gap-2">
