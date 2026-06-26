@@ -50,7 +50,15 @@ jobs:
 
           git add package.json
           git commit -m "chore: bump version to v$VERSION [skip ci]"
-          git push
+
+          # main can move between this job's checkout and this push (e.g. a
+          # manual rerun replaying against a main that already advanced) —
+          # rebase onto the latest and retry rather than failing outright.
+          for i in 1 2 3; do
+            git push && break
+            git fetch origin main
+            git rebase origin/main
+          done
 
       - name: Build Vue app
         working-directory: app
@@ -62,7 +70,13 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm ci && npm run build
-      - uses: Wandalen/wretry.action@v3.8.0
+      - name: Deploy to Firebase Hosting
+        # wretry retries with a fresh deploy (new version) each attempt, which
+        # is a real fix for the "premature close" apiv2 retry race below — but
+        # if all 3 attempts still somehow report failure, don't block the
+        # Firestore rules deploy on it (it runs via if: always() either way).
+        continue-on-error: true
+        uses: Wandalen/wretry.action@v3.8.0
         with:
           action: FirebaseExtended/action-hosting-deploy@v0
           with: |
@@ -74,3 +88,12 @@ jobs:
             firebaseToolsVersion: 15.22.1
           attempt_limit: 3
           attempt_delay: 5000
+
+      - name: Deploy Firestore rules
+        if: always()
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only firestore:rules --project wc26picks
+        env:
+          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_WC26PICKS }}
+          PROJECT_PATH: ./firebase

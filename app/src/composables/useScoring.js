@@ -9,7 +9,10 @@ import { configQueryOptions } from '../queries.js'
 export function useScoring() {
   const configQuery = useQuery(configQueryOptions())
   const scoring = computed(() => configQuery.data.value?.scoring ?? null)
-  const props = computed(() => scoring.value?.props ?? [])
+  // Archived props (soft-deleted by the admin editor) are excluded here so
+  // they stop appearing for new/edited picks, but the raw doc still has the
+  // entry — existing picks/{uid}.props answers keyed by that id are untouched.
+  const props = computed(() => (scoring.value?.props ?? []).filter(p => !p.archived))
 
   const propsByCategory = computed(() =>
     orderedPropCategories()

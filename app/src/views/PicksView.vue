@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, computed, inject, watch } from 'vue'
+import draggable from 'vuedraggable'
 import { useRouter } from 'vue-router'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
@@ -94,93 +95,6 @@ watch(pickQuery.isFetched, (fetched) => {
   }
   loaded.value = true
 }, { immediate: true })
-
-// ── Drag and drop ──────────────────────────────────────────────────────
-const drag = reactive({ group: null, item: null })
-let _dragSaved = null // order snapshot before drag; cleared on valid drop
-
-function onDragStart(e, group, team) {
-  drag.group = group
-  drag.item = team
-  _dragSaved = { group, order: [...order[group]] }
-  e.dataTransfer.effectAllowed = 'move'
-}
-
-function onDragOver(e, group, idx) {
-  e.preventDefault()
-  if (drag.group !== group || !drag.item) return
-  const arr = order[group]
-  const from = arr.indexOf(drag.item)
-  if (from === idx) return
-  arr.splice(from, 1)
-  arr.splice(idx, 0, drag.item)
-}
-
-function onDrop(e) {
-  e.preventDefault()
-  _dragSaved = null // valid drop within group — keep new order
-}
-
-function onDragEnd() {
-  if (_dragSaved) {
-    // Dropped outside the group card — restore original order
-    order[_dragSaved.group].splice(0, Infinity, ..._dragSaved.order)
-  }
-  drag.group = null
-  drag.item = null
-  _dragSaved = null
-}
-
-// ── Touch drag (mobile) ────────────────────────────────────────────────
-const touch = reactive({ group: null, item: null })
-let _touchSaved = null // order snapshot before touch drag
-
-function onTouchStart(e, group, team) {
-  touch.group = group
-  touch.item = team
-  drag.group = group
-  drag.item = team
-  _touchSaved = { group, order: [...order[group]] }
-}
-
-function onTouchMove(e) {
-  if (!touch.item) return
-  e.preventDefault()
-  const t = e.touches[0]
-  // Temporarily hide the dragged element so elementFromPoint finds the target beneath
-  const dragged = e.currentTarget
-  dragged.style.visibility = 'hidden'
-  const el = document.elementFromPoint(t.clientX, t.clientY)
-  dragged.style.visibility = ''
-  if (!el) return
-  const row = el.closest('[data-drag-row]')
-  if (!row) return
-  const targetGroup = row.dataset.dragGroup
-  const targetIdx = Number(row.dataset.dragIdx)
-  if (targetGroup !== touch.group) return
-  const arr = order[touch.group]
-  const from = arr.indexOf(touch.item)
-  if (from === targetIdx) return
-  arr.splice(from, 1)
-  arr.splice(targetIdx, 0, touch.item)
-}
-
-function onTouchEnd(e) {
-  if (_touchSaved && touch.group) {
-    const t = e.changedTouches[0]
-    const el = document.elementFromPoint(t.clientX, t.clientY)
-    const groupEl = el?.closest('[data-group]')
-    if (groupEl?.dataset.group !== touch.group) {
-      // Finger lifted outside the group card — restore original order
-      order[_touchSaved.group].splice(0, Infinity, ..._touchSaved.order)
-    }
-  }
-  touch.group = null
-  touch.item = null
-  drag.group = null
-  drag.item = null
-  _touchSaved = null
-}
 
 function resetGroup(group) {
   order[group] = fifaOrder(group)
@@ -406,52 +320,51 @@ const POS_COLORS = [
           </div>
 
           <!-- Draggable team rows -->
-          <TransitionGroup tag="div" :name="drag.group === group ? '' : 'drag-list'" class="space-y-1">
-            <div
-              v-for="(team, idx) in order[group]" :key="team"
-              :draggable="!picksLocked"
-              data-drag-row
-              :data-drag-group="group"
-              :data-drag-idx="idx"
-              @dragstart="!picksLocked && onDragStart($event, group, team)"
-              @dragover="!picksLocked && onDragOver($event, group, idx)"
-              @drop="!picksLocked && onDrop($event)"
-              @dragend="!picksLocked && onDragEnd()"
-              @touchstart.passive="!picksLocked && onTouchStart($event, group, team)"
-              @touchmove="!picksLocked && onTouchMove($event)"
-              @touchend="!picksLocked && onTouchEnd($event)"
-              class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border"
-              :class="[
-                picksLocked ? 'cursor-default bg-court-750 border-transparent opacity-60' :
-                  drag.group === group && drag.item === team
-                    ? 'opacity-30 bg-court-750 border-transparent cursor-grab active:cursor-grabbing'
-                    : 'bg-court-750 border-transparent hover:border-court-600 cursor-grab active:cursor-grabbing'
-              ]"
-            >
-              <!-- Position badge -->
+          <draggable
+            v-model="order[group]"
+            :item-key="(team) => team"
+            tag="div"
+            class="space-y-1"
+            :disabled="picksLocked"
+            :animation="200"
+            :delay="100"
+            :delay-on-touch-only="true"
+            ghost-class="drag-ghost"
+            chosen-class="drag-chosen"
+            drag-class="drag-dragging"
+          >
+            <template #item="{ element: team, index: idx }">
               <div
-                class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
-                :class="POS_COLORS[idx]"
-              >{{ idx + 1 }}</div>
+                class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border"
+                :class="picksLocked
+                  ? 'cursor-default bg-court-750 border-transparent opacity-60'
+                  : 'bg-court-750 border-transparent hover:border-court-600 cursor-grab active:cursor-grabbing'"
+              >
+                <!-- Position badge -->
+                <div
+                  class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
+                  :class="POS_COLORS[idx]"
+                >{{ idx + 1 }}</div>
 
-              <!-- Flag -->
-              <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                <!-- Flag -->
+                <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
 
-              <!-- Team name + FIFA rank -->
-              <span class="flex-1 min-w-0 flex items-center gap-1.5">
-                <span class="text-xs font-medium text-white truncate">{{ team }}</span>
-                <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
-              </span>
+                <!-- Team name + FIFA rank -->
+                <span class="flex-1 min-w-0 flex items-center gap-1.5">
+                  <span class="text-xs font-medium text-white truncate">{{ team }}</span>
+                  <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
+                </span>
 
-              <!-- Drag handle -->
-              <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
-                <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
-                <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
-                <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
-                <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
-              </svg>
-            </div>
-          </TransitionGroup>
+                <!-- Drag handle -->
+                <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
+                  <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
+                  <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
+                  <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
+                </svg>
+              </div>
+            </template>
+          </draggable>
         </div>
       </div>
     </section>
@@ -545,6 +458,7 @@ const POS_COLORS = [
             v-else
             v-model="propAnswers[prop.id]"
             type="number"
+            inputmode="numeric"
             min="0"
             placeholder="e.g. 24"
             :disabled="picksLocked"
@@ -602,8 +516,16 @@ const POS_COLORS = [
 </template>
 
 <style scoped>
-.drag-list-move {
-  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+.drag-ghost {
+  opacity: 0.3;
+}
+.drag-chosen {
+  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.5);
+  cursor: grabbing !important;
+}
+.drag-dragging {
+  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.5);
+  transform: scale(1.03);
 }
 .pin-enter-active { transition: all 0.15s ease-out; }
 .pin-leave-active { transition: all 0.1s ease-in; }
