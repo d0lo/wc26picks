@@ -9,11 +9,29 @@ Every feature follows two feedback loops before merging.
 
 ---
 
+### Branch Strategy
+
+`dev` is the long-lived working branch — all features and `main` itself, the
+live/deployed branch, only moves forward when `dev` is merged into it.
+
+```
+main ← (merge dev → main when given the go-ahead — deploys the live site)
+dev  ← (merge each feature PR here after Loop 2)
+dev  ← feature/<short-description>  (one branch per feature, PR'd back into dev)
+```
+
+There is a standing, never-closed PR from `dev` → `main`. Opening it (once)
+triggers a preview deploy and PR comment for `dev` itself — leave that comment
+as the running reference for what's currently staged. Don't re-announce it on
+every feature merge into `dev`; it auto-updates in place as `dev` moves.
+
+---
+
 ### Loop 1 — Feature Testing
 
-1. **New feature request** → create a dedicated branch: `feature/<short-description>`
-2. Implement the feature, then **commit, push, and open a PR** against `main` — **ALWAYS open the PR immediately after pushing. Never wait to be asked.**
-3. Opening the PR automatically triggers a Firebase Hosting preview deploy — post the preview URL in chat
+1. **New feature request** → create a dedicated branch off `dev`: `feature/<short-description>`
+2. Implement the feature, then **commit, push, and open a PR** against `dev` — **ALWAYS open the PR immediately after pushing. Never wait to be asked.**
+3. Opening the PR automatically triggers its own Firebase Hosting preview deploy — post the preview URL in chat
 4. Wait for the user to test the preview
 5. For each **code change request**:
    - Make the changes on the same branch
@@ -32,7 +50,9 @@ Every feature follows two feedback loops before merging.
    - Make the changes, commit, and push
    - Run `/code-review` again
    - Repeat until there are no remaining issues we both agree need fixing
-4. Once the review is clean, **merge the PR into `main`**
+4. Once the review is clean, **merge the PR into `dev`**
+5. If the standing `dev` → `main` PR hasn't had its preview deploy/comment yet, that's the only time to check for and post it — otherwise it's already posted and just updates automatically
+6. **Merging `dev` into `main`** (deploying live) only happens when the user explicitly gives the go-ahead — never as an automatic next step after a feature merges into `dev`
 
 ---
 
@@ -64,16 +84,17 @@ Example: `feat: add forgot password flow` / `fix: restore group order on cancell
 ### When to Use a PR vs. Push Directly
 
 - **PR** — anything user-facing: features, UI changes, bug fixes the user can see
-- **Push directly to `main`** — docs, config, CI tweaks, `CLAUDE.md` updates
+- **Push directly to `dev`** — docs, config, CI tweaks, `CLAUDE.md` updates that aren't tied to a specific feature PR
 
 ---
 
 ### General Rules
 
-- Never push user-facing changes directly to `main`
+- Never push user-facing changes directly to `dev` or `main`
 - Never merge without completing both feedback loops
 - Keep PRs focused on a single feature
 - The preview URL should be confirmed working before starting Loop 2
+- Never merge `dev` into `main` without the user explicitly saying so
 
 ---
 
