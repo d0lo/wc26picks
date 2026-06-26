@@ -1,9 +1,11 @@
 <script setup>
-import { ref, computed, inject, watch } from 'vue'
+import { ref, computed, inject, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore'
+import { db } from '../firebase.js'
 import { TEAM_BY_ID } from '../data.js'
-import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, queryKeys } from '../queries.js'
+import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
@@ -21,7 +23,21 @@ const picksListQuery = useQuery(picksListQueryOptions())
 const submission = computed(() => pickQuery.data.value ?? null)
 const scores = computed(() => scoresQuery.data.value ?? [])
 const submitters = computed(() => picksListQuery.data.value ?? [])
-const loading = computed(() => pickQuery.isLoading.value || scoresQuery.isLoading.value || picksListQuery.isLoading.value)
+
+// Only resolve names for uids that actually appear on this page — picks-list
+// submitters plus anyone with a score — instead of pulling the whole users
+// collection just to look up a handful of display names.
+const visibleUids = computed(() => [
+  ...submitters.value.map(s => s.uid ?? s.id),
+  ...scores.value.map(s => s.id),
+])
+const usersListQuery = useQuery(computed(() => usersByIdsQueryOptions(visibleUids.value)))
+const users = computed(() => usersListQuery.data.value ?? {})
+const loading = computed(() => pickQuery.isLoading.value || scoresQuery.isLoading.value || picksListQuery.isLoading.value || usersListQuery.isLoading.value)
+
+function nameFor(uid) {
+  return users.value[uid]?.displayName ?? null
+}
 
 // The picks-list query already fetches every user's full pick doc (groups,
 // wildcards, props) — seed each individual pick(uid) cache entry from it so
@@ -33,6 +49,37 @@ watch(picksListQuery.data, (list) => {
     queryClient.setQueryData(queryKeys.pick(p.id), p)
   }
 }, { immediate: true })
+
+// Live scores: while a match is in progress, the auto-scoring trigger keeps
+// rewriting scores/{uid} — subscribe via onSnapshot during that window so
+// the leaderboard updates immediately, instead of waiting on
+// scoresQueryOptions()'s refetchOnWindowFocus to fire on a tab refocus.
+let scoresUnsub = null
+
+function startLiveScores() {
+  if (scoresUnsub) return
+  scoresUnsub = onSnapshot(query(collection(db, 'scores'), orderBy('total', 'desc'), limit(50)), (snap) => {
+    queryClient.setQueryData(queryKeys.scores, snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  })
+}
+function stopLiveScores() {
+  scoresUnsub?.()
+  scoresUnsub = null
+}
+
+// liveData/scoreboard listener is shared with LiveView via queries.js so the
+// two views don't each open their own onSnapshot on the same document.
+const scoreboardQuery = useQuery(scoreboardQueryOptions())
+watch(() => scoreboardQuery.data.value?.state, (state) => {
+  if (state === 'polling') startLiveScores()
+  else stopLiveScores()
+}, { immediate: true })
+
+onMounted(() => startScoreboardListener(queryClient))
+onUnmounted(() => {
+  stopScoreboardListener()
+  stopLiveScores()
+})
 
 const selectedUser = ref(null)  // { uid, name } | null
 
@@ -76,7 +123,7 @@ function fmtDate(ts) {
 
 function openUser(s) {
   const uid = s.uid ?? s.id
-  selectedUser.value = { uid, name: fmtName(s.name) }
+  selectedUser.value = { uid, name: fmtName(nameFor(uid)) }
 }
 
 // ── Sticky group overlay ───────────────────────────────────────────────
@@ -169,7 +216,7 @@ function resolveTeamFlag(teamId) {
               <span
                 class="text-xs font-semibold truncate"
                 :class="(s.uid ?? s.id) === user?.uid ? 'text-emerald-300' : 'text-white'"
-              >{{ fmtName(s.name) }}</span>
+              >{{ fmtName(nameFor(s.uid ?? s.id)) }}</span>
               <button v-if="(s.uid ?? s.id) === user?.uid" @click.stop="openProfile(true)" class="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0" aria-label="Edit display name">
                 <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
@@ -215,7 +262,7 @@ function resolveTeamFlag(teamId) {
               <span
                 class="text-xs font-semibold truncate"
                 :class="s.id === user?.uid ? 'text-emerald-300' : 'text-white'"
-              >{{ fmtName(s.name) }}</span>
+              >{{ fmtName(nameFor(s.id)) }}</span>
               <button v-if="s.id === user?.uid" @click.stop="openProfile(true)" class="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0" aria-label="Edit display name">
                 <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>

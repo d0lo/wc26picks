@@ -1,14 +1,17 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { signOut, deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, updateProfile } from 'firebase/auth'
-import { doc, deleteDoc, updateDoc } from 'firebase/firestore'
+import { doc, deleteDoc, setDoc } from 'firebase/firestore'
 import { useQueryClient } from '@tanstack/vue-query'
 import { auth, db, googleProvider } from '../firebase.js'
-import { queryKeys } from '../queries.js'
+import { patchUserInCache, removeUserFromCache, removePickFromCache } from '../queries.js'
 
 const props = defineProps({ user: Object, editName: Boolean })
 const emit = defineEmits(['close', 'name-saved'])
 const queryClient = useQueryClient()
+const router = useRouter()
+const isAdmin = inject('isAdmin')
 
 const busy = ref(false)
 const error = ref('')
@@ -24,6 +27,21 @@ const defaultDisplayName = computed(() => {
 const editingName = ref(props.editName)
 const newName = ref(props.editName ? defaultDisplayName.value : '')
 
+// Locks the page itself (not just this modal) from scrolling, same as
+// PicksModal — without this, focusing the name input opens the on-screen
+// keyboard, the browser scrolls the document to keep the input visible,
+// and that scroll offset survives after the modal closes (it's only the
+// keyboard that goes away), leaving the rest of the page — including the
+// sticky tab bar — visually stuck shifted up.
+function lockBodyScroll() {
+  document.documentElement.style.overflow = 'hidden'
+}
+function unlockBodyScroll() {
+  document.documentElement.style.overflow = ''
+}
+onMounted(lockBodyScroll)
+onUnmounted(unlockBodyScroll)
+
 async function saveName() {
   const name = newName.value.trim()
   if (!name) return
@@ -31,11 +49,10 @@ async function saveName() {
   error.value = ''
   try {
     await updateProfile(props.user, { displayName: name })
-    // Keep submission doc in sync so leaderboard reflects the new name
-    const subRef = doc(db, 'picks', props.user.uid)
-    await updateDoc(subRef, { name }).catch(() => {})
-    queryClient.invalidateQueries({ queryKey: queryKeys.pick(props.user.uid) })
-    queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
+    await setDoc(doc(db, 'users', props.user.uid), { displayName: name }, { merge: true })
+    // The new name is already known — patch every cache entry that holds it
+    // directly instead of invalidating and waiting on a refetch.
+    patchUserInCache(queryClient, props.user.uid, (u) => ({ ...u, displayName: name }))
     emit('name-saved')
     emit('close')
   } catch {
@@ -63,8 +80,9 @@ async function reauthAndDelete() {
     }
     // Best-effort cleanup — don't let a Firestore failure block account deletion
     await deleteDoc(doc(db, 'picks', props.user.uid)).catch(() => {})
-    queryClient.removeQueries({ queryKey: queryKeys.pick(props.user.uid) })
-    queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
+    await deleteDoc(doc(db, 'users', props.user.uid)).catch(() => {})
+    removePickFromCache(queryClient, props.user.uid)
+    removeUserFromCache(queryClient, props.user.uid)
     await deleteUser(props.user)
   } catch {
     error.value = 'Could not delete account. Please try again.'
@@ -98,6 +116,18 @@ async function reauthAndDelete() {
       <!-- Actions -->
       <div class="p-4 space-y-2">
         <template v-if="!confirmingDelete && !editingName">
+          <button
+            v-if="isAdmin"
+            type="button"
+            @click="router.push('/admin'); emit('close')"
+            :disabled="busy"
+            class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-court-700 hover:bg-court-600 text-sm text-white font-medium transition-colors disabled:opacity-50"
+          >
+            <svg class="w-4 h-4 text-slate-400 shrink-0" viewBox="0 0 20 20" fill="none">
+              <path d="M10 2l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V5l7-3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Admin
+          </button>
           <button
             type="button"
             @click="editingName = true; newName = defaultDisplayName"
