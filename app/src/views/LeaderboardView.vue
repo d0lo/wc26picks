@@ -39,6 +39,14 @@ function nameFor(uid) {
   return users.value[uid]?.displayName ?? null
 }
 
+// breakdown.groups is keyed by group letter (per-group score, recomputed live
+// as each group's matches complete) — sum it for the leaderboard column.
+function groupsPoints(score) {
+  const groups = score.breakdown?.groups
+  if (!groups) return null
+  return Object.values(groups).reduce((sum, v) => sum + v, 0)
+}
+
 // The picks-list query already fetches every user's full pick doc (groups,
 // wildcards, props) — seed each individual pick(uid) cache entry from it so
 // opening PicksModal for any submitter is an instant cache hit instead of
@@ -270,7 +278,7 @@ function resolveTeamFlag(teamId) {
             </div>
 
             <!-- Breakdown -->
-            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.groups ?? '—' }}</div>
+            <div class="text-xs text-center font-mono text-zinc-400">{{ groupsPoints(s) ?? '—' }}</div>
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.wildcards ?? '—' }}</div>
 
             <!-- Total -->

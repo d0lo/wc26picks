@@ -6,7 +6,8 @@
     "node": "20"
   },
   "scripts": {
-    "lint": "echo \"no linter configured\" && exit 0"
+    "lint": "echo \"no linter configured\" && exit 0",
+    "test": "node --test"
   },
   "dependencies": {
     "firebase-admin": "^13.0.0",

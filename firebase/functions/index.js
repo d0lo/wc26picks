@@ -5,6 +5,7 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import logger from 'firebase-functions/logger'
 import { fetchScoreboard, fetchSummary } from './lib/espn.js'
 import { normalizeEvent, normalizeMatch, parseGroupLetter } from './lib/normalize.js'
+import { scoreGroupPrediction, scoreWildcardPicks } from './lib/scoring.js'
 
 initializeApp()
 const db = getFirestore()
@@ -99,3 +100,56 @@ async function processMatchUpdate(eventId) {
     logger.error(`Failed to process match update for event ${eventId}`, err)
   }
 }
+
+// Fires on every matches/{eventId} write. Once a match finishes, recomputes
+// that match's group score for every pick fresh from the current standings
+// and overwrites scores/{uid}.breakdown — never additive, since the final
+// two matches in a group kick off together and finish moments apart, firing
+// this twice in quick succession for the same group.
+export const onMatchComplete = onDocumentWritten('matches/{eventId}', async (event) => {
+  const after = event.data?.after?.data()
+  if (after?.status?.state !== 'post') return
+
+  const [groupsSnap, picksSnap, configSnap] = await Promise.all([
+    db.collection('groups').get(),
+    db.collection('picks').get(),
+    db.doc('config/public').get(),
+  ])
+
+  const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
+  const teamIds = new Set((after.competitors ?? []).map((c) => c.teamId))
+  const letter = Object.entries(groupsByLetter).find(([, entries]) =>
+    entries.some((e) => teamIds.has(e.team?.id))
+  )?.[0]
+  if (!letter) {
+    logger.warn(`onMatchComplete: could not resolve group letter for event ${event.params.eventId}`)
+    return
+  }
+
+  const scoring = configSnap.data()?.scoring ?? {}
+  const standings = groupsByLetter[letter]
+
+  await Promise.all(
+    picksSnap.docs.map(async (picksDoc) => {
+      const pick = picksDoc.data()
+      const { points: groupPoints } = scoreGroupPrediction(pick.groups?.[letter], standings, scoring)
+      const wildcardPoints = scoreWildcardPicks(pick.wildcards, groupsByLetter, scoring)
+
+      const scoreRef = db.doc(`scores/${picksDoc.id}`)
+      const existing = (await scoreRef.get()).data()?.breakdown ?? {}
+      const groups = { ...existing.groups, [letter]: groupPoints }
+      const groupsTotal = Object.values(groups).reduce((sum, v) => sum + v, 0)
+      const total = groupsTotal + wildcardPoints + (existing.props ?? 0)
+
+      await scoreRef.set(
+        {
+          uid: picksDoc.id,
+          breakdown: { ...existing, groups, wildcards: wildcardPoints },
+          total,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      )
+    })
+  )
+})
