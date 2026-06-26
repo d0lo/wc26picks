@@ -559,8 +559,8 @@ async function saveProps() {
     <!-- Discard-changes confirm dialog -->
     <div v-if="discardConfirm.open" class="fixed inset-0 z-[210] flex items-center justify-center p-4" @mousedown.self="resolveDiscardConfirm(false)">
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-      <div class="relative w-full max-w-xs mx-auto bg-court-800 border border-court-700 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden p-5">
-        <p class="text-sm text-white text-center mb-4">Are you sure you want to discard your changes?</p>
+      <div class="relative w-full max-w-sm mx-auto bg-court-800 border border-court-700 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden p-5">
+        <p class="text-sm text-white text-center mb-4">Discard your changes?</p>
         <div class="flex items-center gap-2">
           <button
             type="button"
