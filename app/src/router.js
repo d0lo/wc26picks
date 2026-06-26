@@ -1,6 +1,7 @@
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { doc, getDoc } from 'firebase/firestore'
-import { auth, db } from './firebase.js'
+import { auth } from './firebase.js'
+import { queryClient } from './queryClient.js'
+import { userQueryOptions } from './queries.js'
 import LoginView from './views/LoginView.vue'
 import SetUsernameView from './views/SetUsernameView.vue'
 import PicksView from './views/PicksView.vue'
@@ -37,8 +38,8 @@ router.beforeEach(async (to) => {
     if (!isGoogle || nameConfirmed) return '/leaderboard'
   }
   if (user && to.path === '/admin') {
-    const snap = await getDoc(doc(db, 'users', user.uid))
-    if (!snap.exists() || !snap.data().isAdmin) return '/leaderboard'
+    const profile = await queryClient.ensureQueryData(userQueryOptions(user.uid)).catch(() => null)
+    if (!profile?.isAdmin) return '/leaderboard'
   }
 })
 
