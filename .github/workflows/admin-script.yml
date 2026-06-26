@@ -16,6 +16,10 @@ on:
         description: 'Path to script to run (relative to repo root)'
         required: true
         default: 'scripts/seed-scoring-config.mjs'
+      args:
+        description: 'Extra CLI flags to pass to the script (e.g. --write)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -43,4 +47,4 @@ jobs:
       - name: Run script
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
-        run: node "${{ inputs.script }}"
+        run: node "${{ inputs.script }}" ${{ inputs.args }}
