@@ -534,11 +534,6 @@ async function saveProps() {
             </label>
           </div>
 
-          <label class="flex items-center gap-2">
-            <input v-model="draft.manual" type="checkbox" class="rounded border-court-700 bg-court-900" />
-            <span class="text-[11px] text-zinc-400">Manually graded (admin enters the correct answer)</span>
-          </label>
-
           <div v-if="draft.type === 'player'" class="grid grid-cols-2 gap-2">
             <label class="block">
               <span class="block text-[10px] text-zinc-500 mb-1">Position filter</span>
@@ -554,6 +549,11 @@ async function saveProps() {
           <label v-else class="flex items-center gap-2">
             <input v-model="draft.allowNone" type="checkbox" class="rounded border-court-700 bg-court-900" />
             <span class="text-[11px] text-zinc-400">Allow "No Team" pick</span>
+          </label>
+
+          <label class="flex items-center gap-2">
+            <input v-model="draft.manual" type="checkbox" class="rounded border-court-700 bg-court-900" />
+            <span class="text-[11px] text-zinc-400">Manually graded (admin enters the correct answer)</span>
           </label>
         </div>
 
