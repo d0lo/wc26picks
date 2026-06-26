@@ -1,6 +1,5 @@
 <script setup>
-import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { signOut, deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, updateProfile } from 'firebase/auth'
 import { doc, deleteDoc, setDoc } from 'firebase/firestore'
 import { useQueryClient } from '@tanstack/vue-query'
@@ -10,8 +9,6 @@ import { patchUserInCache, removeUserFromCache, removePickFromCache } from '../q
 const props = defineProps({ user: Object, editName: Boolean })
 const emit = defineEmits(['close', 'name-saved'])
 const queryClient = useQueryClient()
-const router = useRouter()
-const isAdmin = inject('isAdmin')
 
 const busy = ref(false)
 const error = ref('')
@@ -116,18 +113,6 @@ async function reauthAndDelete() {
       <!-- Actions -->
       <div class="p-4 space-y-2">
         <template v-if="!confirmingDelete && !editingName">
-          <button
-            v-if="isAdmin"
-            type="button"
-            @click="router.push('/admin'); emit('close')"
-            :disabled="busy"
-            class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-court-700 hover:bg-court-600 text-sm text-white font-medium transition-colors disabled:opacity-50"
-          >
-            <svg class="w-4 h-4 text-slate-400 shrink-0" viewBox="0 0 20 20" fill="none">
-              <path d="M10 2l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V5l7-3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Admin
-          </button>
           <button
             type="button"
             @click="editingName = true; newName = defaultDisplayName"
