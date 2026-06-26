@@ -4,12 +4,14 @@ import { useRouter } from 'vue-router'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { GROUP_TEAMS, GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
+import { GROUP_TEAMS, GROUPS, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import { pickQueryOptions, queryKeys } from '../queries.js'
+import { useScoring } from '../composables/useScoring.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
+import PropPointsBadge from '../components/PropPointsBadge.vue'
 
 const router = useRouter()
 const user = inject('user')
@@ -35,7 +37,7 @@ function fifaOrder(group) {
 
 const order = reactive(Object.fromEntries(GROUPS.map(g => [g, fifaOrder(g)])))
 const wildcards = ref([])
-const propAnswers = reactive(Object.fromEntries(PROPS.map(p => [p.key, ''])))
+const propAnswers = reactive({})
 const submitting = ref(false)
 const submitError = ref('')
 const isUpdate = ref(false)
@@ -46,7 +48,7 @@ function makeSnapshot() {
   return JSON.stringify({
     groups: Object.fromEntries(GROUPS.map(g => [g, [...order[g]]])),
     wildcards: [...wildcards.value].sort(),
-    props: Object.fromEntries(PROPS.map(p => [p.key, propAnswers[p.key]])),
+    props: Object.fromEntries(allProps.value.map(p => [p.id, propAnswers[p.id]])),
   })
 }
 
@@ -183,13 +185,25 @@ function wcDisabled(group) {
   return wildcards.value.length >= 8 && !wildcards.value.includes(group)
 }
 
+// ── Scoring config (admin-editable prop catalog + point values) ────────
+const { scoring, props: allProps, propsByCategory, groupExactLabel, isLoading: scoringLoading } = useScoring()
+
+// Prop ids arrive async from Firestore — seed an answer slot for each as
+// the catalog loads, without clobbering answers already merged in from a
+// saved pick (see the pickQuery watch below).
+watch(allProps, (list) => {
+  for (const p of list) {
+    if (!(p.id in propAnswers)) propAnswers[p.id] = ''
+  }
+}, { immediate: true })
+
+const ready = computed(() => loaded.value && !scoringLoading.value)
+const configMissing = computed(() => ready.value && allProps.value.length === 0)
+
 // ── Progress ───────────────────────────────────────────────────────────
-const doneProps = computed(() => PROPS.filter(p => propAnswers[p.key] !== '').length)
-const propsByCategory = computed(() =>
-  orderedPropCategories().map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
-)
+const doneProps = computed(() => allProps.value.filter(p => propAnswers[p.id] !== '').length)
 const canSubmit = computed(
-  () => !picksLocked.value && wildcards.value.length === 8 && doneProps.value === PROPS.length
+  () => !picksLocked.value && allProps.value.length > 0 && wildcards.value.length === 8 && doneProps.value === allProps.value.length
 )
 
 // ── Submit ─────────────────────────────────────────────────────────────
@@ -207,9 +221,10 @@ async function submit() {
       // Store team UUIDs, not names
       groups: Object.fromEntries(GROUPS.map(g => [g, order[g].map(name => TEAM_ID[name])])),
       wildcards: wildcards.value,
-      // Props already store UUIDs (from CountrySelect/PlayerSelect); cleanGroupTeam null-safe
+      // Keyed by prop.id (stable), not prop.key — see seed-scoring-config.mjs.
+      // Answers already store UUIDs (from CountrySelect/PlayerSelect); cleanGroupTeam null-safe
       props: Object.fromEntries(
-        PROPS.map(p => [p.key, propAnswers[p.key] === '' ? null : propAnswers[p.key]])
+        allProps.value.map(p => [p.id, propAnswers[p.id] === '' ? null : propAnswers[p.id]])
       ),
     }, { merge: true })
     queryClient.invalidateQueries({ queryKey: queryKeys.pick(user.value.uid) })
@@ -341,11 +356,15 @@ const POS_COLORS = [
     <div class="max-w-2xl mx-auto px-4 pt-4 pb-10">
 
     <!-- ── SECTION 1: Group Standings ── -->
-    <div v-if="!loaded" class="flex justify-center py-20">
+    <div v-if="!ready" class="flex justify-center py-20">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
     </div>
 
-    <template v-if="loaded">
+    <p v-else-if="configMissing" class="text-center text-sm text-red-400 py-20">
+      Couldn't load prop picks — scoring config is unavailable. Try refreshing.
+    </p>
+
+    <template v-if="ready && !configMissing">
 
     <section class="mt-4 mb-10">
       <div class="flex items-start justify-between mb-5">
@@ -354,8 +373,8 @@ const POS_COLORS = [
           <p class="text-[11px] text-zinc-400 mt-1">Drag teams to set your predicted finish order.</p>
         </div>
         <div class="text-right shrink-0">
-          <div class="text-[10px] text-zinc-400 font-mono tabular-nums">3 · 3 · 1 · 1 pts</div>
-          <div class="text-[10px] text-zinc-500">Perfect Group: +1 pt</div>
+          <div class="text-[10px] text-zinc-400 font-mono tabular-nums">{{ groupExactLabel }}</div>
+          <div class="text-[10px] text-zinc-500">Perfect Group: +{{ scoring?.perfectGroupBonus ?? '–' }} pt</div>
         </div>
       </div>
 
@@ -432,7 +451,7 @@ const POS_COLORS = [
     <section ref="wildcardsSectionRef" class="mb-10">
       <div class="flex items-baseline justify-between mb-1">
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Best 3rd-Place Teams</h2>
-        <span class="text-[10px] text-zinc-400 font-mono">2 pts each</span>
+        <span class="text-[10px] text-zinc-400 font-mono">{{ scoring?.wildcard ?? '–' }} pts each</span>
       </div>
       <p class="text-[11px] text-zinc-400 mb-5">
         Pick 8 groups whose 3rd-place team advances.
@@ -482,11 +501,14 @@ const POS_COLORS = [
     >
       <div class="flex items-baseline justify-between mb-5">
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">{{ cat.label }}</h2>
-        <span class="text-[10px] text-zinc-400 font-mono">{{ Math.min(...cat.props.map(p => p.points)) }}–{{ Math.max(...cat.props.map(p => p.points)) }} pts</span>
+        <span class="text-[10px] text-zinc-400 font-mono">
+          <template v-if="cat.props.some(p => p.points != null)">{{ Math.min(...cat.props.filter(p => p.points != null).map(p => p.points)) }}–{{ Math.max(...cat.props.filter(p => p.points != null).map(p => p.points)) }} pts</template>
+          <template v-else>– pts</template>
+        </span>
       </div>
       <div class="space-y-2">
         <div
-          v-for="prop in cat.props" :key="prop.key"
+          v-for="prop in cat.props" :key="prop.id"
           class="bg-court-800 border border-court-700 rounded-2xl p-4"
         >
           <div class="relative mb-3">
@@ -494,27 +516,25 @@ const POS_COLORS = [
               <div class="text-xs font-bold text-white">{{ prop.label }}</div>
               <div class="text-[11px] text-zinc-400 mt-0.5">{{ prop.hint }}</div>
             </div>
-            <div class="absolute top-0 right-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
-              {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
-            </div>
+            <PropPointsBadge :points="prop.points" class="absolute top-0 right-0" />
           </div>
 
           <CountrySelect
             v-if="prop.type === 'team'"
-            v-model="propAnswers[prop.key]"
+            v-model="propAnswers[prop.id]"
             :disabled="picksLocked"
-            :allowNone="prop.key === 'cleanGroupTeam'"
+            :allowNone="!!prop.allowNone"
           />
           <PlayerSelect
             v-else-if="prop.type === 'player'"
-            v-model="propAnswers[prop.key]"
+            v-model="propAnswers[prop.id]"
             :positionFilter="prop.positionFilter ?? null"
             :maxAge="prop.maxAge ?? null"
             :disabled="picksLocked"
           />
           <input
             v-else
-            v-model="propAnswers[prop.key]"
+            v-model="propAnswers[prop.id]"
             type="number"
             min="0"
             placeholder="e.g. 24"
@@ -557,8 +577,8 @@ const POS_COLORS = [
         </button>
         <p v-if="!canSubmit && !submitting" class="text-center text-[11px] text-zinc-400 mt-1.5">
           <span v-if="wildcards.length < 8">{{ 8 - wildcards.length }} wildcard{{ 8 - wildcards.length !== 1 ? 's' : '' }} remaining</span>
-          <span v-if="wildcards.length < 8 && doneProps < PROPS.length"> · </span>
-          <span v-if="doneProps < PROPS.length">{{ PROPS.length - doneProps }} prop{{ PROPS.length - doneProps !== 1 ? 's' : '' }} remaining</span>
+          <span v-if="wildcards.length < 8 && doneProps < allProps.length"> · </span>
+          <span v-if="doneProps < allProps.length">{{ allProps.length - doneProps }} prop{{ allProps.length - doneProps !== 1 ? 's' : '' }} remaining</span>
         </p>
         <p v-if="picksLockTime && !picksLocked" class="text-center text-[11px] text-zinc-400 mt-1.5">
           Picks lock {{ fmtLockTime(picksLockTime) }}

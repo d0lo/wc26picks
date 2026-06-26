@@ -177,19 +177,11 @@ export const FIFA_RANKING = {
   Curacao:              82,
 }
 
-export const PROPS = [
-  { key: 'goldenBoot',      label: 'Golden Boot',                        type: 'player', points: 5, hint: 'Tournament top scorer', category: 'tournament' },
-  { key: 'goldenGlove',     label: 'Golden Glove',                       type: 'player', points: 4, hint: 'Best goalkeeper', positionFilter: 'G', category: 'tournament' },
-  { key: 'goldenBall',      label: 'Golden Ball',                        type: 'player', points: 5, hint: 'Best player of the tournament', category: 'tournament' },
-  { key: 'youngPlayer',     label: 'Young Player of the Tournament',     type: 'player', points: 4, hint: 'Best U-21 player', maxAge: 21, category: 'tournament' },
-  { key: 'breakoutPlayer',  label: 'Breakout Player of the Tournament',  type: 'player', points: 6, hint: 'The under-the-radar player who has a standout tournament (media consensus)', category: 'tournament' },
-  { key: 'mostGroupGoals',  label: 'Most Goals in Group Stage',          type: 'team',   points: 3, hint: 'Team that scores the most goals in the group stage', category: 'group' },
-  { key: 'hatTrickScorer',  label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'Player to score a hat trick', category: 'tournament' },
-  { key: 'mostAssists',     label: 'Most Assists',                       type: 'player', points: 4, hint: 'Player with the most assists', category: 'tournament' },
-  { key: 'mostYellowCards', label: 'Team with Most Yellow Cards',        type: 'team',   points: 3, hint: 'Most disciplinary cards received', category: 'tournament' },
-  { key: 'cleanGroupTeam',  label: 'Clean Group',                        type: 'team',   points: 5, hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team', category: 'group' },
-]
-
+// Props themselves (key, label, hint, type, points, etc.) are NOT defined
+// here — the full catalog lives in Firestore config/public.scoring.props
+// (see queries.js configQueryOptions / composables/useScoring.js), so props
+// can be added, relabeled, or repointed without a code deploy. Only the
+// category set and ordering rule below are structural and stay in code.
 export const PROP_CATEGORIES = [
   { key: 'tournament', label: 'Tournament Props' },
   { key: 'group',      label: 'Group Stage Props' },

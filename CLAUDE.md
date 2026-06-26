@@ -92,6 +92,29 @@ Example row:
 
 ---
 
+## Scoring Configuration
+
+All point values (group-position predictions, the perfect-group bonus, wildcard picks, and every prop in `app/src/data.js` PROPS) are configurable at runtime via Firestore, not hardcoded — this is so values can be retuned without a code deploy, and so a future admin screen has a single doc to write to.
+
+```
+config/public
+  picksLockAt: Timestamp
+  scoring: {
+    groupExact: { 1: number, 2: number, 3: number, 4: number }  // pts per exact predicted position
+    perfectGroupBonus: number                                   // bonus when all 4 positions are exact
+    wildcard: number                                            // pts per correct 3rd-place-advances pick
+    props: { [propKey]: number }                                // pts per prop, keyed by PROPS[].key
+  }
+```
+
+Rules: `config/{docId}` is `allow read: if true; allow write: if false` — public read, write only via the Admin SDK (no client or Cloud Function writes it yet; seeded manually until an admin screen exists).
+
+- Client reads it once via `configQueryOptions()` in `app/src/queries.js` (TanStack Query, cached) and merges `scoring.props[key]` onto each `PROPS` entry for display (see `PicksView.vue`, `PicksSummary.vue`). `PROPS` itself carries no `points` field — that's the whole point of moving it to config.
+- Seed/update the doc with `scripts/seed-scoring-config.mjs` (same `GOOGLE_APPLICATION_CREDENTIALS` pattern as `scripts/seed.mjs`).
+- Any future Cloud Function that computes scores (Feature 2 below) must read point values from `config/public.scoring`, not hardcode them — that's the reason this config exists.
+
+---
+
 ## Live Tracking Feature Plan
 
 Five features that turn the picks app into a live World Cup tracker. Build them **in order** — each branch is listed below and each feature depends on the one before it being merged to `main` first.
@@ -117,9 +140,8 @@ Base: `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/`
 
 | Endpoint | Used by |
 |---|---|
-| `GET /scoreboard` | Feature 1 — polled every 60s during match windows |
-| `GET /scoreboard?dates=YYYYMMDD` | Feature 1 — next-day prefetch |
-| `GET /teams` | Feature 1 setup — maps team names to ESPN IDs |
+| `GET /scoreboard` | Feature 1 — fetched by the self-gating poller (see below), not a fixed window |
+| `GET /teams` | Feature 1 setup — used once to hand-generate the ESPN-ID → team-UUID map committed in `firebase/functions/lib/teams.js` (`ESPN_TEAM`); not called at runtime |
 | `GET /teams/{id}/roster` | Feature 4 — player stats attribution |
 | `GET /summary?event={eventId}` | Features 1, 2, 3, 4 — full match detail |
 
@@ -134,9 +156,12 @@ Key field: `events[].status.type.state` → `"pre"` / `"in"` / `"post"` — use 
 Live scoreboard and prop aggregates live under `liveData` (single docs, cheap to read). `matches/{eventId}` and `groups/{letter}` are separate top-level collections — Firestore document paths must have an even number of segments, so `liveData/matches/{eventId}` (3 segments) is not addressable as a document; nesting per-match/per-group docs under `liveData` would need an extra fixed path segment, so they get their own top-level collections instead, each with read rules mirroring `liveData`.
 
 ```
-liveData/scoreboard               written every ~60s by Feature 1 scheduler
+liveData/scoreboard               written by Feature 1's self-gating poller (see below)
   today: string                   YYYYMMDD of last write
   events: EventSummary[]          one per match (see shape below)
+  scheduleDate: string            YYYYMMDD the cached kickoffs[] belongs to
+  kickoffs: { eventId, date, state }[]  per-match kickoff cache, used to decide when to wake
+  state: "idle" | "polling"       "polling" = at least one match is "in" as of the last fetch
 
 matches/{eventId}                 written once per match by Feature 1 trigger
   eventId: string
@@ -178,28 +203,25 @@ group: string   e.g. "Group A"
 
 ---
 
-### Feature 1 — Live Match Engine (`feature/live-match-engine`)
+### Feature 1 — Live Match Engine (`feature/live-match-engine`) — ✅ built
 
-**What to build:**
-- Cloud Scheduled Function `espnScoreboardPoller` — runs every 60s during match hours (14:00–23:00 UTC on match days). Fetches ESPN `/scoreboard`, normalises the response, writes to `liveData/scoreboard`.
-- Cloud Firestore Trigger `onScoreboardWrite` — on each scoreboard write, for any match that flipped to `state: "in"` or `"post"` since the previous write, fetch ESPN `/summary?event={id}` and write to `matches/{eventId}`. Also update `groups/{letter}` from the standings block in the summary.
-- Vue component `<LiveScoreboard>` — subscribes to `liveData/scoreboard` via `onSnapshot`. Renders a card grid of today's matches: team crests, score, live clock or kickoff time, status badge. Stateless/dumb — all data flows in as props from the parent that owns the listener.
-- Wire `<LiveScoreboard>` into `DashboardView` above the leaderboard.
+**What's built:**
+- Cloud Scheduled Function `espnPoller` (`firebase/functions/index.js`) — runs every minute, all day, every day (`schedule: '* * * * *'`). Each tick is a single cheap Firestore read of `liveData/scoreboard` that decides via `shouldFetch()` whether an ESPN call is actually warranted this minute; most ticks short-circuit with no ESPN call. Fetches happen when: a chain is already `"polling"` (covers every match for the day on one tick, so a second kickoff mid-chain doesn't trigger an extra fetch); the cached `scheduleDate` isn't today; or a cached kickoff time has passed and that match isn't `"post"` yet. After a fetch, `state` is recomputed to `"polling"` if any event is `"in"`, else `"idle"` — so the chain puts itself back to sleep the instant the last match of the day finishes. No fixed match-hours window.
+- Cloud Firestore Trigger `onScoreboardWrite` — on each scoreboard write, for any match that flipped to `state: "in"` or `"post"` since the previous write, fetches ESPN `/summary?event={id}` (`processMatchUpdate()`) and writes to `matches/{eventId}`. Also updates `groups/{letter}` from the standings block in the summary.
+- Vue component `<LiveScoreboard>` — subscribes to `liveData/scoreboard` via `onSnapshot` (owned by the parent, not the component itself). Renders a card grid of today's matches: team crests, score, live clock or kickoff time, status badge.
+- Wired into `LiveView` (the routed `/live` tab) — `LiveView` owns the `onSnapshot` listener and passes `events`/`hasMatches` down as props.
 
-**Cloud Functions location:** `firebase/functions/` — init with `firebase init functions` using JavaScript if the directory doesn't exist yet.
-
-**Scheduling note:** Use Firebase `pubsub.schedule` with `timeZone: "UTC"`. Only poll when there are matches — check `liveData/scoreboard.today` to skip unnecessary ESPN calls on off-days.
+**Cloud Functions location:** `firebase/functions/` (JavaScript, ESM). `ESPN_TEAM` in `lib/teams.js` is a hand-generated ESPN-numeric-ID → team-UUID map, duplicated from `app/src/data.js` `TEAM_ID` rather than imported, since Firebase only deploys the `functions/` directory and a relative import reaching into `app/src` would resolve locally but break at deploy time.
 
 ---
 
 ### Feature 2 — Auto-Scoring Engine (`feature/auto-scoring-engine`)
 
 **What to build:**
-- Cloud Firestore Trigger `onMatchComplete` — triggers on `matches/{eventId}` writes where `status.state === "post"`. Reads the match result, resolves which group and finishing positions it implies, then reads all `submissions/{uid}` documents and awards group-prediction points into `scores/{uid}.breakdown.groups`.
+- Cloud Firestore Trigger `onMatchComplete` — triggers on `matches/{eventId}` writes where `status.state === "post"`. Reads the match result, resolves which group it belongs to, then recomputes that group's score fresh from the **current** `groups/{letter}` standings (live/incremental — never gated on the group being fully finished) and overwrites `scores/{uid}.breakdown.groups[letter]` for every `picks/{uid}` document. The write must be a full idempotent overwrite, not additive, since the final two matches in a group always kick off together and finish moments apart, firing this trigger twice in quick succession for the same group.
+- Reads point values from `config/public.scoring` (see Scoring Configuration above) — `groupExact` for exact-position points, `perfectGroupBonus` for the all-4-correct bonus, `wildcard` for 3rd-place-advances picks. Never hardcode these.
 - Scoring logic lives in a shared `lib/scoring.js` module so it can be unit tested independently.
-- No new Vue components needed — the existing leaderboard in `DashboardView` already listens to `scores/*` via `onSnapshot` and will animate score changes automatically.
-
-**Before implementing:** confirm the exact points table with the user (points for exact position match, partial credit for correct top-2 etc.) — do not guess.
+- No new Vue components needed — the existing leaderboard in `LeaderboardView.vue` already listens to `scores/*` via `onSnapshot` and will animate score changes automatically.
 
 ---
 
@@ -207,8 +229,8 @@ group: string   e.g. "Group A"
 
 **What to build:**
 - Vue component `<GroupAccuracy>` — pure display, no data fetching. Props: `{ group: string, predicted: string[], actual: StandingEntry[] }`. Renders a 4-row table comparing predicted vs actual position for each team. Each row shows team name/crest, predicted rank, actual rank, and a delta indicator (↑2 / ↓1 / =) colour-coded green/amber/red.
-- In `DashboardView`, subscribe to `groups/*` (one listener per group or a collectionGroup query). Pass each group's data alongside the user's `submission.groups[letter]` into `<GroupAccuracy>`.
-- Replace or augment the existing static group summary in the My Picks section of `DashboardView`.
+- In `LeaderboardView.vue`, subscribe to `groups/*` (one listener per group or a collectionGroup query). Pass each group's data alongside the user's `submission.groups[letter]` into `<GroupAccuracy>`.
+- Replace or augment `<PicksSummary>`'s static group standings in the My Picks section of `LeaderboardView.vue`.
 
 ---
 
@@ -217,7 +239,7 @@ group: string   e.g. "Group A"
 **What to build:**
 - Cloud Firestore Trigger `onMatchCompleteProps` — after each match completes, aggregates player and team stats across all `matches/*` documents and writes the result to `liveData/props` (single document, one listener for all users).
 - Vue component `<PropTracker>` — subscribes to `liveData/props` once. For each of the user's 10 prop answers, looks up the player/team in the relevant category and renders: pick name, current stat (e.g. "3 goals"), current rank (e.g. "2nd of 47"), leading/trailing badge.
-- Replace the static props summary in the My Picks section of `DashboardView` with `<PropTracker>`.
+- Replace `<PicksSummary>`'s static props summary in the My Picks section of `LeaderboardView.vue` with `<PropTracker>`.
 
 **Prop key → liveData/props field mapping:**
 
@@ -239,6 +261,6 @@ Check `app/src/data.js` PROPS array for the exact keys used in submissions.
 **What to build:**
 - Vue component `<EventTicker>` — reads `liveData/scoreboard` (reuse the same snapshot the parent already subscribes to) and pulls scoring plays from any `state: "in"` match's `matches/{id}` doc. Renders a horizontally scrolling strip of recent goal events: `⚽ Pulisic 78' — USA 1–0 Iran`. Events that match the current user's prop picks are highlighted gold.
 - Toast notification system — when the `liveData/scoreboard` listener detects a score change between two snapshots (previous score vs new score), fire a 5-second overlay toast at the top of the screen. No Service Worker, no FCM, no permission prompt required.
-- Mount `<EventTicker>` at the top of `DashboardView` below the header. Mount the toast system at the app root in `App.vue` so it persists across route changes.
+- Mount `<EventTicker>` at the top of `LiveView.vue`, above `<LiveScoreboard>`. Mount the toast system at the app root in `App.vue` so it persists across route changes.
 
 **No Cloud Functions needed** — all logic is client-side diffing of Firestore `onSnapshot` payloads.

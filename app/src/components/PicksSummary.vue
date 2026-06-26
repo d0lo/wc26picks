@@ -1,7 +1,9 @@
 <script setup>
-import { reactive, ref, computed } from 'vue'
-import { GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
+import { reactive, ref } from 'vue'
+import { GROUPS, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
+import { useScoring } from '../composables/useScoring.js'
+import PropPointsBadge from './PropPointsBadge.vue'
 
 defineProps({
   groups: Object,    // { A: [uuid1, uuid2, uuid3, uuid4], ... }
@@ -14,9 +16,7 @@ for (const [teamName, players] of Object.entries(ROSTERS)) {
   for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
 }
 
-const propsByCategory = computed(() =>
-  orderedPropCategories().map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
-)
+const { propsByCategory } = useScoring()
 
 const groupCardRefs = reactive({})
 const wildcardsSectionRef = ref(null)
@@ -80,28 +80,26 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">{{ cat.label }}</h2>
         <div class="space-y-2">
           <div
-            v-for="prop in cat.props" :key="prop.key"
+            v-for="prop in cat.props" :key="prop.id"
             class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
           >
             <div class="min-w-0">
               <div class="text-[11px] text-zinc-400 mb-0.5">{{ prop.label }}</div>
               <div class="text-sm font-bold text-white truncate flex items-center gap-1">
-                <template v-if="prop.type === 'player' && props[prop.key]">
-                  <span>{{ TEAM_FLAG[PLAYER_BY_ID[props[prop.key]]?.team] ?? '' }}</span>
-                  <span>{{ PLAYER_BY_ID[props[prop.key]]?.name ?? '—' }}</span>
+                <template v-if="prop.type === 'player' && props[prop.id]">
+                  <span>{{ TEAM_FLAG[PLAYER_BY_ID[props[prop.id]]?.team] ?? '' }}</span>
+                  <span>{{ PLAYER_BY_ID[props[prop.id]]?.name ?? '—' }}</span>
                 </template>
-                <template v-else-if="prop.type === 'team' && props[prop.key] !== null && props[prop.key]">
-                  <span>{{ TEAM_BY_ID[props[prop.key]]?.flag ?? '🏳️' }}</span>
-                  <span>{{ TEAM_BY_ID[props[prop.key]]?.name }}</span>
+                <template v-else-if="prop.type === 'team' && props[prop.id] !== null && props[prop.id]">
+                  <span>{{ TEAM_BY_ID[props[prop.id]]?.flag ?? '🏳️' }}</span>
+                  <span>{{ TEAM_BY_ID[props[prop.id]]?.name }}</span>
                 </template>
                 <template v-else>
-                  <span>{{ props[prop.key] === null ? '🚫 No Team' : '—' }}</span>
+                  <span>{{ props[prop.id] === null ? '🚫 No Team' : '—' }}</span>
                 </template>
               </div>
             </div>
-            <div class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
-              {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
-            </div>
+            <PropPointsBadge :points="prop.points" class="shrink-0" />
           </div>
         </div>
       </section>

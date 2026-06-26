@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { GROUP_TEAMS, GROUPS, TEAM_FLAG, TEAM_ID, TEAM_BY_ID } from '../data.js'
+import { GROUP_TEAMS, GROUPS, ALL_TEAMS, TEAM_FLAG, TEAM_ID, TEAM_BY_ID } from '../data.js'
 
 const props = defineProps({ modelValue: String, placeholder: { type: String, default: 'Select a team…' }, disabled: Boolean, allowNone: Boolean })
 const emit = defineEmits(['update:modelValue'])
@@ -13,8 +13,6 @@ const sortBy = ref('group') // 'group' | 'name'
 const container = ref(null)
 const dropdownEl = ref(null)
 const searchInput = ref(null)
-
-const ALL_TEAMS_SORTED = [...new Set(Object.values(GROUP_TEAMS).flat())].sort()
 
 const normalize = s => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
 
@@ -31,7 +29,7 @@ const byGroup = computed(() => {
 
 const byName = computed(() => {
   const q = normalize(search.value)
-  return q ? ALL_TEAMS_SORTED.filter(t => normalize(t).includes(q)) : ALL_TEAMS_SORTED
+  return q ? ALL_TEAMS.filter(t => normalize(t).includes(q)) : ALL_TEAMS
 })
 
 const hasResults = computed(() =>
