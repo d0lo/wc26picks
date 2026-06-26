@@ -349,6 +349,7 @@ async function saveProps() {
             <input
               v-model.number="scoringForm.groupExact[pos]"
               type="number"
+              inputmode="numeric"
               class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-1.5 text-sm text-white"
             />
           </label>
@@ -359,6 +360,7 @@ async function saveProps() {
             <input
               v-model.number="scoringForm.perfectGroupBonus"
               type="number"
+              inputmode="numeric"
               class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-1.5 text-sm text-white"
             />
           </label>
@@ -367,6 +369,7 @@ async function saveProps() {
             <input
               v-model.number="scoringForm.wildcard"
               type="number"
+              inputmode="numeric"
               class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-1.5 text-sm text-white"
             />
           </label>
@@ -525,7 +528,7 @@ async function saveProps() {
             </label>
             <label class="block">
               <span class="block text-[10px] text-zinc-500 mb-1">Points</span>
-              <input v-model.number="draft.points" type="number" class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-2 text-sm text-white" />
+              <input v-model.number="draft.points" type="number" inputmode="numeric" class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-2 text-sm text-white" />
             </label>
           </div>
 
@@ -538,7 +541,7 @@ async function saveProps() {
             </label>
             <label class="block">
               <span class="block text-[10px] text-zinc-500 mb-1">Max age</span>
-              <input v-model.number="draft.maxAge" type="number" placeholder="No limit" class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-2 text-sm text-white" />
+              <input v-model.number="draft.maxAge" type="number" inputmode="numeric" placeholder="No limit" class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-2 text-sm text-white" />
             </label>
           </div>
           <label v-else class="flex items-center gap-2">

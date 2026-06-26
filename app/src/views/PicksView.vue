@@ -458,6 +458,7 @@ const POS_COLORS = [
             v-else
             v-model="propAnswers[prop.id]"
             type="number"
+            inputmode="numeric"
             min="0"
             placeholder="e.g. 24"
             :disabled="picksLocked"
