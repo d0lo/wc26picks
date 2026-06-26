@@ -92,10 +92,10 @@ defineExpose({ dropdownEl })
       </span>
       <span v-else class="text-zinc-400">{{ placeholder }}</span>
       <!-- pencil when selected, chevron when empty -->
-      <svg v-if="modelValue != null && !open" class="w-3.5 h-3.5 text-zinc-400 shrink-0" viewBox="0 0 16 16" fill="none">
+      <svg v-if="modelValue != null && !open && !disabled" class="w-3.5 h-3.5 text-zinc-400 shrink-0" viewBox="0 0 16 16" fill="none">
         <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <svg v-else class="w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform duration-150" :class="open ? 'rotate-180' : ''" viewBox="0 0 12 8" fill="none">
+      <svg v-else-if="!disabled" class="w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform duration-150" :class="open ? 'rotate-180' : ''" viewBox="0 0 12 8" fill="none">
         <path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>

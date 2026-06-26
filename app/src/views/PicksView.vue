@@ -1,18 +1,21 @@
 <script setup>
-import { reactive, ref, computed, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { reactive, ref, computed, inject, watch } from 'vue'
 import { useRouter } from 'vue-router'
-const appVersion = __APP_VERSION__
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { GROUP_TEAMS, GROUPS, PROPS, orderedPropCategories, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
 import { ROSTERS } from '../rosters.js'
+import { pickQueryOptions, queryKeys } from '../queries.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
+import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
 
 const router = useRouter()
 const user = inject('user')
 const picksLocked = inject('picksLocked')
 const picksLockTime = inject('picksLockTime')
+const queryClient = useQueryClient()
 
 function fmtLockTime(ts) {
   if (!ts) return null
@@ -53,17 +56,13 @@ function picksChanged() {
 }
 
 // ── Pre-populate from existing pick ───────────────────────────────────
-onMounted(async () => {
-  let snap
-  try {
-    snap = await getDoc(doc(db, 'picks', user.value.uid))
-  } catch {
-    loaded.value = true
-    return
-  }
-  if (snap.exists()) {
+const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
+
+watch(pickQuery.isFetched, (fetched) => {
+  if (!fetched) return
+  const data = pickQuery.data.value
+  if (data) {
     isUpdate.value = true
-    const data = snap.data()
     if (data.groups) {
       for (const [g, teamIds] of Object.entries(data.groups)) {
         // teamIds are UUIDs — map back to team names for the drag-drop UI
@@ -76,7 +75,7 @@ onMounted(async () => {
     savedSnapshot.value = makeSnapshot()
   }
   loaded.value = true
-})
+}, { immediate: true })
 
 // ── Drag and drop ──────────────────────────────────────────────────────
 const drag = reactive({ group: null, item: null })
@@ -186,6 +185,9 @@ function wcDisabled(group) {
 
 // ── Progress ───────────────────────────────────────────────────────────
 const doneProps = computed(() => PROPS.filter(p => propAnswers[p.key] !== '').length)
+const propsByCategory = computed(() =>
+  orderedPropCategories().map(c => ({ ...c, props: PROPS.filter(p => p.category === c.key) })).filter(c => c.props.length)
+)
 const canSubmit = computed(
   () => !picksLocked.value && wildcards.value.length === 8 && doneProps.value === PROPS.length
 )
@@ -210,6 +212,8 @@ async function submit() {
         PROPS.map(p => [p.key, propAnswers[p.key] === '' ? null : propAnswers[p.key]])
       ),
     }, { merge: true })
+    queryClient.invalidateQueries({ queryKey: queryKeys.pick(user.value.uid) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
     router.push('/leaderboard')
   } catch {
     submitError.value = 'Save failed — check your connection and try again.'
@@ -218,117 +222,29 @@ async function submit() {
 }
 
 // ── Sticky group preview ───────────────────────────────────────────────
+// Mobile sticky overlay (grid/ticker) is rendered + tracked by
+// GroupOverlayPanel; the desktop side-rail panels below just mirror its
+// pinnedGroups, exposed via template ref, to avoid a second scroll tracker.
 const groupCardRefs = reactive({})
-const overlayRef = ref(null)
-const overlayCollapsed = ref(false)
-const overlayContentVisible = ref(false) // true = ticker visible, false = grid visible
-const overlayGridRef = ref(null)
-const overlayTickerRef = ref(null)
-
-function animateOverlayHeight(el, from, to, clearAfter, onDone) {
-  el.style.height = from + 'px'
-  el.offsetHeight
-  el.style.transition = 'height 280ms cubic-bezier(0.4, 0, 0.2, 1)'
-  el.style.height = to + 'px'
-  el.addEventListener('transitionend', () => {
-    el.style.transition = ''
-    if (clearAfter) el.style.height = ''
-    onDone?.()
-  }, { once: true })
-}
-
-function setOverlayCollapsed(val) {
-  if (overlayCollapsed.value === val) return
-  const el = overlayRef.value
-  if (!el) return
-
-  if (val) {
-    // COLLAPSE: animate height down, keep it pinned, then fade swap to ticker
-    const from = el.offsetHeight
-    const to = 36
-    overlayCollapsed.value = true
-    animateOverlayHeight(el, from, to, false, () => {
-      overlayContentVisible.value = true
-    })
-  } else {
-    // EXPAND: fade swap to grid, animate height up, then clear inline height
-    overlayContentVisible.value = false
-    nextTick(() => {
-      const from = parseFloat(el.style.height) || el.offsetHeight
-      overlayCollapsed.value = false
-      nextTick(() => {
-        const to = overlayGridRef.value?.offsetHeight ?? from
-        animateOverlayHeight(el, from, to, true, null)
-      })
-    })
-  }
-}
-const pinnedGroups = ref([])
+const wildcardsSectionRef = ref(null)
+const propsSectionRef = ref(null)
+const overlayPanelRef = ref(null)
+const pinnedGroups = computed(() => overlayPanelRef.value?.pinnedGroups ?? [])
 const leftPinnedGroups = computed(() => pinnedGroups.value.slice(0, 6))
 const rightPinnedGroups = computed(() => pinnedGroups.value.slice(6))
-const propsSectionRef = ref(null)
-const wildcardsSectionRef = ref(null)
-let firstWildcardRef = null
-let lastExpandedOverlayHeight = 0
-let cachedRowHeight = 0
 
-function getHeaderBottom() {
-  return document.querySelector('header')?.getBoundingClientRect().bottom ?? 64
+function getGroupCardRefs() {
+  return groupCardRefs
 }
-
-function updatePinned() {
-  const headerBottom = getHeaderBottom()
-  const count = pinnedGroups.value.length
-
-  // Update cached row height when we have enough rows to measure reliably
-  if (!overlayCollapsed.value && overlayRef.value && count > 0) {
-    cachedRowHeight = overlayRef.value.getBoundingClientRect().height / count
-  }
-
-  const rowHeight = cachedRowHeight || 52
-  // Threshold = where the overlay bottom will be once the next group joins
-  const threshold = headerBottom + (count + 1) * rowHeight
-
-  pinnedGroups.value = GROUPS.filter(g => {
-    const el = groupCardRefs[g]
-    if (!el) return false
-    const r = el.getBoundingClientRect()
-    return (r.top + r.bottom) / 2 < threshold
-  })
-
-  if (!overlayRef.value) return
-  const overlayRect = overlayRef.value.getBoundingClientRect()
-
-  // Cache height while expanded so we can use it after collapsing
-  if (!overlayCollapsed.value) {
-    lastExpandedOverlayHeight = overlayRect.height
-  }
-
-  if (!overlayCollapsed.value && firstWildcardRef) {
-    const r = firstWildcardRef.getBoundingClientRect()
-    if ((r.top + r.bottom) / 2 < overlayRect.bottom) {
-      setOverlayCollapsed(true)
-    }
-  }
-
-  // Uncollapse when scrolling back up: wildcards top must clear the expanded overlay bottom
-  if (overlayCollapsed.value && wildcardsSectionRef.value && lastExpandedOverlayHeight) {
-    const expandedBottom = overlayRect.top + lastExpandedOverlayHeight
-    if (wildcardsSectionRef.value.getBoundingClientRect().top > expandedBottom) {
-      setOverlayCollapsed(false)
-    }
-  }
+function getWildcardsSectionEl() {
+  return wildcardsSectionRef.value
 }
-
-onMounted(() => {
-  updatePinned()
-  window.addEventListener('scroll', updatePinned, { passive: true })
-  window.addEventListener('resize', updatePinned, { passive: true })
-})
-onUnmounted(() => {
-  window.removeEventListener('scroll', updatePinned)
-  window.removeEventListener('resize', updatePinned)
-})
+function getHeaderEl() {
+  return document.querySelector('header')
+}
+function resolveTeamFlag(team) {
+  return TEAM_FLAG[team] ?? '🏳️'
+}
 
 // ── Position styles ────────────────────────────────────────────────────
 const POS_COLORS = [
@@ -342,72 +258,17 @@ const POS_COLORS = [
 <template>
   <div>
 
-    <!-- ── Mobile: sticky top rows — zero-height anchor avoids layout shift ── -->
-    <div class="min-[964px]:hidden sticky top-0 z-[60]" style="height: 0; overflow: visible">
-    <div
-      ref="overlayRef"
-      v-if="pinnedGroups.length"
-      class="absolute top-0 left-0 right-0 px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
-    >
-      <!-- layer wrapper: grid sits in flow to drive height; ticker overlays on top -->
-      <div class="relative">
-        <!-- expanded: centered grid — always in flow for height measurement -->
-        <div ref="overlayGridRef">
-          <div class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
-               :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'">
-            <TransitionGroup name="pin" tag="div" class="contents">
-              <div
-                v-for="group in pinnedGroups" :key="group"
-                class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
-              >
-                <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500 w-4 shrink-0">{{ group }}</span>
-                <div class="flex gap-1 items-center">
-                  <span
-                    v-for="(team, i) in order[group]" :key="team"
-                    class="relative group/flag cursor-default hover:z-[200]"
-                  >
-                    <span
-                      class="text-xl leading-none transition-opacity"
-                      :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
-                    >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
-                    <span class="pointer-events-none absolute bottom-full left-1/2 -tranzinc-x-1/2 mb-1.5 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold bg-white text-black shadow-lg opacity-0 group-hover/flag:opacity-100 transition-opacity z-[200]">
-                      {{ team }}<span class="text-zinc-400 font-normal"> · #{{ FIFA_RANKING[team] ?? '–' }}</span>
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </TransitionGroup>
-          </div>
-        </div>
-
-        <!-- collapsed: horizontal ticker — absolutely overlaid, fades in after height collapse -->
-        <div
-          ref="overlayTickerRef"
-          class="absolute top-0 overflow-hidden transition-opacity duration-200 flex items-center"
-          style="height: 36px; left: -1rem; right: -1rem;"
-          :class="overlayContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'"
-        >
-          <div
-            class="shelf-ticker flex gap-5 w-max"
-            :style="{ animationDuration: `${pinnedGroups.length * 2.5}s` }"
-          >
-            <template v-for="pass in 2" :key="pass">
-              <div v-for="group in pinnedGroups" :key="`${pass}-${group}`" class="flex items-center gap-1.5 shrink-0">
-                <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500">{{ group }}</span>
-                <div class="flex gap-0.5 items-center">
-                  <span
-                    v-for="(team, i) in order[group]" :key="team"
-                    class="text-lg leading-none transition-opacity"
-                    :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
-                  >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
-                </div>
-              </div>
-            </template>
-          </div>
-        </div>
-      </div>
-    </div>
-    </div><!-- end sticky anchor -->
+    <!-- ── Mobile: sticky top rows ── -->
+    <GroupOverlayPanel
+      ref="overlayPanelRef"
+      :groups="order"
+      :wildcards="wildcards"
+      :resolve-flag="resolveTeamFlag"
+      :get-group-card-refs="getGroupCardRefs"
+      :get-wildcards-section-el="getWildcardsSectionEl"
+      :get-anchor-el="getHeaderEl"
+      :columns="1"
+    />
 
     <!-- ── Desktop: fixed left panel ── -->
       <!-- wide: single left panel, 2 cols -->
@@ -479,17 +340,6 @@ const POS_COLORS = [
     <!-- ── Content ── -->
     <div class="max-w-2xl mx-auto px-4 pt-4 pb-10">
 
-    <button
-      v-if="isUpdate"
-      @click="router.push('/leaderboard')"
-      class="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-medium transition-colors mt-3 mb-1"
-    >
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M19 12H5"/><path d="M12 5l-7 7 7 7"/>
-      </svg>
-      Back to Home
-    </button>
-
     <!-- ── SECTION 1: Group Standings ── -->
     <div v-if="!loaded" class="flex justify-center py-20">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
@@ -559,11 +409,11 @@ const POS_COLORS = [
               <!-- Flag -->
               <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
 
-              <!-- Team name -->
-              <span class="text-xs font-medium text-white flex-1 truncate">{{ team }}</span>
-
-              <!-- FIFA rank -->
-              <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
+              <!-- Team name + FIFA rank -->
+              <span class="flex-1 min-w-0 flex items-center gap-1.5">
+                <span class="text-xs font-medium text-white truncate">{{ team }}</span>
+                <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
+              </span>
 
               <!-- Drag handle -->
               <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
@@ -594,29 +444,21 @@ const POS_COLORS = [
 
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <button
-          v-for="(group, idx) in GROUPS" :key="group"
-          :ref="idx === 0 ? (el) => { firstWildcardRef = el } : undefined"
+          v-for="group in GROUPS" :key="group"
           type="button"
           @click="!picksLocked && toggleWildcard(group)"
           :disabled="picksLocked || wcDisabled(group)"
-          class="relative text-left p-3 rounded-xl border transition-all duration-150"
+          class="relative text-left p-3 rounded-xl border transition-all duration-150 bg-court-800 border-court-700"
           :class="[
-            wildcards.includes(group)
-              ? 'bg-emerald-500/10 border-emerald-400/30 shadow-[0_0_16px_-4px_rgba(56,189,248,0.2)]'
-              : wcDisabled(group)
-                ? 'bg-court-800 border-court-700 opacity-30 cursor-not-allowed'
-                : 'bg-court-800 border-court-700 hover:border-zinc-600 cursor-pointer active:scale-[0.98]',
+            wcDisabled(group)
+              ? 'opacity-30 cursor-not-allowed'
+              : 'hover:border-zinc-600 cursor-pointer active:scale-[0.98]',
           ]"
         >
-          <div
-            class="text-[10px] font-black tracking-[0.2em] mb-0.5"
-            :class="wildcards.includes(group) ? 'text-emerald-400' : 'text-zinc-400'"
-          >GROUP {{ group }}</div>
+          <div class="text-[10px] font-black tracking-[0.2em] mb-0.5 text-emerald-400">GROUP {{ group }}</div>
           <div class="flex items-center gap-1.5">
             <span class="text-sm leading-none">{{ TEAM_FLAG[thirdOf(group)] ?? '🏳️' }}</span>
-            <div
-              class="text-xs font-semibold truncate"
-              :class="wildcards.includes(group) ? 'text-white' : 'text-zinc-300'"
+            <div class="text-xs font-semibold truncate text-white"
             >{{ thirdOf(group) }}<span class="text-zinc-400 font-normal"> · #{{ FIFA_RANKING[thirdOf(group)] ?? '–' }}</span></div>
           </div>
 
@@ -632,15 +474,19 @@ const POS_COLORS = [
       </div>
     </section>
 
-    <!-- ── SECTION 3: Group Stage Props ── -->
-    <section ref="propsSectionRef" class="mb-10">
+    <!-- ── SECTION 3: Props (by category) ── -->
+    <section
+      v-for="cat in propsByCategory" :key="cat.key"
+      :ref="cat.key === 'group' ? 'propsSectionRef' : undefined"
+      class="mb-10"
+    >
       <div class="flex items-baseline justify-between mb-5">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Group Stage Props</h2>
-        <span class="text-[10px] text-zinc-400 font-mono">3–10 pts</span>
+        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">{{ cat.label }}</h2>
+        <span class="text-[10px] text-zinc-400 font-mono">{{ Math.min(...cat.props.map(p => p.points)) }}–{{ Math.max(...cat.props.map(p => p.points)) }} pts</span>
       </div>
       <div class="space-y-2">
         <div
-          v-for="prop in PROPS" :key="prop.key"
+          v-for="prop in cat.props" :key="prop.key"
           class="bg-court-800 border border-court-700 rounded-2xl p-4"
         >
           <div class="relative mb-3">
@@ -721,10 +567,6 @@ const POS_COLORS = [
     </div>
 
     </template><!-- end loaded -->
-
-    <div v-if="loaded" class="text-center py-4">
-      <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
-    </div>
 
     </div><!-- end content wrapper -->
   </div>

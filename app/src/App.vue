@@ -1,15 +1,17 @@
 <script setup>
 import { ref, computed, provide, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useQueryClient } from '@tanstack/vue-query'
 import { onAuthStateChanged } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
-import { auth, db } from './firebase.js'
+import { auth } from './firebase.js'
+import { configQueryOptions, pickQueryOptions } from './queries.js'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
 import ProfileModal from './components/ProfileModal.vue'
 
 const router = useRouter()
 const route = useRoute()
+const queryClient = useQueryClient()
 const loading = ref(true)
 const user = ref(null)
 const picksLockTime = ref(null)
@@ -28,6 +30,14 @@ provide('user', user)
 provide('picksLocked', picksLocked)
 provide('picksLockTime', picksLockTime)
 provide('hasSubmitted', hasSubmitted)
+
+// Lets any view open the global ProfileModal directly into edit-name mode
+// (e.g. the inline pencil button next to "you" on the leaderboard).
+function openProfile(editMode = false) {
+  editNameMode.value = editMode
+  showProfile.value = true
+}
+provide('openProfile', openProfile)
 
 // Show header + tab bar on all authenticated pages except login/username
 const showChrome = computed(() =>
@@ -64,8 +74,8 @@ watch(picksLocked, (locked) => {
 
 onMounted(async () => {
   // Config is public — fetch before auth so splash page shows lock time immediately
-  getDoc(doc(db, 'config', 'public')).then(snap => {
-    if (snap.exists()) picksLockTime.value = snap.data().picksLockAt ?? null
+  queryClient.ensureQueryData(configQueryOptions()).then(data => {
+    picksLockTime.value = data?.picksLockAt ?? null
   }).catch(() => {})
 
   onAuthStateChanged(auth, async (u) => {
@@ -84,8 +94,8 @@ onMounted(async () => {
       // Firestore read is best-effort — a permissions error must never skip the username flow
       let pickExists = false
       try {
-        const snap = await getDoc(doc(db, 'picks', u.uid))
-        pickExists = snap.exists()
+        const data = await queryClient.ensureQueryData(pickQueryOptions(u.uid))
+        pickExists = !!data
       } catch {
         // picks/ not yet accessible — treat as no pick
       }
@@ -134,7 +144,7 @@ function onNameSaved() {
 
     <template v-else>
       <!-- Persistent header (authenticated non-auth pages) -->
-      <AppHeader v-if="showChrome" :user="user" @profile="showProfile = true" />
+      <AppHeader v-if="showChrome" :user="user" @profile="openProfile(false)" />
 
       <!-- Profile modal (global) -->
       <ProfileModal

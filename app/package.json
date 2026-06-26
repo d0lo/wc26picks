@@ -10,6 +10,7 @@
     "deploy": "vite build && cp -r dist/. ../firebase/public/"
   },
   "dependencies": {
+    "@tanstack/vue-query": "^5.101.1",
     "firebase": "^10.12.0",
     "vue": "^3.4.27",
     "vue-router": "^4.6.4"

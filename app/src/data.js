@@ -178,14 +178,32 @@ export const FIFA_RANKING = {
 }
 
 export const PROPS = [
-  { key: 'goldenBoot',      label: 'Golden Boot',                        type: 'player', points: 5, hint: 'Tournament top scorer' },
-  { key: 'goldenGlove',     label: 'Golden Glove',                       type: 'player', points: 4, hint: 'Best goalkeeper', positionFilter: 'G' },
-  { key: 'goldenBall',      label: 'Golden Ball',                        type: 'player', points: 5, hint: 'Best player of the tournament' },
-  { key: 'youngPlayer',     label: 'Young Player of the Tournament',     type: 'player', points: 4, hint: 'Best U-21 player', maxAge: 21 },
-  { key: 'breakoutPlayer',  label: 'Breakout Player of the Tournament',  type: 'player', points: 6, hint: 'The under-the-radar player who has a standout tournament (media consensus)' },
-  { key: 'mostGroupGoals',  label: 'Most Goals in Group Stage',          type: 'team',   points: 3, hint: 'Team that scores the most goals in the group stage' },
-  { key: 'hatTrickScorer',  label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'First player to score a hat trick' },
-  { key: 'mostAssists',     label: 'Most Assists',                       type: 'player', points: 4, hint: 'Player with the most assists' },
-  { key: 'mostYellowCards', label: 'Team with Most Yellow Cards',        type: 'team',   points: 3, hint: 'Most disciplinary cards received' },
-  { key: 'cleanGroupTeam',  label: 'Clean Group',                        type: 'team',   points: 5, hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team' },
+  { key: 'goldenBoot',      label: 'Golden Boot',                        type: 'player', points: 5, hint: 'Tournament top scorer', category: 'tournament' },
+  { key: 'goldenGlove',     label: 'Golden Glove',                       type: 'player', points: 4, hint: 'Best goalkeeper', positionFilter: 'G', category: 'tournament' },
+  { key: 'goldenBall',      label: 'Golden Ball',                        type: 'player', points: 5, hint: 'Best player of the tournament', category: 'tournament' },
+  { key: 'youngPlayer',     label: 'Young Player of the Tournament',     type: 'player', points: 4, hint: 'Best U-21 player', maxAge: 21, category: 'tournament' },
+  { key: 'breakoutPlayer',  label: 'Breakout Player of the Tournament',  type: 'player', points: 6, hint: 'The under-the-radar player who has a standout tournament (media consensus)', category: 'tournament' },
+  { key: 'mostGroupGoals',  label: 'Most Goals in Group Stage',          type: 'team',   points: 3, hint: 'Team that scores the most goals in the group stage', category: 'group' },
+  { key: 'hatTrickScorer',  label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'Player to score a hat trick', category: 'tournament' },
+  { key: 'mostAssists',     label: 'Most Assists',                       type: 'player', points: 4, hint: 'Player with the most assists', category: 'tournament' },
+  { key: 'mostYellowCards', label: 'Team with Most Yellow Cards',        type: 'team',   points: 3, hint: 'Most disciplinary cards received', category: 'tournament' },
+  { key: 'cleanGroupTeam',  label: 'Clean Group',                        type: 'team',   points: 5, hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team', category: 'group' },
 ]
+
+export const PROP_CATEGORIES = [
+  { key: 'tournament', label: 'Tournament Props' },
+  { key: 'group',      label: 'Group Stage Props' },
+  { key: 'knockout',   label: 'Knockout Props' },
+]
+
+// Per FIFA's released match calendar: group stage runs through June 27,
+// 2026, Round of 32 June 28–July 3, Round of 16 July 4–7. Once the Round
+// of 16 kicks off, knockout props outrank group props in display order.
+export const ROUND_OF_16_START = new Date('2026-07-04')
+
+export function orderedPropCategories() {
+  const order = new Date() < ROUND_OF_16_START
+    ? ['tournament', 'group', 'knockout']
+    : ['tournament', 'knockout', 'group']
+  return order.map(key => PROP_CATEGORIES.find(c => c.key === key))
+}

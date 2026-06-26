@@ -140,9 +140,15 @@ const indicatorStyle = computed(() => {
       transition: 'none',
     }
   }
+  // The pill has 6px of horizontal padding (px-1.5) that the flex buttons
+  // sit inset by, but isn't part of a plain 100%-based split — so the
+  // indicator's slot has to subtract that 12px before dividing, or outer
+  // tabs drift off-center while the middle tab (where the error cancels
+  // out by symmetry) looks fine.
+  const n = visibleTabs.value.length
   return {
-    width: `calc(${100 / visibleTabs.value.length}% - 6px)`,
-    left: `calc(${activeIndex.value * (100 / visibleTabs.value.length)}% + 3px)`,
+    width: `calc((100% - 12px) / ${n} - 6px)`,
+    left: `calc((100% - 12px) / ${n} * ${activeIndex.value} + 9px)`,
     transform,
     transition:
       'left 300ms cubic-bezier(0.34, 1.56, 0.64, 1), width 300ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1)',
@@ -198,17 +204,14 @@ const indicatorStyle = computed(() => {
             <path d="M9 10h6M9 14h4"/>
           </svg>
 
-          <!-- Leaderboard icon (home) -->
-          <svg v-else-if="tab.id === 'leaderboard'" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 11l9-8 9 8"/>
-            <path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10"/>
-            <path d="M9 21v-6h6v6"/>
+          <!-- Leaderboard icon (Material Symbols Rounded — home) -->
+          <svg v-else-if="tab.id === 'leaderboard'" width="22" height="22" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
+            <path d="M240-200h120v-200q0-17 11.5-28.5T400-440h160q17 0 28.5 11.5T600-400v200h120v-360L480-740 240-560v360Zm-80 0v-360q0-19 8.5-36t23.5-28l240-180q21-16 48-16t48 16l240 180q15 11 23.5 28t8.5 36v360q0 33-23.5 56.5T720-120H560q-17 0-28.5-11.5T520-160v-200h-80v200q0 17-11.5 28.5T400-120H240q-33 0-56.5-23.5T160-200Zm320-270Z"/>
           </svg>
 
-          <!-- Live icon (stadium) -->
-          <svg v-else-if="tab.id === 'live'" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <ellipse cx="12" cy="12" rx="9" ry="6"/>
-            <rect x="6" y="9" width="12" height="6" rx="2"/>
+          <!-- Live icon (Material Symbols Rounded — stadium) -->
+          <svg v-else-if="tab.id === 'live'" width="22" height="22" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
+            <path d="M120-712v-96q0-11 9.5-17t19.5-1l95 48q11 5 11 18t-11 18l-95 48q-10 5-19.5-1t-9.5-17Zm600 0v-96q0-11 9.5-17t19.5-1l95 48q11 5 11 18t-11 18l-95 48q-10 5-19.5-1t-9.5-17Zm-280-40v-96q0-11 9.5-17t19.5-1l95 48q11 5 11 18t-11 18l-95 48q-10 5-19.5-1t-9.5-17ZM406-81q-140-8-233-41.5T80-200v-360q0-25 31.5-46.5t85.5-38q54-16.5 127-26t156-9.5q83 0 156 9.5t127 26q54 16.5 85.5 38T880-560v360q0 45-93.5 78T553-81q-14 1-23.5-8.5T520-113v-127h-80v126q0 14-10 24t-24 9Zm74-439q97 0 167.5-11.5T760-558q0-5-76-23.5T480-600q-128 0-204 18.5T200-558q42 15 112.5 26.5T480-520ZM360-166v-74q0-33 23.5-56.5T440-320h80q33 0 56.5 23.5T600-240v74q80-8 131-23.5t69-27.5v-271q-55 22-138 35t-182 13q-99 0-182-13t-138-35v271q18 12 69 27.5T360-166Zm120-161Z"/>
           </svg>
         </span>
       </button>

@@ -1,41 +1,40 @@
 <script setup>
-import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, inject, watch } from 'vue'
 import { useRouter } from 'vue-router'
-const appVersion = __APP_VERSION__
-import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
-import { db } from '../firebase.js'
-import { GROUPS, TEAM_BY_ID } from '../data.js'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { TEAM_BY_ID } from '../data.js'
+import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, queryKeys } from '../queries.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
+import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
 
 const router = useRouter()
 const user = inject('user')
 const picksLocked = inject('picksLocked')
+const openProfile = inject('openProfile')
+const queryClient = useQueryClient()
 
-const submission = ref(null)
-const scores = ref([])
-const submitters = ref([])
-const loading = ref(true)
-const selectedUser = ref(null)  // { uid, name, photoURL } | null
+const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
+const scoresQuery = useQuery(scoresQueryOptions())
+const picksListQuery = useQuery(picksListQueryOptions())
 
-async function fetchData() {
-  try {
-    const [subSnap, scoresSnap, submittersSnap] = await Promise.all([
-      getDoc(doc(db, 'picks', user.value.uid)),
-      getDocs(query(collection(db, 'scores'), orderBy('total', 'desc'), limit(50))),
-      getDocs(query(collection(db, 'picks'), orderBy('submittedAt', 'asc'))),
-    ])
-    if (subSnap.exists()) submission.value = subSnap.data()
-    scores.value = scoresSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-    submitters.value = submittersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-  } catch {
-    // Firestore unavailable — show empty state
-  } finally {
-    loading.value = false
+const submission = computed(() => pickQuery.data.value ?? null)
+const scores = computed(() => scoresQuery.data.value ?? [])
+const submitters = computed(() => picksListQuery.data.value ?? [])
+const loading = computed(() => pickQuery.isLoading.value || scoresQuery.isLoading.value || picksListQuery.isLoading.value)
+
+// The picks-list query already fetches every user's full pick doc (groups,
+// wildcards, props) — seed each individual pick(uid) cache entry from it so
+// opening PicksModal for any submitter is an instant cache hit instead of
+// a fresh Firestore read.
+watch(picksListQuery.data, (list) => {
+  if (!list) return
+  for (const p of list) {
+    queryClient.setQueryData(queryKeys.pick(p.id), p)
   }
-}
+}, { immediate: true })
 
-onMounted(fetchData)
+const selectedUser = ref(null)  // { uid, name } | null
 
 const hasScores = computed(() => scores.value.length > 0)
 
@@ -77,173 +76,38 @@ function fmtDate(ts) {
 
 function openUser(s) {
   const uid = s.uid ?? s.id
-  if (uid === user.value?.uid) return
-  selectedUser.value = { uid, name: fmtName(s.name), photoURL: s.photoURL ?? null }
+  selectedUser.value = { uid, name: fmtName(s.name) }
 }
 
 // ── Sticky group overlay ───────────────────────────────────────────────
 const picksSummaryRef = ref(null)
-const overlayRef = ref(null)
-const overlayCollapsed = ref(false)
-const overlayContentVisible = ref(false)
-const overlayGridRef = ref(null)
-const overlayTickerRef = ref(null)
-const pinnedGroups = ref([])
-let lastExpandedOverlayHeight = 0
-let cachedRowHeight = 40
-let leaveAnimating = false
-let leaveTimer = null
 
-watch(() => pinnedGroups.value.length, (n, o) => {
-  if (n < o) {
-    leaveAnimating = true
-    clearTimeout(leaveTimer)
-    leaveTimer = setTimeout(() => { leaveAnimating = false }, 150)
-  }
-})
-
-function getHeaderBottom() {
-  return document.querySelector('header')?.getBoundingClientRect().bottom ?? 64
+function getGroupCardRefs() {
+  return picksSummaryRef.value?.groupCardRefs
 }
-
-function animateOverlayHeight(el, from, to, clearAfter, onDone) {
-  el.style.height = from + 'px'
-  el.offsetHeight
-  el.style.transition = 'height 280ms cubic-bezier(0.4, 0, 0.2, 1)'
-  el.style.height = to + 'px'
-  el.addEventListener('transitionend', () => {
-    el.style.transition = ''
-    if (clearAfter) el.style.height = ''
-    onDone?.()
-  }, { once: true })
+function getWildcardsSectionEl() {
+  return picksSummaryRef.value?.wildcardsSectionRef
 }
-
-function setOverlayCollapsed(val) {
-  if (overlayCollapsed.value === val) return
-  const el = overlayRef.value
-  if (!el) return
-  if (val) {
-    const from = el.offsetHeight
-    overlayCollapsed.value = true
-    animateOverlayHeight(el, from, 36, false, () => { overlayContentVisible.value = true })
-  } else {
-    overlayContentVisible.value = false
-    nextTick(() => {
-      const from = parseFloat(el.style.height) || el.offsetHeight
-      overlayCollapsed.value = false
-      nextTick(() => {
-        const to = overlayGridRef.value?.offsetHeight ?? from
-        animateOverlayHeight(el, from, to, true, null)
-      })
-    })
-  }
+function getHeaderEl() {
+  return document.querySelector('header')
 }
-
-function updatePinned() {
-  if (!submission.value) return
-  const groupCardRefs = picksSummaryRef.value?.groupCardRefs
-  if (!groupCardRefs) return
-
-  const headerBottom = getHeaderBottom()
-  const rowCount = Math.ceil(pinnedGroups.value.length / 2)
-  if (overlayRef.value && rowCount > 0 && !overlayCollapsed.value && !leaveAnimating) {
-    const h = overlayRef.value.getBoundingClientRect().height
-    if (h > 0) cachedRowHeight = h / rowCount
-  }
-  const rowHeight = cachedRowHeight
-
-  const newRows = []
-  const PAIR_ROWS = []
-  for (let i = 0; i < GROUPS.length; i += 2) PAIR_ROWS.push(GROUPS.slice(i, i + 2))
-  for (const row of PAIR_ROWS) {
-    const el = groupCardRefs[row[0]]
-    if (!el) break
-    const r = el.getBoundingClientRect()
-    const threshold = headerBottom + (newRows.length + 1) * rowHeight
-    if ((r.top + r.bottom) / 2 < threshold) newRows.push(row)
-    else break
-  }
-  pinnedGroups.value = newRows.flat()
-
-  if (!overlayRef.value) return
-  const overlayRect = overlayRef.value.getBoundingClientRect()
-  if (!overlayCollapsed.value) lastExpandedOverlayHeight = overlayRect.height
-
-  const wildcardsSectionRef = picksSummaryRef.value?.wildcardsSectionRef
-  if (!overlayCollapsed.value && wildcardsSectionRef?.value) {
-    const r = wildcardsSectionRef.value.getBoundingClientRect()
-    if ((r.top + r.bottom) / 2 < overlayRect.bottom) setOverlayCollapsed(true)
-  }
-  if (overlayCollapsed.value && wildcardsSectionRef?.value && lastExpandedOverlayHeight) {
-    const expandedBottom = overlayRect.top + lastExpandedOverlayHeight
-    if (wildcardsSectionRef.value.getBoundingClientRect().top > expandedBottom) setOverlayCollapsed(false)
-  }
+function resolveTeamFlag(teamId) {
+  return TEAM_BY_ID[teamId]?.flag ?? '🏳️'
 }
-
-onMounted(() => {
-  window.addEventListener('scroll', updatePinned, { passive: true })
-  window.addEventListener('resize', updatePinned, { passive: true })
-})
-onUnmounted(() => {
-  window.removeEventListener('scroll', updatePinned)
-  window.removeEventListener('resize', updatePinned)
-})
 </script>
 
 <template>
   <div>
-    <!-- Zero-height sticky anchor — no layout shift; overlay panel is absolute inside it -->
-    <div class="min-[964px]:hidden sticky top-0 z-[60]" style="height: 0; overflow: visible">
-      <div
-        ref="overlayRef"
-        v-if="pinnedGroups.length"
-        class="absolute top-0 left-0 right-0 px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
-      >
-        <div class="relative">
-          <div ref="overlayGridRef">
-            <div class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
-                 :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'">
-              <TransitionGroup name="pin" tag="div" class="contents">
-                <div
-                  v-for="group in pinnedGroups" :key="group"
-                  class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
-                >
-                  <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500 w-4 shrink-0">{{ group }}</span>
-                  <div class="flex gap-1 items-center">
-                    <span
-                      v-for="(teamId, i) in submission?.groups[group]" :key="teamId"
-                      class="text-xl leading-none transition-opacity"
-                      :class="(i >= 2 && !submission?.wildcards?.includes(group)) || i >= 3 ? 'opacity-30' : ''"
-                    >{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
-                  </div>
-                </div>
-              </TransitionGroup>
-            </div>
-          </div>
-          <div
-            ref="overlayTickerRef"
-            class="absolute top-0 overflow-hidden transition-opacity duration-200 flex items-center"
-            style="height: 36px; left: -1rem; right: -1rem;"
-            :class="overlayContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'"
-          >
-            <div class="shelf-ticker flex gap-5 w-max" :style="{ animationDuration: `${pinnedGroups.length * 2.5}s` }">
-              <template v-for="pass in 2" :key="pass">
-                <div v-for="group in pinnedGroups" :key="`${pass}-${group}`" class="flex items-center gap-1.5 shrink-0">
-                  <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500">{{ group }}</span>
-                  <div class="flex gap-0.5 items-center">
-                    <span
-                      v-for="(teamId, i) in submission?.groups[group]" :key="teamId"
-                      class="text-lg leading-none transition-opacity"
-                      :class="(i >= 2 && !submission?.wildcards?.includes(group)) || i >= 3 ? 'opacity-30' : ''"
-                    >{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div><!-- end sticky anchor -->
+    <GroupOverlayPanel
+      v-if="submission"
+      :groups="submission.groups"
+      :wildcards="submission.wildcards"
+      :resolve-flag="resolveTeamFlag"
+      :get-group-card-refs="getGroupCardRefs"
+      :get-wildcards-section-el="getWildcardsSectionEl"
+      :get-anchor-el="getHeaderEl"
+      :columns="2"
+    />
 
     <div class="max-w-2xl mx-auto px-4 pt-4 pb-10">
       <div v-if="loading" class="flex justify-center py-20">
@@ -295,9 +159,9 @@ onUnmounted(() => {
           <div
             v-for="s in sortedSubmitters"
             :key="s.uid ?? s.id"
-            class="flex items-center gap-3 px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors"
+            class="flex items-center gap-3 px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors cursor-pointer"
             :class="[
-              (s.uid ?? s.id) === user?.uid ? 'bg-emerald-500/5' : 'hover:bg-court-700/20 cursor-pointer active:bg-court-700/30',
+              (s.uid ?? s.id) === user?.uid ? 'bg-emerald-500/5 hover:bg-emerald-500/10 active:bg-emerald-500/15' : 'hover:bg-court-700/20 active:bg-court-700/30',
             ]"
             @click="openUser(s)"
           >
@@ -306,6 +170,9 @@ onUnmounted(() => {
                 class="text-xs font-semibold truncate"
                 :class="(s.uid ?? s.id) === user?.uid ? 'text-emerald-300' : 'text-white'"
               >{{ fmtName(s.name) }}</span>
+              <button v-if="(s.uid ?? s.id) === user?.uid" @click.stop="openProfile(true)" class="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0" aria-label="Edit display name">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
             </div>
             <span v-if="(s.uid ?? s.id) === user?.uid" class="text-[9px] text-emerald-500/50 font-bold uppercase tracking-wider shrink-0">you</span>
             <span class="text-sm font-black shrink-0 text-zinc-600">—</span>
@@ -330,9 +197,9 @@ onUnmounted(() => {
           <div
             v-for="(s, i) in scores"
             :key="s.id"
-            class="grid items-center px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors"
+            class="grid items-center px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors cursor-pointer"
             :class="[
-              s.id === user?.uid ? 'bg-emerald-500/5' : 'hover:bg-court-700/20 cursor-pointer active:bg-court-700/30',
+              s.id === user?.uid ? 'bg-emerald-500/5 hover:bg-emerald-500/10 active:bg-emerald-500/15' : 'hover:bg-court-700/20 active:bg-court-700/30',
             ]"
             style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 4rem"
             @click="openUser(s)"
@@ -349,6 +216,9 @@ onUnmounted(() => {
                 class="text-xs font-semibold truncate"
                 :class="s.id === user?.uid ? 'text-emerald-300' : 'text-white'"
               >{{ fmtName(s.name) }}</span>
+              <button v-if="s.id === user?.uid" @click.stop="openProfile(true)" class="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0" aria-label="Edit display name">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
               <span v-if="s.id === user?.uid" class="text-[9px] text-emerald-500/50 font-bold uppercase tracking-wider shrink-0">you</span>
             </div>
 
@@ -378,27 +248,14 @@ onUnmounted(() => {
         />
       </section>
 
-      <div class="text-center py-4">
-        <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
-      </div>
-
       </template><!-- end !loading -->
 
       <PicksModal
         v-if="selectedUser"
         :uid="selectedUser.uid"
         :name="selectedUser.name"
-        :photoURL="selectedUser.photoURL"
         @close="selectedUser = null"
       />
     </div><!-- end content wrapper -->
   </div>
 </template>
-
-<style scoped>
-.pin-enter-active { transition: all 0.15s ease-out; }
-.pin-leave-active { transition: all 0.1s ease-in; }
-.pin-enter-from  { opacity: 0; transform: translateY(-6px); }
-.pin-leave-to    { opacity: 0; transform: translateY(-4px); }
-.pin-move        { transition: transform 0.15s ease; }
-</style>
