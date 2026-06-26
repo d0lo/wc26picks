@@ -335,7 +335,7 @@ const POS_COLORS = [
           >
             <template #item="{ element: team, index: idx }">
               <div
-                class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border touch-none"
+                class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border"
                 :class="picksLocked
                   ? 'cursor-default bg-court-750 border-transparent opacity-60'
                   : 'bg-court-750 border-transparent hover:border-court-600 cursor-grab active:cursor-grabbing'"

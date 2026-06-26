@@ -431,7 +431,7 @@ async function saveProps() {
             <template #item="{ element: prop }">
               <div
                 @click="onRowClick(prop)"
-                class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border touch-none cursor-grab active:cursor-grabbing bg-court-750 border-transparent hover:border-court-600"
+                class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border cursor-grab active:cursor-grabbing bg-court-750 border-transparent hover:border-court-600"
               >
                 <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
                   <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
