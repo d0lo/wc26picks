@@ -3,7 +3,7 @@ import { ref, computed, provide, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
 import { onAuthStateChanged } from 'firebase/auth'
-import { doc, setDoc } from 'firebase/firestore'
+import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
 import { configQueryOptions, pickQueryOptions, userQueryOptions } from './queries.js'
 import AppHeader from './components/AppHeader.vue'
@@ -75,6 +75,12 @@ watch(picksLocked, (locked) => {
   }
 })
 
+// Keeps isAdmin (and the cached profile) live for the rest of the session.
+// isAdmin is only ever granted out-of-band via the Admin SDK with no
+// client-visible trigger, so a one-shot fetch would otherwise require a
+// full reload to pick up a newly granted admin.
+let profileUnsub = null
+
 onMounted(async () => {
   // Config is public — fetch before auth so splash page shows lock time immediately
   queryClient.ensureQueryData(configQueryOptions()).then(data => {
@@ -91,6 +97,8 @@ onMounted(async () => {
       // next sign-in, when `user` becomes truthy again.
       showProfile.value = false
       editNameMode.value = false
+      profileUnsub?.()
+      profileUnsub = null
     }
     user.value = u
     if (u) {
@@ -127,6 +135,12 @@ onMounted(async () => {
       } finally {
         dataReady.value = true
       }
+
+      profileUnsub = onSnapshot(doc(db, 'users', u.uid), (snap) => {
+        const profile = snap.exists() ? snap.data() : null
+        queryClient.setQueryData(userQueryOptions(u.uid).queryKey, profile)
+        isAdmin.value = !!profile?.isAdmin
+      })
     } else {
       hasSubmitted.value = false
       isAdmin.value = false

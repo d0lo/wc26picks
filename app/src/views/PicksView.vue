@@ -213,9 +213,10 @@ async function submit() {
   submitError.value = ''
   try {
     const changed = picksChanged()
-    await setDoc(doc(db, 'picks', user.value.uid), {
+    // Known client-side — patch the cache with these directly below.
+    // submittedAt is server-generated, so it's excluded from that patch.
+    const knownFields = {
       uid: user.value.uid,
-      ...(changed ? { submittedAt: serverTimestamp() } : {}),
       // Store team UUIDs, not names
       groups: Object.fromEntries(GROUPS.map(g => [g, order[g].map(name => TEAM_ID[name])])),
       wildcards: wildcards.value,
@@ -224,9 +225,15 @@ async function submit() {
       props: Object.fromEntries(
         allProps.value.map(p => [p.id, propAnswers[p.id] === '' ? null : propAnswers[p.id]])
       ),
+    }
+    await setDoc(doc(db, 'picks', user.value.uid), {
+      ...knownFields,
+      ...(changed ? { submittedAt: serverTimestamp() } : {}),
     }, { merge: true })
-    queryClient.invalidateQueries({ queryKey: queryKeys.pick(user.value.uid) })
-    queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
+    queryClient.setQueryData(queryKeys.pick(user.value.uid), (old) => ({ ...old, ...knownFields }))
+    // picksList sorts by submittedAt, which we don't know the real value of
+    // client-side — only refetch it when submittedAt actually changed.
+    if (changed) queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
     router.push('/leaderboard')
   } catch {
     submitError.value = 'Save failed — check your connection and try again.'

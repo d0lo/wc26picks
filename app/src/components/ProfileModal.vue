@@ -5,7 +5,7 @@ import { signOut, deleteUser, reauthenticateWithPopup, reauthenticateWithCredent
 import { doc, deleteDoc, setDoc } from 'firebase/firestore'
 import { useQueryClient } from '@tanstack/vue-query'
 import { auth, db, googleProvider } from '../firebase.js'
-import { queryKeys } from '../queries.js'
+import { patchUserInCache, removeUserFromCache, removePickFromCache } from '../queries.js'
 
 const props = defineProps({ user: Object, editName: Boolean })
 const emit = defineEmits(['close', 'name-saved'])
@@ -35,8 +35,9 @@ async function saveName() {
   try {
     await updateProfile(props.user, { displayName: name })
     await setDoc(doc(db, 'users', props.user.uid), { displayName: name }, { merge: true })
-    queryClient.invalidateQueries({ queryKey: queryKeys.user(props.user.uid) })
-    queryClient.invalidateQueries({ queryKey: queryKeys.usersList })
+    // The new name is already known — patch every cache entry that holds it
+    // directly instead of invalidating and waiting on a refetch.
+    patchUserInCache(queryClient, props.user.uid, (u) => ({ ...u, displayName: name }))
     emit('name-saved')
     emit('close')
   } catch {
@@ -65,10 +66,8 @@ async function reauthAndDelete() {
     // Best-effort cleanup — don't let a Firestore failure block account deletion
     await deleteDoc(doc(db, 'picks', props.user.uid)).catch(() => {})
     await deleteDoc(doc(db, 'users', props.user.uid)).catch(() => {})
-    queryClient.removeQueries({ queryKey: queryKeys.pick(props.user.uid) })
-    queryClient.removeQueries({ queryKey: queryKeys.user(props.user.uid) })
-    queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
-    queryClient.invalidateQueries({ queryKey: queryKeys.usersList })
+    removePickFromCache(queryClient, props.user.uid)
+    removeUserFromCache(queryClient, props.user.uid)
     await deleteUser(props.user)
   } catch {
     error.value = 'Could not delete account. Please try again.'

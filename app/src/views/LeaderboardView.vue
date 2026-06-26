@@ -1,9 +1,11 @@
 <script setup>
-import { ref, computed, inject, watch } from 'vue'
+import { ref, computed, inject, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { doc, onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore'
+import { db } from '../firebase.js'
 import { TEAM_BY_ID } from '../data.js'
-import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersListQueryOptions, queryKeys } from '../queries.js'
+import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, queryKeys } from '../queries.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
@@ -17,11 +19,19 @@ const queryClient = useQueryClient()
 const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
 const scoresQuery = useQuery(scoresQueryOptions())
 const picksListQuery = useQuery(picksListQueryOptions())
-const usersListQuery = useQuery(usersListQueryOptions())
 
 const submission = computed(() => pickQuery.data.value ?? null)
 const scores = computed(() => scoresQuery.data.value ?? [])
 const submitters = computed(() => picksListQuery.data.value ?? [])
+
+// Only resolve names for uids that actually appear on this page — picks-list
+// submitters plus anyone with a score — instead of pulling the whole users
+// collection just to look up a handful of display names.
+const visibleUids = computed(() => [
+  ...submitters.value.map(s => s.uid ?? s.id),
+  ...scores.value.map(s => s.id),
+])
+const usersListQuery = useQuery(computed(() => usersByIdsQueryOptions(visibleUids.value)))
 const users = computed(() => usersListQuery.data.value ?? {})
 const loading = computed(() => pickQuery.isLoading.value || scoresQuery.isLoading.value || picksListQuery.isLoading.value || usersListQuery.isLoading.value)
 
@@ -39,6 +49,35 @@ watch(picksListQuery.data, (list) => {
     queryClient.setQueryData(queryKeys.pick(p.id), p)
   }
 }, { immediate: true })
+
+// Live scores: while a match is in progress, the auto-scoring trigger keeps
+// rewriting scores/{uid} — subscribe via onSnapshot during that window so
+// the leaderboard updates immediately, instead of waiting on
+// scoresQueryOptions()'s refetchOnWindowFocus to fire on a tab refocus.
+let scoresUnsub = null
+let scoreboardUnsub = null
+
+function startLiveScores() {
+  if (scoresUnsub) return
+  scoresUnsub = onSnapshot(query(collection(db, 'scores'), orderBy('total', 'desc'), limit(50)), (snap) => {
+    queryClient.setQueryData(queryKeys.scores, snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  })
+}
+function stopLiveScores() {
+  scoresUnsub?.()
+  scoresUnsub = null
+}
+
+onMounted(() => {
+  scoreboardUnsub = onSnapshot(doc(db, 'liveData/scoreboard'), (snap) => {
+    if (snap.data()?.state === 'polling') startLiveScores()
+    else stopLiveScores()
+  })
+})
+onUnmounted(() => {
+  scoreboardUnsub?.()
+  stopLiveScores()
+})
 
 const selectedUser = ref(null)  // { uid, name } | null
 
