@@ -1,12 +1,12 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import draggable from 'vuedraggable'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { doc, updateDoc, Timestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { configQueryOptions, queryKeys } from '../queries.js'
 import { PROP_CATEGORIES } from '../data.js'
-import { useDragList } from '../composables/useDragList.js'
 
 const router = useRouter()
 const queryClient = useQueryClient()
@@ -45,6 +45,7 @@ function loadFromConfig(data) {
   scoringForm.perfectGroupBonus = s.perfectGroupBonus ?? 0
   scoringForm.wildcard = s.wildcard ?? 0
   propsForm.items = (s.props ?? []).map(p => ({ ...p }))
+  rebuildCategoryLists()
   savedSnapshot.lock = snapshotLock()
   savedSnapshot.scoring = snapshotScoring()
   savedSnapshot.props = snapshotProps()
@@ -97,6 +98,7 @@ async function cancelProps() {
   // otherwise resurrect a prop (or edit) the user just asked to discard.
   closeDialog()
   propsForm.items = JSON.parse(savedSnapshot.props)
+  rebuildCategoryLists()
   saveStatus.props = ''
   saveError.props = ''
 }
@@ -134,107 +136,36 @@ function addProp(categoryKey) {
     points: 0,
     allowNone: false,
   })
+  rebuildCategoryLists()
 }
 
 function restoreProp(prop) {
   delete prop.archived
+  rebuildCategoryLists()
 }
 
-// --- Drag and drop: reorder within a category list, or move across lists
-// (which updates the prop's category). Shares useDragList with PicksView's
-// team-order drag, so both float the grabbed row with the pointer and
-// reflow the rest via the same FLIP transition.
-const { drag, start: startDrag, onSettled } = useDragList()
-let dragFromCategory = null
-let dragSavedOrder = null
+// --- Drag and drop: one reactive array per category, bound via vuedraggable
+// with a shared `group` so rows can be dragged between category lists, not
+// just reordered within one. After every drag-driven change, the dragged
+// prop's category is corrected to match wherever it landed and the canonical
+// propsForm.items order is rebuilt from the category lists.
+const categoryLists = reactive(Object.fromEntries(PROP_CATEGORIES.map(c => [c.key, []])))
 
-let dragMoved = false
-
-function onRowPointerDown(e, prop) {
-  // A prop's dialog may be open while the user drags a *different* row —
-  // that's fine. But dragging the row whose dialog is currently open would
-  // let the in-flight draft and the reordered list disagree about identity,
-  // so block it.
-  if (dialogPropId.value === prop.id) return
-  dragFromCategory = prop.category
-  dragSavedOrder = activeProps.value.map(p => p.id)
-  dragMoved = false
-  startDrag(e, prop.id, {
-    containerSelector: '[data-prop-list]',
-    onMove(hit) {
-      dragMoved = true
-      const row = hit?.closest('[data-prop-row]')
-      const list = hit?.closest('[data-prop-list]')
-      if (row) {
-        const targetId = row.dataset.propRow
-        const categoryKey = row.dataset.category
-        if (targetId !== prop.id) moveDraggedTo(categoryKey, indexInCategory(categoryKey, targetId))
-      } else if (list) {
-        const categoryKey = list.dataset.propList
-        const cat = propsByCategory.value.find(c => c.key === categoryKey)
-        if (cat) moveDraggedTo(categoryKey, cat.props.length)
-      }
-    },
-    onEnd(inside) {
-      if (!inside) {
-        // Dropped outside every category list — revert order and category.
-        const dragged = propsForm.items.find(p => p.id === prop.id)
-        if (dragged) dragged.category = dragFromCategory
-        const others = propsForm.items.filter(p => p.id !== prop.id)
-        const restoreAt = dragSavedOrder.indexOf(prop.id)
-        const beforeId = dragSavedOrder[restoreAt + 1]
-        const insertAt = beforeId ? others.findIndex(p => p.id === beforeId) : others.length
-        others.splice(insertAt === -1 ? others.length : insertAt, 0, dragged)
-        propsForm.items.splice(0, propsForm.items.length, ...others)
-      }
-      dragFromCategory = null
-      dragSavedOrder = null
-    },
-  })
-}
-
-function indexInCategory(categoryKey, propId) {
-  const cat = propsByCategory.value.find(c => c.key === categoryKey)
-  if (!cat) return 0
-  return cat.props.findIndex(p => p.id === propId)
-}
-
-function moveDraggedTo(categoryKey, targetIndexInCategory) {
-  const dragged = propsForm.items.find(p => p.id === drag.id)
-  if (!dragged) return
-  dragged.category = categoryKey
-
-  // Recompute order: pull the dragged prop's underlying items array index
-  // out, then splice it back in among the other props of the target
-  // category at the requested position, preserving relative order of
-  // everyone else (including untouched categories and archived items).
-  const others = propsForm.items.filter(p => p.id !== drag.id)
-  const catProps = others.filter(p => p.category === categoryKey && !p.archived)
-  const insertAfterId = catProps[targetIndexInCategory - 1]?.id
-  let insertAt
-  if (catProps.length === 0) {
-    insertAt = others.length
-  } else if (insertAfterId == null) {
-    insertAt = others.indexOf(catProps[0])
-  } else {
-    insertAt = others.findIndex(p => p.id === insertAfterId) + 1
+function rebuildCategoryLists() {
+  for (const cat of PROP_CATEGORIES) {
+    categoryLists[cat.key] = activeProps.value.filter(p => p.category === cat.key)
   }
-  others.splice(insertAt, 0, dragged)
-  propsForm.items.splice(0, propsForm.items.length, ...others)
+}
+
+function onCategoryListChange(categoryKey, evt) {
+  if (evt.added) evt.added.element.category = categoryKey
+  const archived = propsForm.items.filter(p => p.archived)
+  const ordered = PROP_CATEGORIES.flatMap(c => categoryLists[c.key])
+  propsForm.items.splice(0, propsForm.items.length, ...ordered, ...archived)
 }
 
 function onRowClick(prop) {
-  // A trailing click fires after a real drag (pointerup, then a synthetic
-  // click) — ignore it so dragging a row doesn't also pop its dialog open.
-  if (dragMoved) { dragMoved = false; return }
   openDialog(prop)
-}
-
-function rowStyle(prop) {
-  if (drag.id !== prop.id) return null
-  const style = { transform: `translate(${drag.dx}px, ${drag.dy}px)`, zIndex: 50 }
-  if (!drag.settling) style.transition = 'none'
-  return style
 }
 
 // --- Prop editor dialog: edits happen on a draft copy, only merged back
@@ -265,6 +196,7 @@ function commitDialog() {
   const target = propsForm.items.find(p => p.id === dialogPropId.value)
   if (target) Object.assign(target, JSON.parse(JSON.stringify(draft)))
   closeDialog()
+  rebuildCategoryLists()
 }
 
 function archiveDraft() {
@@ -467,39 +399,39 @@ async function saveProps() {
             </button>
           </div>
 
-          <TransitionGroup
+          <draggable
+            v-model="categoryLists[cat.key]"
+            :item-key="'id'"
+            group="props"
             tag="div"
-            name="drag-list"
-            :data-prop-list="cat.key"
             class="space-y-1.5 min-h-[2.5rem] rounded-xl"
+            :animation="200"
+            :delay="100"
+            :delay-on-touch-only="true"
+            ghost-class="drag-ghost"
+            chosen-class="drag-chosen"
+            drag-class="drag-dragging"
+            @change="onCategoryListChange(cat.key, $event)"
           >
-            <div
-              v-for="prop in cat.props"
-              :key="prop.id"
-              :data-prop-row="prop.id"
-              :data-category="cat.key"
-              @pointerdown="onRowPointerDown($event, prop)"
-              @transitionend="onSettled(prop.id)"
-              @click="onRowClick(prop)"
-              class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border touch-none cursor-grab active:cursor-grabbing"
-              :class="[
-                drag.id === prop.id
-                  ? ['opacity-30 bg-court-750 border-transparent shadow-xl shadow-black/40 cursor-grabbing', drag.settling && 'drag-settle']
-                  : 'bg-court-750 border-transparent hover:border-court-600'
-              ]"
-              :style="rowStyle(prop)"
-            >
-              <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
-                <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
-                <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
-                <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
-                <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
-              </svg>
-              <span class="flex-1 text-xs font-medium text-white truncate">{{ prop.label }}</span>
-              <span class="text-[10px] text-emerald-400 font-mono shrink-0">{{ prop.points }} pts</span>
-            </div>
-            <p v-if="!cat.props.length" key="empty" class="text-[11px] text-zinc-600 italic px-1 py-1">No props yet.</p>
-          </TransitionGroup>
+            <template #item="{ element: prop }">
+              <div
+                @click="onRowClick(prop)"
+                class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border touch-none cursor-grab active:cursor-grabbing bg-court-750 border-transparent hover:border-court-600"
+              >
+                <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
+                  <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
+                  <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
+                  <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
+                </svg>
+                <span class="flex-1 text-xs font-medium text-white truncate">{{ prop.label }}</span>
+                <span class="text-[10px] text-emerald-400 font-mono shrink-0">{{ prop.points }} pts</span>
+              </div>
+            </template>
+            <template #footer>
+              <p v-if="!cat.props.length" class="text-[11px] text-zinc-600 italic px-1 py-1">No props yet.</p>
+            </template>
+          </draggable>
         </div>
 
         <div v-if="archivedProps.length" class="mt-4 pt-4 border-t border-court-700">
@@ -651,10 +583,15 @@ async function saveProps() {
 </template>
 
 <style scoped>
-.drag-list-move {
-  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+.drag-ghost {
+  opacity: 0.3;
 }
-.drag-settle {
-  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+.drag-chosen {
+  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.5);
+  cursor: grabbing !important;
+}
+.drag-dragging {
+  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.5);
+  transform: scale(1.03);
 }
 </style>

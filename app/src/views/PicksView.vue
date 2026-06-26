@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, ref, computed, inject, watch } from 'vue'
-import { useDragList } from '../composables/useDragList.js'
+import draggable from 'vuedraggable'
 import { useRouter } from 'vue-router'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
@@ -95,47 +95,6 @@ watch(pickQuery.isFetched, (fetched) => {
   }
   loaded.value = true
 }, { immediate: true })
-
-// ── Drag and drop ──────────────────────────────────────────────────────
-// Pointer-based: the grabbed row floats with the pointer and the rest of
-// the group reflows with a FLIP transition (see useDragList.js). Releasing
-// outside the group's own card reverts to the order the drag started from.
-const { drag, start: startDrag, onSettled } = useDragList()
-const dragGroup = ref(null)
-let dragSavedOrder = null
-
-function onRowPointerDown(e, group, team) {
-  dragGroup.value = group
-  dragSavedOrder = [...order[group]]
-  startDrag(e, team, {
-    containerSelector: `[data-group="${group}"]`,
-    onMove(hit) {
-      const row = hit?.closest('[data-drag-row]')
-      if (!row || row.dataset.dragGroup !== group) return
-      const targetIdx = Number(row.dataset.dragIdx)
-      const arr = order[group]
-      const from = arr.indexOf(team)
-      if (from === -1 || from === targetIdx) return
-      arr.splice(from, 1)
-      arr.splice(targetIdx, 0, team)
-    },
-    onEnd(inside) {
-      if (!inside) order[group].splice(0, Infinity, ...dragSavedOrder)
-      dragGroup.value = null
-      dragSavedOrder = null
-    },
-  })
-}
-
-function rowStyle(group, team) {
-  if (drag.id !== team || dragGroup.value !== group) return null
-  const style = { transform: `translate(${drag.dx}px, ${drag.dy}px)`, zIndex: 50 }
-  // While actively floating, override the TransitionGroup "move" transition
-  // (it'd otherwise fight our per-frame transform) — `.drag-settle` takes
-  // over once released, when this no longer applies.
-  if (!drag.settling) style.transition = 'none'
-  return style
-}
 
 function resetGroup(group) {
   order[group] = fifaOrder(group)
@@ -361,47 +320,51 @@ const POS_COLORS = [
           </div>
 
           <!-- Draggable team rows -->
-          <TransitionGroup tag="div" name="drag-list" class="space-y-1">
-            <div
-              v-for="(team, idx) in order[group]" :key="team"
-              data-drag-row
-              :data-drag-group="group"
-              :data-drag-idx="idx"
-              @pointerdown="!picksLocked && onRowPointerDown($event, group, team)"
-              @transitionend="onSettled(team)"
-              class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border touch-none"
-              :class="[
-                picksLocked ? 'cursor-default bg-court-750 border-transparent opacity-60' :
-                  drag.id === team && dragGroup === group
-                    ? ['opacity-30 bg-court-750 border-transparent shadow-xl shadow-black/40 cursor-grabbing', drag.settling && 'drag-settle']
-                    : 'bg-court-750 border-transparent hover:border-court-600 cursor-grab active:cursor-grabbing'
-              ]"
-              :style="rowStyle(group, team)"
-            >
-              <!-- Position badge -->
+          <draggable
+            v-model="order[group]"
+            :item-key="(team) => team"
+            tag="div"
+            class="space-y-1"
+            :disabled="picksLocked"
+            :animation="200"
+            :delay="100"
+            :delay-on-touch-only="true"
+            ghost-class="drag-ghost"
+            chosen-class="drag-chosen"
+            drag-class="drag-dragging"
+          >
+            <template #item="{ element: team, index: idx }">
               <div
-                class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
-                :class="POS_COLORS[idx]"
-              >{{ idx + 1 }}</div>
+                class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border touch-none"
+                :class="picksLocked
+                  ? 'cursor-default bg-court-750 border-transparent opacity-60'
+                  : 'bg-court-750 border-transparent hover:border-court-600 cursor-grab active:cursor-grabbing'"
+              >
+                <!-- Position badge -->
+                <div
+                  class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
+                  :class="POS_COLORS[idx]"
+                >{{ idx + 1 }}</div>
 
-              <!-- Flag -->
-              <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                <!-- Flag -->
+                <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
 
-              <!-- Team name + FIFA rank -->
-              <span class="flex-1 min-w-0 flex items-center gap-1.5">
-                <span class="text-xs font-medium text-white truncate">{{ team }}</span>
-                <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
-              </span>
+                <!-- Team name + FIFA rank -->
+                <span class="flex-1 min-w-0 flex items-center gap-1.5">
+                  <span class="text-xs font-medium text-white truncate">{{ team }}</span>
+                  <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
+                </span>
 
-              <!-- Drag handle -->
-              <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
-                <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
-                <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
-                <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
-                <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
-              </svg>
-            </div>
-          </TransitionGroup>
+                <!-- Drag handle -->
+                <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
+                  <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
+                  <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
+                  <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
+                </svg>
+              </div>
+            </template>
+          </draggable>
         </div>
       </div>
     </section>
@@ -552,11 +515,16 @@ const POS_COLORS = [
 </template>
 
 <style scoped>
-.drag-list-move {
-  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+.drag-ghost {
+  opacity: 0.3;
 }
-.drag-settle {
-  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+.drag-chosen {
+  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.5);
+  cursor: grabbing !important;
+}
+.drag-dragging {
+  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.5);
+  transform: scale(1.03);
 }
 .pin-enter-active { transition: all 0.15s ease-out; }
 .pin-leave-active { transition: all 0.1s ease-in; }
