@@ -92,6 +92,16 @@ Example row:
 
 ---
 
+## Vue `<script setup>` Declaration Order
+
+`<script setup>` runs top-to-bottom as plain module code — `const`/`let` bindings are **not** hoisted the way `function` declarations are. Anything that runs eagerly during setup (an `immediate: true` watcher, a top-level function call, a computed evaluated synchronously) can hit a variable declared further down the file before it's initialized, throwing `ReferenceError: can't access lexical declaration 'X' before initialization` (minified in prod as a single letter, e.g. `'L'`) — exactly what happened in `AdminView.vue` when `loadFromConfig` (invoked by an immediate `watch`) called `rebuildCategoryLists()`, which referenced `categoryLists` and `activeProps`, both declared later in the file.
+
+**Rule:** any `const`/`computed`/`reactive` that is read inside a function called during eager/immediate setup execution (immediate watchers, top-level calls, anything invoked before the component mounts) must be declared **above** that function and above the call site that triggers it. When adding a function to an existing eager call chain (e.g. a function called from `loadFromConfig`, or from any `watch(..., { immediate: true })` callback), trace every variable it reads and confirm each is already initialized at that point in file order — don't assume "it's used by reference, order doesn't matter," since `const` TDZ makes order matter for the *first* synchronous run.
+
+When this error is reported (even just "ReferenceError ... before initialization" with a minified single-letter name), the fix is always: find the eager call chain, find what variable it touches that's declared later in the file, and move that declaration above the chain's entry point — not a workaround like `let` instead of `const`, or wrapping in `setTimeout`.
+
+---
+
 ## Live Tracking Feature Plan
 
 Five features that turn the picks app into a live World Cup tracker. Build them **in order** — each branch is listed below and each feature depends on the one before it being merged to `main` first.
