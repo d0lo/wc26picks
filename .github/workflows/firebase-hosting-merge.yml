@@ -15,6 +15,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.1'
+
       - name: Bump version
         run: |
           # Skip if this is the version bump commit itself
@@ -67,19 +71,23 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm ci && npm run build
       - name: Deploy to Firebase Hosting
-        # firebase-tools' apiv2 client sometimes retries the Hosting release
-        # POST after a "premature close" network error even though it already
-        # completed server-side, so the retry gets a 400 "version already
-        # active" FAILED_PRECONDITION — a false failure. Don't block the job
-        # on it; the rules deploy below still runs via if: always().
+        # wretry retries with a fresh deploy (new version) each attempt, which
+        # is a real fix for the "premature close" apiv2 retry race below — but
+        # if all 3 attempts still somehow report failure, don't block the
+        # Firestore rules deploy on it (it runs via if: always() either way).
         continue-on-error: true
-        uses: FirebaseExtended/action-hosting-deploy@v0
+        uses: Wandalen/wretry.action@v3.8.0
         with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_WC26PICKS }}
-          channelId: live
-          projectId: wc26picks
-          entryPoint: ./firebase
+          action: FirebaseExtended/action-hosting-deploy@v0
+          with: |
+            repoToken: ${{ secrets.GITHUB_TOKEN }}
+            firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_WC26PICKS }}
+            channelId: live
+            projectId: wc26picks
+            entryPoint: ./firebase
+            firebaseToolsVersion: 15.22.1
+          attempt_limit: 3
+          attempt_delay: 5000
 
       - name: Deploy Firestore rules
         if: always()
