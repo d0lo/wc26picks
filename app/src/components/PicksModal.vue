@@ -192,13 +192,8 @@ function requestClose() {
         <div class="flex justify-center pt-2 pb-1">
           <div class="w-1/2 h-1 rounded-full bg-court-600"></div>
         </div>
-        <div class="px-4 pb-4 flex items-center gap-3">
-          <!-- Avatar -->
-          <div class="w-9 h-9 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-court-700">
-            <span class="text-sm font-bold text-white">{{ name?.[0] ?? '?' }}</span>
-          </div>
-          <!-- Name -->
-          <span class="flex-1 text-sm font-bold text-white truncate">{{ name }}</span>
+        <div class="px-4 pb-4">
+          <span class="text-sm font-bold text-white truncate">{{ name }}</span>
         </div>
       </div>
 
