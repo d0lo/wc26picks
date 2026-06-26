@@ -44,6 +44,22 @@ const isUpdate = ref(false)
 const savedSnapshot = ref(null)
 const loaded = ref(false)
 
+// ── Scoring config (admin-editable prop catalog + point values) ────────
+// Declared before makeSnapshot/pickQuery below — both reference allProps,
+// and pickQuery's immediate watch can run synchronously during setup() if
+// TanStack Query's persisted cache already has data, which would hit a
+// TDZ ReferenceError on allProps if useScoring() were declared later.
+const { scoring, props: allProps, propsByCategory, groupExactLabel, isLoading: scoringLoading } = useScoring()
+
+// Prop ids arrive async from Firestore — seed an answer slot for each as
+// the catalog loads, without clobbering answers already merged in from a
+// saved pick (see the pickQuery watch below).
+watch(allProps, (list) => {
+  for (const p of list) {
+    if (!(p.id in propAnswers)) propAnswers[p.id] = ''
+  }
+}, { immediate: true })
+
 function makeSnapshot() {
   return JSON.stringify({
     groups: Object.fromEntries(GROUPS.map(g => [g, [...order[g]]])),
@@ -184,18 +200,6 @@ function toggleWildcard(group) {
 function wcDisabled(group) {
   return wildcards.value.length >= 8 && !wildcards.value.includes(group)
 }
-
-// ── Scoring config (admin-editable prop catalog + point values) ────────
-const { scoring, props: allProps, propsByCategory, groupExactLabel, isLoading: scoringLoading } = useScoring()
-
-// Prop ids arrive async from Firestore — seed an answer slot for each as
-// the catalog loads, without clobbering answers already merged in from a
-// saved pick (see the pickQuery watch below).
-watch(allProps, (list) => {
-  for (const p of list) {
-    if (!(p.id in propAnswers)) propAnswers[p.id] = ''
-  }
-}, { immediate: true })
 
 const ready = computed(() => loaded.value && !scoringLoading.value)
 const configMissing = computed(() => ready.value && allProps.value.length === 0)
