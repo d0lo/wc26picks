@@ -1,7 +1,8 @@
 <script setup>
 import { ref, inject } from 'vue'
 import { updateProfile } from 'firebase/auth'
-import { auth } from '../firebase.js'
+import { doc, setDoc } from 'firebase/firestore'
+import { db } from '../firebase.js'
 
 const user = inject('user')
 const emit = defineEmits(['done'])
@@ -17,6 +18,7 @@ async function save() {
   error.value = ''
   try {
     await updateProfile(user.value, { displayName: name })
+    await setDoc(doc(db, 'users', user.value.uid), { displayName: name }, { merge: true })
     emit('done')
   } catch {
     error.value = 'Could not save username. Please try again.'

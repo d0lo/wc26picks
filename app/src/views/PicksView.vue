@@ -214,9 +214,7 @@ async function submit() {
   try {
     const changed = picksChanged()
     await setDoc(doc(db, 'picks', user.value.uid), {
-      name: user.value.displayName,
       uid: user.value.uid,
-      photoURL: user.value.photoURL ?? null,
       ...(changed ? { submittedAt: serverTimestamp() } : {}),
       // Store team UUIDs, not names
       groups: Object.fromEntries(GROUPS.map(g => [g, order[g].map(name => TEAM_ID[name])])),

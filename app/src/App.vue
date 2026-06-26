@@ -3,8 +3,9 @@ import { ref, computed, provide, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
 import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from './firebase.js'
-import { configQueryOptions, pickQueryOptions } from './queries.js'
+import { doc, setDoc } from 'firebase/firestore'
+import { auth, db } from './firebase.js'
+import { configQueryOptions, pickQueryOptions, userQueryOptions } from './queries.js'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
 import ProfileModal from './components/ProfileModal.vue'
@@ -19,6 +20,7 @@ const hasSubmitted = ref(false)
 const dataReady = ref(false)
 const showProfile = ref(false)
 const editNameMode = ref(false)
+const isAdmin = ref(false)
 
 const picksLocked = computed(() => {
   if (!picksLockTime.value) return false
@@ -30,6 +32,7 @@ provide('user', user)
 provide('picksLocked', picksLocked)
 provide('picksLockTime', picksLockTime)
 provide('hasSubmitted', hasSubmitted)
+provide('isAdmin', isAdmin)
 
 // Lets any view open the global ProfileModal directly into edit-name mode
 // (e.g. the inline pencil button next to "you" on the leaderboard).
@@ -91,6 +94,13 @@ onMounted(async () => {
     }
     user.value = u
     if (u) {
+      // Keep the queryable users/{uid} mirror in sync with Auth profile data.
+      // Never include isAdmin here — rules block client writes from setting it.
+      setDoc(doc(db, 'users', u.uid), {
+        displayName: u.displayName ?? null,
+        photoURL: u.photoURL ?? null,
+      }, { merge: true }).catch(() => {})
+
       // Firestore read is best-effort — a permissions error must never skip the username flow
       let pickExists = false
       try {
@@ -100,6 +110,8 @@ onMounted(async () => {
         // picks/ not yet accessible — treat as no pick
       }
       try {
+        const profile = await queryClient.ensureQueryData(userQueryOptions(u.uid)).catch(() => null)
+        isAdmin.value = !!profile?.isAdmin
         hasSubmitted.value = pickExists
         const isGoogle = u.providerData?.[0]?.providerId === 'google.com'
         const nameConfirmed = localStorage.getItem(`name_confirmed_${u.uid}`) === '1'
@@ -117,6 +129,7 @@ onMounted(async () => {
       }
     } else {
       hasSubmitted.value = false
+      isAdmin.value = false
       dataReady.value = false
       await router.push('/login')
     }

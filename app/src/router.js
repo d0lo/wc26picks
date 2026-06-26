@@ -1,10 +1,12 @@
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { auth } from './firebase.js'
+import { doc, getDoc } from 'firebase/firestore'
+import { auth, db } from './firebase.js'
 import LoginView from './views/LoginView.vue'
 import SetUsernameView from './views/SetUsernameView.vue'
 import PicksView from './views/PicksView.vue'
 import LeaderboardView from './views/LeaderboardView.vue'
 import LiveView from './views/LiveView.vue'
+import AdminView from './views/AdminView.vue'
 
 // Resolves once Firebase has determined the initial auth state
 let authResolve
@@ -20,6 +22,7 @@ const router = createRouter({
     { path: '/picks', component: PicksView },
     { path: '/leaderboard', component: LeaderboardView },
     { path: '/live', component: LiveView },
+    { path: '/admin', component: AdminView },
   ],
 })
 
@@ -32,6 +35,10 @@ router.beforeEach(async (to) => {
     const isGoogle = user.providerData?.[0]?.providerId === 'google.com'
     const nameConfirmed = localStorage.getItem(`name_confirmed_${user.uid}`) === '1'
     if (!isGoogle || nameConfirmed) return '/leaderboard'
+  }
+  if (user && to.path === '/admin') {
+    const snap = await getDoc(doc(db, 'users', user.uid))
+    if (!snap.exists() || !snap.data().isAdmin) return '/leaderboard'
   }
 })
 

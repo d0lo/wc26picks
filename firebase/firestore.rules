@@ -8,6 +8,17 @@ service cloud.firestore {
       allow create, update, delete: if request.auth != null && request.auth.uid == userId;
     }
 
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      // Owner can self-manage displayName/photoURL, but isAdmin is settable
+      // only server-side (Admin SDK bypasses rules) — never via client write.
+      allow create: if request.auth != null && request.auth.uid == userId
+        && !('isAdmin' in request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.isAdmin == resource.data.isAdmin;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
     match /teams/{teamId} {
       allow read: if request.auth != null;
       allow write: if false;

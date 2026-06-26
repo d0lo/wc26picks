@@ -8,6 +8,8 @@ export const queryKeys = {
   pick: (uid) => ['pick', uid],
   scores: ['scores'],
   picksList: ['picks', 'list'],
+  user: (uid) => ['user', uid],
+  usersList: ['users', 'list'],
 }
 
 // config/public shape:
@@ -66,6 +68,32 @@ export function picksListQueryOptions() {
     queryFn: async () => {
       const snap = await getDocs(query(collection(db, 'picks'), orderBy('submittedAt', 'asc')))
       return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    },
+    staleTime: FIVE_MINUTES,
+  }
+}
+
+// Single user profile doc — { displayName, photoURL, isAdmin? }, keyed by uid.
+export function userQueryOptions(uid) {
+  return {
+    queryKey: queryKeys.user(uid),
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, 'users', uid))
+      return snap.exists() ? snap.data() : null
+    },
+    enabled: !!uid,
+    staleTime: FIVE_MINUTES,
+  }
+}
+
+// All user profiles, keyed by uid — used to resolve display names for
+// picks/scores rows, which store only a uid (see CLAUDE.md data model).
+export function usersListQueryOptions() {
+  return {
+    queryKey: queryKeys.usersList,
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, 'users'))
+      return Object.fromEntries(snap.docs.map(d => [d.id, d.data()]))
     },
     staleTime: FIVE_MINUTES,
   }
