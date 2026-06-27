@@ -30,17 +30,10 @@ if (!getApps().length) {
 const db = getFirestore()
 const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world'
 const TOURNAMENT_START = '2026-06-11' // confirmed opening match (760415, South Africa at Mexico)
-const SLEEP_MS = 150 // be polite to ESPN's public API across ~70+ summary calls
+const SLEEP_MS = 150 // be polite to ESPN's public API across the per-match summary calls
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const ymd = (d) => d.toISOString().slice(0, 10).replace(/-/g, '')
-
-async function fetchScoreboardForDate(yyyymmdd) {
-  const url = `${ESPN_BASE}/scoreboard?dates=${yyyymmdd}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`ESPN scoreboard fetch failed: ${res.status} ${url}`)
-  return res.json()
-}
 
 async function fetchSummary(eventId) {
   const url = `${ESPN_BASE}/summary?event=${eventId}`
@@ -50,18 +43,20 @@ async function fetchSummary(eventId) {
 }
 
 // ── Step 1: find every completed match since the tournament started ────────
+// One range query covers the whole window (limit=1000 avoids ESPN's default
+// page size, which truncates a multi-week range) — far cheaper than a
+// day-by-day loop, since the per-match summary fetches below are the only
+// part that has to be one-request-per-match.
 async function findCompletedEvents() {
   const completed = new Map()
-  const start = new Date(`${TOURNAMENT_START}T00:00:00Z`)
-  const today = new Date()
-
-  for (let d = new Date(start); d <= today; d.setUTCDate(d.getUTCDate() + 1)) {
-    const dateStr = ymd(d)
-    const raw = await fetchScoreboardForDate(dateStr)
-    for (const e of raw.events || []) {
-      if (e.competitions?.[0]?.status?.type?.state === 'post') completed.set(e.id, e)
-    }
-    await sleep(SLEEP_MS)
+  const start = ymd(new Date(`${TOURNAMENT_START}T00:00:00Z`))
+  const end = ymd(new Date())
+  const url = `${ESPN_BASE}/scoreboard?dates=${start}-${end}&limit=1000`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`ESPN scoreboard fetch failed: ${res.status} ${url}`)
+  const raw = await res.json()
+  for (const e of raw.events || []) {
+    if (e.competitions?.[0]?.status?.type?.state === 'post') completed.set(e.id, e)
   }
   return completed
 }
