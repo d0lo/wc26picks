@@ -168,18 +168,19 @@ export const onMatchComplete = onDocumentWritten('matches/{eventId}', async (eve
 // (breakdown.wildcards), one writer (this trigger), recomputed fresh from
 // the latest groups data on every call rather than from a stale snapshot.
 export const onGroupsWrite = onDocumentWritten('groups/{letter}', async () => {
-  const [groupsSnap, picksSnap, configSnap] = await Promise.all([db.collection('groups').get(), db.collection('picks').get(), db.doc('config/public').get()])
+  const wildcardsRef = db.doc('liveData/wildcards')
+  const [groupsSnap, previousSnap] = await Promise.all([db.collection('groups').get(), wildcardsRef.get()])
 
   const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
   const advancing = advancingThirdPlaceLetters(groupsByLetter)
   const nextLetters = [...advancing].sort()
 
-  const wildcardsRef = db.doc('liveData/wildcards')
-  const previousLetters = (await wildcardsRef.get()).data()?.advancingLetters ?? []
+  const previousLetters = previousSnap.data()?.advancingLetters ?? []
   if (arraysEqual(previousLetters, nextLetters)) return
 
   await wildcardsRef.set({ advancingLetters: nextLetters, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
 
+  const [picksSnap, configSnap] = await Promise.all([db.collection('picks').get(), db.doc('config/public').get()])
   const scoring = configSnap.data()?.scoring ?? {}
   await Promise.all(
     picksSnap.docs.map((picksDoc) => {
