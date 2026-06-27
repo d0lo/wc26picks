@@ -39,14 +39,33 @@ export function rankThirdPlaceTeams(groupsByLetter) {
   return thirds.sort((a, b) => (b.points ?? 0) - (a.points ?? 0) || (b.goalDiff ?? 0) - (a.goalDiff ?? 0))
 }
 
+// Same letters rankThirdPlaceTeams ranks, narrowed to the advancing set —
+// split out so callers scoring many picks in one trigger invocation (e.g.
+// onMatchComplete) can compute this once and reuse it, instead of every pick
+// re-ranking all 12 groups' third-place teams from scratch.
+export function advancingThirdPlaceLetters(groupsByLetter) {
+  return new Set(rankThirdPlaceTeams(groupsByLetter).slice(0, ADVANCING_THIRD_PLACE_COUNT).map((t) => t.letter))
+}
+
 // pickedLetters: groups the user picked as "3rd place advances" (wildcards).
-export function scoreWildcardPicks(pickedLetters, groupsByLetter, scoring) {
+// advancing: a Set of advancing letters, as returned by advancingThirdPlaceLetters.
+export function creditWildcardPicks(pickedLetters, advancing, scoring) {
   if (!Array.isArray(pickedLetters) || pickedLetters.length === 0) return 0
-  const advancing = new Set(
-    rankThirdPlaceTeams(groupsByLetter).slice(0, ADVANCING_THIRD_PLACE_COUNT).map((t) => t.letter)
-  )
   const perPick = Number(scoring?.wildcard ?? 0)
   return pickedLetters.filter((letter) => advancing.has(letter)).length * perPick
+}
+
+// pickedLetters: groups the user picked as "3rd place advances" (wildcards).
+export function scoreWildcardPicks(pickedLetters, groupsByLetter, scoring) {
+  return creditWildcardPicks(pickedLetters, advancingThirdPlaceLetters(groupsByLetter), scoring)
+}
+
+// Sums a breakdown.groups map ({ [letter]: points }) for the leaderboard
+// total. Returns null (not 0) when no group has been scored yet, so callers
+// can distinguish "not started" from "scored at zero" in the UI.
+export function sumGroupPoints(groups) {
+  if (!groups || Object.keys(groups).length === 0) return null
+  return Object.values(groups).reduce((sum, v) => sum + v, 0)
 }
 
 // Full groups+wildcards breakdown for one pick against every group with

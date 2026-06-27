@@ -26,6 +26,10 @@ jobs:
         working-directory: firebase/functions
         run: npm ci
 
+      - name: Run tests
+        working-directory: firebase/functions
+        run: npm test
+
       - name: Deploy Cloud Functions
         uses: w9jds/firebase-action@master
         with:

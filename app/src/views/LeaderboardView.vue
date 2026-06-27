@@ -43,7 +43,7 @@ function nameFor(uid) {
 // as each group's matches complete) — sum it for the leaderboard column.
 function groupsPoints(score) {
   const groups = score.breakdown?.groups
-  if (!groups) return null
+  if (!groups || Object.keys(groups).length === 0) return null
   return Object.values(groups).reduce((sum, v) => sum + v, 0)
 }
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { scoreGroupPrediction, rankThirdPlaceTeams, scoreWildcardPicks, scorePick } from './scoring.js'
+import { scoreGroupPrediction, rankThirdPlaceTeams, scoreWildcardPicks, scorePick, sumGroupPoints } from './scoring.js'
 
 const SCORING = {
   groupExact: { 1: 3, 2: 3, 3: 1, 4: 1 },
@@ -74,4 +74,13 @@ test('scorePick reflects updated point values immediately (the retroactive-resco
   const retuned = { groupExact: { 1: 10, 2: 10, 3: 5, 4: 5 }, perfectGroupBonus: 20 }
   const { groups } = scorePick(pick, groupsByLetter, retuned)
   assert.deepEqual(groups, { A: 10 + 10 + 5 + 5 + 20 })
+})
+
+test('sumGroupPoints returns null when no group has been scored yet', () => {
+  assert.equal(sumGroupPoints({}), null)
+  assert.equal(sumGroupPoints(undefined), null)
+})
+
+test('sumGroupPoints sums scored groups, including a zero-point group', () => {
+  assert.equal(sumGroupPoints({ A: 0, B: 4 }), 4)
 })

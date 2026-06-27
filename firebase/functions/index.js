@@ -5,7 +5,7 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import logger from 'firebase-functions/logger'
 import { fetchScoreboard, fetchSummary } from './lib/espn.js'
 import { normalizeEvent, normalizeMatch, parseGroupLetter } from './lib/normalize.js'
-import { scoreGroupPrediction, scoreWildcardPicks, scorePick } from './lib/scoring.js'
+import { scoreGroupPrediction, scorePick, sumGroupPoints, advancingThirdPlaceLetters, creditWildcardPicks } from './lib/scoring.js'
 
 initializeApp()
 const db = getFirestore()
@@ -82,19 +82,24 @@ async function processMatchUpdate(eventId) {
     const summary = await fetchSummary(eventId)
     const match = normalizeMatch(summary)
 
+    // Group-stage matches carry standings; knockout matches don't, so this
+    // is null for knockout — onMatchComplete relies on that to skip rescoring
+    // group/wildcard points once the group stage is over.
+    let groupLetter = null
+    if (match.groupStandings.length > 0) {
+      const groupName = summary.header.competitions[0].competitors[0]?.team?.groups?.name
+      groupLetter = parseGroupLetter(groupName)
+    }
+
     await db.doc(`matches/${eventId}`).set(
-      { eventId, fetchedAt: FieldValue.serverTimestamp(), ...match },
+      { eventId, fetchedAt: FieldValue.serverTimestamp(), groupLetter, ...match },
       { merge: true }
     )
 
-    if (match.groupStandings.length > 0) {
-      const groupName = summary.header.competitions[0].competitors[0]?.team?.groups?.name
-      const letter = parseGroupLetter(groupName)
-      if (letter) {
-        await db
-          .doc(`groups/${letter}`)
-          .set({ letter, updatedAt: FieldValue.serverTimestamp(), entries: match.groupStandings }, { merge: true })
-      }
+    if (groupLetter) {
+      await db
+        .doc(`groups/${groupLetter}`)
+        .set({ letter: groupLetter, updatedAt: FieldValue.serverTimestamp(), entries: match.groupStandings }, { merge: true })
     }
   } catch (err) {
     logger.error(`Failed to process match update for event ${eventId}`, err)
@@ -110,6 +115,11 @@ export const onMatchComplete = onDocumentWritten('matches/{eventId}', async (eve
   const after = event.data?.after?.data()
   if (after?.status?.state !== 'post') return
 
+  // Knockout matches have no groupLetter — group/wildcard standings are
+  // frozen once the group stage ends, so there's nothing to rescore.
+  const letter = after.groupLetter
+  if (!letter) return
+
   const [groupsSnap, picksSnap, configSnap] = await Promise.all([
     db.collection('groups').get(),
     db.collection('picks').get(),
@@ -117,39 +127,38 @@ export const onMatchComplete = onDocumentWritten('matches/{eventId}', async (eve
   ])
 
   const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
-  const teamIds = new Set((after.competitors ?? []).map((c) => c.teamId))
-  const letter = Object.entries(groupsByLetter).find(([, entries]) =>
-    entries.some((e) => teamIds.has(e.team?.id))
-  )?.[0]
-  if (!letter) {
-    logger.warn(`onMatchComplete: could not resolve group letter for event ${event.params.eventId}`)
+  const standings = groupsByLetter[letter]
+  if (!standings) {
+    logger.warn(`onMatchComplete: no standings yet for group ${letter} (event ${event.params.eventId})`)
     return
   }
 
   const scoring = configSnap.data()?.scoring ?? {}
-  const standings = groupsByLetter[letter]
+  const advancing = advancingThirdPlaceLetters(groupsByLetter)
 
   await Promise.all(
     picksSnap.docs.map(async (picksDoc) => {
       const pick = picksDoc.data()
       const { points: groupPoints } = scoreGroupPrediction(pick.groups?.[letter], standings, scoring)
-      const wildcardPoints = scoreWildcardPicks(pick.wildcards, groupsByLetter, scoring)
+      const wildcardPoints = creditWildcardPicks(pick.wildcards, advancing, scoring)
 
       const scoreRef = db.doc(`scores/${picksDoc.id}`)
-      const existing = (await scoreRef.get()).data()?.breakdown ?? {}
-      const groups = { ...existing.groups, [letter]: groupPoints }
-      const groupsTotal = Object.values(groups).reduce((sum, v) => sum + v, 0)
-      const total = groupsTotal + wildcardPoints + (existing.props ?? 0)
+      await db.runTransaction(async (tx) => {
+        const existing = (await tx.get(scoreRef)).data()?.breakdown ?? {}
+        const groups = { ...existing.groups, [letter]: groupPoints }
+        const total = (sumGroupPoints(groups) ?? 0) + wildcardPoints + (existing.props ?? 0)
 
-      await scoreRef.set(
-        {
-          uid: picksDoc.id,
-          breakdown: { ...existing, groups, wildcards: wildcardPoints },
-          total,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      )
+        tx.set(
+          scoreRef,
+          {
+            uid: picksDoc.id,
+            breakdown: { ...existing, groups, wildcards: wildcardPoints },
+            total,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        )
+      })
     })
   )
 })
@@ -173,20 +182,22 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
     picksSnap.docs.map(async (picksDoc) => {
       const pick = picksDoc.data()
       const { groups, wildcards } = scorePick(pick, groupsByLetter, scoring)
-      const groupsTotal = Object.values(groups).reduce((sum, v) => sum + v, 0)
+      const groupsTotal = sumGroupPoints(groups) ?? 0
 
       const scoreRef = db.doc(`scores/${picksDoc.id}`)
-      const existingProps = (await scoreRef.get()).data()?.breakdown?.props ?? 0
-
-      await scoreRef.set(
-        {
-          uid: picksDoc.id,
-          breakdown: { groups, wildcards, props: existingProps },
-          total: groupsTotal + wildcards + existingProps,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      )
+      await db.runTransaction(async (tx) => {
+        const existingProps = (await tx.get(scoreRef)).data()?.breakdown?.props ?? 0
+        tx.set(
+          scoreRef,
+          {
+            uid: picksDoc.id,
+            breakdown: { groups, wildcards, props: existingProps },
+            total: groupsTotal + wildcards + existingProps,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        )
+      })
     })
   )
 })
