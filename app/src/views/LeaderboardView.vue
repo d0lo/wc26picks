@@ -270,7 +270,7 @@ function resolveTeamFlag(teamId) {
             </div>
 
             <!-- Breakdown -->
-            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.groups ?? '—' }}</div>
+            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.groups ? Object.values(s.breakdown.groups).reduce((sum, v) => sum + v, 0) : '—' }}</div>
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.wildcards ?? '—' }}</div>
 
             <!-- Total -->
