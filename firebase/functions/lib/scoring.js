@@ -55,11 +55,6 @@ export function creditWildcardPicks(pickedLetters, advancing, scoring) {
   return pickedLetters.filter((letter) => advancing.has(letter)).length * perPick
 }
 
-// pickedLetters: groups the user picked as "3rd place advances" (wildcards).
-export function scoreWildcardPicks(pickedLetters, groupsByLetter, scoring) {
-  return creditWildcardPicks(pickedLetters, advancingThirdPlaceLetters(groupsByLetter), scoring)
-}
-
 // Sums a breakdown.groups map ({ [letter]: points }) for the leaderboard
 // total. Returns null (not 0) when no group has been scored yet, so callers
 // can distinguish "not started" from "scored at zero" in the UI.
@@ -73,12 +68,15 @@ export function sumGroupPoints(groups) {
 // re-derives every group from scratch — needed when the point values
 // themselves change, since a stale group's score was computed under the old
 // values and won't otherwise be touched again.
-export function scorePick(pick, groupsByLetter, scoring) {
+// advancing: a Set of advancing letters, as returned by
+// advancingThirdPlaceLetters — passed in rather than recomputed here so the
+// ranking has exactly one call site (onGroupsWrite) across the whole engine.
+export function scorePick(pick, groupsByLetter, advancing, scoring) {
   const groups = {}
   for (const [letter, standings] of Object.entries(groupsByLetter ?? {})) {
     if (!standings?.length) continue
     groups[letter] = scoreGroupPrediction(pick?.groups?.[letter], standings, scoring).points
   }
-  const wildcards = scoreWildcardPicks(pick?.wildcards, groupsByLetter, scoring)
+  const wildcards = creditWildcardPicks(pick?.wildcards, advancing, scoring)
   return { groups, wildcards }
 }
