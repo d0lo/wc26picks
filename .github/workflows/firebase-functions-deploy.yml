@@ -1,0 +1,35 @@
+name: Deploy Cloud Functions
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'firebase/functions/**'
+      - 'firebase/firebase.json'
+      - '.github/workflows/firebase-functions-deploy.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy_functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install function dependencies
+        working-directory: firebase/functions
+        run: npm ci
+
+      - name: Deploy Cloud Functions
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only functions --project wc26picks
+        env:
+          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_WC26PICKS }}
+          PROJECT_PATH: ./firebase
