@@ -5,7 +5,7 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import logger from 'firebase-functions/logger'
 import { fetchScoreboard, fetchSummary } from './lib/espn.js'
 import { normalizeEvent, normalizeMatch, parseGroupLetter } from './lib/normalize.js'
-import { scoreGroupPrediction, scoreWildcardPicks } from './lib/scoring.js'
+import { scoreGroupPrediction, scoreWildcardPicks, scorePick } from './lib/scoring.js'
 
 initializeApp()
 const db = getFirestore()
@@ -146,6 +146,43 @@ export const onMatchComplete = onDocumentWritten('matches/{eventId}', async (eve
           uid: picksDoc.id,
           breakdown: { ...existing, groups, wildcards: wildcardPoints },
           total,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      )
+    })
+  )
+})
+
+// Fires on every config/public write. Point values can be retuned live via
+// the admin editor at any time, including after groups already have
+// standings — onMatchComplete's single-group patch never revisits those
+// already-scored groups, so a value change needs its own full rescore across
+// every group, for every pick. Skips the rescore unless `scoring` itself
+// changed (e.g. an unrelated picksLockAt edit shouldn't trigger this).
+export const onScoringConfigWrite = onDocumentWritten('config/public', async (event) => {
+  const before = event.data?.before?.data()
+  const after = event.data?.after?.data()
+  if (!after || JSON.stringify(after.scoring) === JSON.stringify(before?.scoring)) return
+
+  const [groupsSnap, picksSnap] = await Promise.all([db.collection('groups').get(), db.collection('picks').get()])
+  const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
+  const scoring = after.scoring ?? {}
+
+  await Promise.all(
+    picksSnap.docs.map(async (picksDoc) => {
+      const pick = picksDoc.data()
+      const { groups, wildcards } = scorePick(pick, groupsByLetter, scoring)
+      const groupsTotal = Object.values(groups).reduce((sum, v) => sum + v, 0)
+
+      const scoreRef = db.doc(`scores/${picksDoc.id}`)
+      const existingProps = (await scoreRef.get()).data()?.breakdown?.props ?? 0
+
+      await scoreRef.set(
+        {
+          uid: picksDoc.id,
+          breakdown: { groups, wildcards, props: existingProps },
+          total: groupsTotal + wildcards + existingProps,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }

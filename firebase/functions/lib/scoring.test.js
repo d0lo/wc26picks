@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { scoreGroupPrediction, rankThirdPlaceTeams, scoreWildcardPicks } from './scoring.js'
+import { scoreGroupPrediction, rankThirdPlaceTeams, scoreWildcardPicks, scorePick } from './scoring.js'
 
 const SCORING = {
   groupExact: { 1: 3, 2: 3, 3: 1, 4: 1 },
@@ -55,4 +55,23 @@ test('scoreWildcardPicks only credits picks among the best 8 third-place finishe
   assert.equal(scoreWildcardPicks(['A', 'L'], groupsByLetter, SCORING), 2) // only A advances
   assert.equal(scoreWildcardPicks(['I', 'J'], groupsByLetter, SCORING), 0)
   assert.equal(scoreWildcardPicks([], groupsByLetter, SCORING), 0)
+})
+
+test('scorePick rescores every group with standings, skipping groups with none yet', () => {
+  const groupsByLetter = {
+    A: standings('a', 'b', 'c', 'd'),
+    B: [], // no standings yet — must be skipped, not scored as zero-for-everything
+  }
+  const pick = { groups: { A: ['a', 'b', 'c', 'd'], B: ['x', 'y', 'z', 'w'] }, wildcards: [] }
+  const { groups, wildcards } = scorePick(pick, groupsByLetter, SCORING)
+  assert.deepEqual(groups, { A: 3 + 3 + 1 + 1 + 1 })
+  assert.equal(wildcards, 0)
+})
+
+test('scorePick reflects updated point values immediately (the retroactive-rescore case)', () => {
+  const groupsByLetter = { A: standings('a', 'b', 'c', 'd') }
+  const pick = { groups: { A: ['a', 'b', 'c', 'd'] }, wildcards: [] }
+  const retuned = { groupExact: { 1: 10, 2: 10, 3: 5, 4: 5 }, perfectGroupBonus: 20 }
+  const { groups } = scorePick(pick, groupsByLetter, retuned)
+  assert.deepEqual(groups, { A: 10 + 10 + 5 + 5 + 20 })
 })

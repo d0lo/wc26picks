@@ -48,3 +48,18 @@ export function scoreWildcardPicks(pickedLetters, groupsByLetter, scoring) {
   const perPick = Number(scoring?.wildcard ?? 0)
   return pickedLetters.filter((letter) => advancing.has(letter)).length * perPick
 }
+
+// Full groups+wildcards breakdown for one pick against every group with
+// standings so far. Unlike onMatchComplete's single-group patch, this
+// re-derives every group from scratch — needed when the point values
+// themselves change, since a stale group's score was computed under the old
+// values and won't otherwise be touched again.
+export function scorePick(pick, groupsByLetter, scoring) {
+  const groups = {}
+  for (const [letter, standings] of Object.entries(groupsByLetter ?? {})) {
+    if (!standings?.length) continue
+    groups[letter] = scoreGroupPrediction(pick?.groups?.[letter], standings, scoring).points
+  }
+  const wildcards = scoreWildcardPicks(pick?.wildcards, groupsByLetter, scoring)
+  return { groups, wildcards }
+}
