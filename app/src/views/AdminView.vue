@@ -23,19 +23,21 @@ function toLocalInputValue(timestamp) {
 }
 
 const lockTimeInput = reactive({ value: '' })
+const knockoutLockInput = reactive({ value: '' })
 const scoringForm = reactive({ groupExact: { 1: 0, 2: 0, 3: 0, 4: 0 }, perfectGroupBonus: 0, wildcard: 0 })
 const propsForm = reactive({ items: [] })
 
-const saveStatus = reactive({ lock: '', scoring: '', props: '' })
-const saveError = reactive({ lock: '', scoring: '', props: '' })
+const saveStatus = reactive({ lock: '', knockoutLock: '', scoring: '', props: '' })
+const saveError = reactive({ lock: '', knockoutLock: '', scoring: '', props: '' })
 
 // Snapshots of each section's last-saved state, used both to detect "dirty"
 // (unsaved changes) and to revert on Cancel. Replaced whenever config data
 // loads/refetches or a save succeeds.
 function snapshotLock() { return lockTimeInput.value }
+function snapshotKnockoutLock() { return knockoutLockInput.value }
 function snapshotScoring() { return JSON.stringify(scoringForm) }
 function snapshotProps() { return JSON.stringify(propsForm.items) }
-const savedSnapshot = reactive({ lock: '', scoring: '', props: '' })
+const savedSnapshot = reactive({ lock: '', knockoutLock: '', scoring: '', props: '' })
 
 const activeProps = computed(() => propsForm.items.filter(p => !p.archived))
 const archivedProps = computed(() => propsForm.items.filter(p => p.archived))
@@ -60,6 +62,7 @@ function rebuildCategoryLists() {
 function loadFromConfig(data) {
   if (!data) return
   lockTimeInput.value = toLocalInputValue(data.picksLockAt)
+  knockoutLockInput.value = toLocalInputValue(data.knockoutLockAt)
   const s = data.scoring ?? {}
   scoringForm.groupExact = { 1: s.groupExact?.[1] ?? 0, 2: s.groupExact?.[2] ?? 0, 3: s.groupExact?.[3] ?? 0, 4: s.groupExact?.[4] ?? 0 }
   scoringForm.perfectGroupBonus = s.perfectGroupBonus ?? 0
@@ -67,6 +70,7 @@ function loadFromConfig(data) {
   propsForm.items = (s.props ?? []).map(p => ({ ...p }))
   rebuildCategoryLists()
   savedSnapshot.lock = snapshotLock()
+  savedSnapshot.knockoutLock = snapshotKnockoutLock()
   savedSnapshot.scoring = snapshotScoring()
   savedSnapshot.props = snapshotProps()
 }
@@ -74,9 +78,10 @@ function loadFromConfig(data) {
 watch(() => configQuery.data.value, loadFromConfig, { immediate: true })
 
 const lockDirty = computed(() => snapshotLock() !== savedSnapshot.lock)
+const knockoutLockDirty = computed(() => snapshotKnockoutLock() !== savedSnapshot.knockoutLock)
 const scoringDirty = computed(() => snapshotScoring() !== savedSnapshot.scoring)
 const propsDirty = computed(() => snapshotProps() !== savedSnapshot.props)
-const anyDirty = computed(() => lockDirty.value || scoringDirty.value || propsDirty.value)
+const anyDirty = computed(() => lockDirty.value || knockoutLockDirty.value || scoringDirty.value || propsDirty.value)
 
 // Custom confirm dialog (replaces window.confirm so it matches app styling).
 // confirmDiscard() resolves true/false once the user picks a button.
@@ -101,6 +106,14 @@ async function cancelLock() {
   lockTimeInput.value = savedSnapshot.lock
   saveStatus.lock = ''
   saveError.lock = ''
+}
+
+async function cancelKnockoutLock() {
+  if (!knockoutLockDirty.value) return
+  if (!(await confirmDiscard())) return
+  knockoutLockInput.value = savedSnapshot.knockoutLock
+  saveStatus.knockoutLock = ''
+  saveError.knockoutLock = ''
 }
 
 async function cancelScoring() {
@@ -234,6 +247,21 @@ async function saveLockTime() {
   }
 }
 
+async function saveKnockoutLock() {
+  saveStatus.knockoutLock = 'saving'
+  saveError.knockoutLock = ''
+  try {
+    const ms = new Date(knockoutLockInput.value).getTime()
+    await updateDoc(doc(db, 'config', 'public'), { knockoutLockAt: Timestamp.fromMillis(ms) })
+    invalidateConfig()
+    savedSnapshot.knockoutLock = snapshotKnockoutLock()
+    saveStatus.knockoutLock = 'saved'
+  } catch (e) {
+    saveStatus.knockoutLock = 'error'
+    saveError.knockoutLock = e?.message ?? 'Unknown error'
+  }
+}
+
 async function saveScoring() {
   saveStatus.scoring = 'saving'
   saveError.scoring = ''
@@ -340,6 +368,39 @@ async function saveProps() {
         </div>
         <p v-if="saveStatus.lock === 'saved'" class="text-[11px] text-emerald-400 mt-2">Saved</p>
         <p v-if="saveStatus.lock === 'error'" class="text-[11px] text-red-400 mt-2">Failed to save{{ saveError.lock ? `: ${saveError.lock}` : '' }}</p>
+      </section>
+
+      <!-- Knockout bracket lock time -->
+      <section class="bg-court-800 border border-court-700 rounded-2xl p-4">
+        <h2 class="text-xs font-black tracking-[0.15em] text-white uppercase mb-1">Knockout Lock Time</h2>
+        <p class="text-[11px] text-zinc-500 mb-3">When the knockout bracket locks for editing (separate from the group picks lock).</p>
+        <div class="flex items-center gap-3">
+          <input
+            v-model="knockoutLockInput.value"
+            type="datetime-local"
+            class="flex-1 bg-court-900 border border-court-700 rounded-lg px-3 py-2 text-sm text-white"
+          />
+        </div>
+        <div class="flex items-center gap-2 mt-3">
+          <button
+            type="button"
+            @click="saveKnockoutLock"
+            :disabled="!knockoutLockDirty"
+            class="px-4 py-2 rounded-lg bg-emerald-500 text-court-950 text-xs font-bold uppercase tracking-wider hover:bg-emerald-400 transition-colors disabled:opacity-40"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            @click="cancelKnockoutLock"
+            :disabled="!knockoutLockDirty"
+            class="px-4 py-2 rounded-lg bg-court-700 text-zinc-300 text-xs font-bold uppercase tracking-wider hover:bg-court-600 transition-colors disabled:opacity-40"
+          >
+            Cancel
+          </button>
+        </div>
+        <p v-if="saveStatus.knockoutLock === 'saved'" class="text-[11px] text-emerald-400 mt-2">Saved</p>
+        <p v-if="saveStatus.knockoutLock === 'error'" class="text-[11px] text-red-400 mt-2">Failed to save{{ saveError.knockoutLock ? `: ${saveError.knockoutLock}` : '' }}</p>
       </section>
 
       <!-- Group / wildcard scoring -->

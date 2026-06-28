@@ -65,10 +65,10 @@ const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.
 const knockoutWindowOpen = computed(() => groupStageComplete.value && !r32Started.value)
 
 // Knockout bracket lock — separate from the group-stage picks lock
-// (picksLockAt). Locks at config/public.knockoutLockAt, or the instant the
-// Round of 32 actually kicks off, whichever comes first.
+// (picksLockAt), set independently at config/public.knockoutLockAt and managed
+// from the admin screen. Time-based only (no auto-lock on R32 kickoff) so the
+// deadline is fully controlled by that configurable time.
 const knockoutLocked = computed(() => {
-  if (r32Started.value) return true
   if (!knockoutLockTime.value) return false
   const lockMs = knockoutLockTime.value?.toDate?.().getTime() ?? knockoutLockTime.value
   return Date.now() >= lockMs
