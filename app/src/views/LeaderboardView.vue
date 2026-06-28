@@ -231,12 +231,13 @@ function resolveTeamFlag(teamId) {
           <!-- Table header -->
           <div
             class="grid text-[10px] font-black tracking-[0.15em] text-zinc-400 uppercase border-b border-court-700 px-4 py-2.5"
-            style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 4rem"
+            style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 3.5rem 4rem"
           >
             <div>#</div>
             <div>Player</div>
             <div class="text-center">Grps</div>
             <div class="text-center">WCs</div>
+            <div class="text-center">KO</div>
             <div class="text-right">Total</div>
           </div>
 
@@ -248,7 +249,7 @@ function resolveTeamFlag(teamId) {
             :class="[
               s.id === user?.uid ? 'bg-emerald-500/5 hover:bg-emerald-500/10 active:bg-emerald-500/15' : 'hover:bg-court-700/20 active:bg-court-700/30',
             ]"
-            style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 4rem"
+            style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 3.5rem 4rem"
             @click="openUser(s)"
           >
             <!-- Rank -->
@@ -272,6 +273,7 @@ function resolveTeamFlag(teamId) {
             <!-- Breakdown -->
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.groups ? Object.values(s.breakdown.groups).reduce((sum, v) => sum + v, 0) : '—' }}</div>
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.wildcards ?? '—' }}</div>
+            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.knockout ? Object.values(s.breakdown.knockout).flatMap((slots) => Object.values(slots)).reduce((sum, v) => sum + v, 0) : '—' }}</div>
 
             <!-- Total -->
             <div
@@ -292,6 +294,7 @@ function resolveTeamFlag(teamId) {
           :uid="user?.uid"
           :groups="submission.groups"
           :wildcards="submission.wildcards"
+          :knockout="submission.knockout"
           :props="submission.props"
         />
       </section>

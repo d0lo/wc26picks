@@ -1,7 +1,7 @@
 // Firestore glue for writing scores/{uid} — kept out of scoring.js so that
 // module stays pure/Firestore-free and unit-testable in isolation.
 import { FieldValue } from 'firebase-admin/firestore'
-import { sumGroupPoints } from './scoring.js'
+import { sumGroupPoints, sumKnockoutPoints } from './scoring.js'
 
 // Reads scores/{uid}.breakdown, lets patchFn produce the next breakdown,
 // recomputes total, and writes both back in one transaction. Shared by every
@@ -16,7 +16,11 @@ export async function applyBreakdownPatch(db, uid, patchFn) {
   await db.runTransaction(async (tx) => {
     const existing = (await tx.get(scoreRef)).data()?.breakdown ?? {}
     const breakdown = patchFn(existing)
-    const total = (sumGroupPoints(breakdown.groups) ?? 0) + (breakdown.wildcards ?? 0) + (breakdown.props ?? 0)
+    const total =
+      (sumGroupPoints(breakdown.groups) ?? 0) +
+      (breakdown.wildcards ?? 0) +
+      (breakdown.props ?? 0) +
+      (sumKnockoutPoints(breakdown.knockout) ?? 0)
     tx.set(scoreRef, { uid, breakdown, total, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
   })
 }

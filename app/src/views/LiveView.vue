@@ -5,6 +5,7 @@ import { scoreboardQueryOptions, groupsQueryOptions, matchesQueryOptions, startS
 import LiveScoreboard from '../components/LiveScoreboard.vue'
 import GroupStandingsBoard from '../components/GroupStandingsBoard.vue'
 import PropLeaderboard from '../components/PropLeaderboard.vue'
+import KnockoutBracket from '../components/KnockoutBracket.vue'
 
 const queryClient = useQueryClient()
 const scoreboardQuery = useQuery(scoreboardQueryOptions())
@@ -27,6 +28,11 @@ onUnmounted(() => stopScoreboardListener())
       <p class="text-sm text-zinc-400">No matches today. Check back during the next match window.</p>
     </div>
     <LiveScoreboard v-else :events="events" />
+
+    <section v-if="matches.some((m) => m.round)">
+      <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-3">Knockout Bracket</h2>
+      <KnockoutBracket :matches="matches" compact />
+    </section>
 
     <GroupStandingsBoard :groups="groups" />
     <PropLeaderboard :matches="matches" />

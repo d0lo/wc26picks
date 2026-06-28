@@ -5,7 +5,14 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import logger from 'firebase-functions/logger'
 import { fetchScoreboard, fetchSummary } from './lib/espn.js'
 import { normalizeEvent, normalizeMatch, parseGroupLetter } from './lib/normalize.js'
-import { scoreGroupPrediction, advancingThirdPlaceLetters, creditWildcardPicks, scorePick } from './lib/scoring.js'
+import {
+  scoreGroupPrediction,
+  advancingThirdPlaceLetters,
+  creditWildcardPicks,
+  scorePick,
+  determineKnockoutWinner,
+  scoreKnockoutSlot,
+} from './lib/scoring.js'
 import { isGroupComplete } from './lib/tournament.js'
 import { applyBreakdownPatch } from './lib/firestoreScoring.js'
 
@@ -81,10 +88,10 @@ export const onScoreboardWrite = onDocumentWritten('liveData/scoreboard', async 
   // letter from a second, independent ESPN field inside processMatchUpdate.
   // Group assignment is fixed before the tournament starts, so this
   // earlier-computed value is exactly as correct as one re-fetched later.
-  await Promise.all(flipped.map((e) => processMatchUpdate(e.id, e.group ? parseGroupLetter(e.group) : null)))
+  await Promise.all(flipped.map((e) => processMatchUpdate(e.id, e.group ? parseGroupLetter(e.group) : null, e.round, e.slot)))
 })
 
-async function processMatchUpdate(eventId, groupLetter) {
+async function processMatchUpdate(eventId, groupLetter, round, slot) {
   try {
     const summary = await fetchSummary(eventId)
     const match = normalizeMatch(summary)
@@ -93,7 +100,11 @@ async function processMatchUpdate(eventId, groupLetter) {
     // Independent writes (no read-after-write dependency between them) — a
     // batch makes them atomic without paying for a transaction.
     const batch = db.batch()
-    batch.set(db.doc(`matches/${eventId}`), { eventId, fetchedAt: FieldValue.serverTimestamp(), groupLetter, ...match }, { merge: true })
+    batch.set(
+      db.doc(`matches/${eventId}`),
+      { eventId, fetchedAt: FieldValue.serverTimestamp(), groupLetter, round: round ?? null, slot: slot ?? null, ...match },
+      { merge: true }
+    )
     if (hasStandings) {
       batch.set(db.doc(`groups/${groupLetter}`), { letter: groupLetter, updatedAt: FieldValue.serverTimestamp(), entries: match.groupStandings }, { merge: true })
     }
@@ -153,6 +164,39 @@ export const onMatchComplete = onDocumentWritten('matches/{eventId}', async (eve
     picksSnap.docs.map((picksDoc) => {
       const { points: groupPoints } = scoreGroupPrediction(picksDoc.data().groups?.[letter], standings, scoring)
       return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ ...existing, groups: { ...existing.groups, [letter]: groupPoints } }))
+    })
+  )
+})
+
+// Fires on every matches/{eventId} write. Sole owner of breakdown.knockout —
+// mutually exclusive with onMatchComplete above: a match doc has either
+// groupLetter (group stage) or round/slot (knockout), never both, so the two
+// triggers never write the same field for the same event.
+export const onKnockoutMatchComplete = onDocumentWritten('matches/{eventId}', async (event) => {
+  const after = event.data?.after?.data()
+  if (after?.status?.state !== 'post') return
+
+  const round = after.round
+  const slot = after.slot
+  if (!round || !slot) return // group-stage match, handled by onMatchComplete
+
+  const winnerTeamId = determineKnockoutWinner(after.competitors)
+  if (!winnerTeamId) {
+    logger.warn(`onKnockoutMatchComplete: no winner determined for event ${event.params.eventId}`)
+    return
+  }
+
+  const picksSnap = await db.collection('picks').get()
+  const slotIndex = String(slot - 1)
+
+  await Promise.all(
+    picksSnap.docs.map((picksDoc) => {
+      const pickedTeamId = picksDoc.data().knockout?.[round]?.[slot - 1]
+      const points = scoreKnockoutSlot(pickedTeamId, winnerTeamId, round)
+      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({
+        ...existing,
+        knockout: { ...existing.knockout, [round]: { ...existing.knockout?.[round], [slotIndex]: points } },
+      }))
     })
   )
 })
@@ -227,7 +271,7 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
     picksSnap.docs.map((picksDoc) => {
       const pick = picksDoc.data()
       const { groups, wildcards } = scorePick(pick, groupsByLetter, advancing, scoring)
-      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ groups, wildcards, props: existing.props ?? 0 }))
+      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ groups, wildcards, props: existing.props ?? 0, knockout: existing.knockout }))
     })
   )
 })

@@ -6,6 +6,7 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { GROUP_TEAMS, GROUPS, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
+import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, R32_SLOTS, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
 import { ROSTERS } from '../rosters.js'
 import { pickQueryOptions, queryKeys } from '../queries.js'
 import { useScoring } from '../composables/useScoring.js'
@@ -38,6 +39,7 @@ function fifaOrder(group) {
 
 const order = reactive(Object.fromEntries(GROUPS.map(g => [g, fifaOrder(g)])))
 const wildcards = ref([])
+const knockout = reactive(Object.fromEntries(ROUNDS.map(r => [r, Array(ROUND_SIZE[r]).fill(null)])))
 const propAnswers = reactive({})
 const submitting = ref(false)
 const submitError = ref('')
@@ -65,6 +67,7 @@ function makeSnapshot() {
   return JSON.stringify({
     groups: Object.fromEntries(GROUPS.map(g => [g, [...order[g]]])),
     wildcards: [...wildcards.value].sort(),
+    knockout: Object.fromEntries(ROUNDS.map(r => [r, [...knockout[r]]])),
     props: Object.fromEntries(allProps.value.map(p => [p.id, propAnswers[p.id]])),
   })
 }
@@ -90,6 +93,13 @@ watch(pickQuery.isFetched, (fetched) => {
       }
     }
     if (data.wildcards) wildcards.value = [...data.wildcards]
+    if (data.knockout) {
+      for (const round of ROUNDS) {
+        if (Array.isArray(data.knockout[round]) && data.knockout[round].length === ROUND_SIZE[round]) {
+          knockout[round] = [...data.knockout[round]]
+        }
+      }
+    }
     if (data.props) Object.assign(propAnswers, data.props)
     savedSnapshot.value = makeSnapshot()
   }
@@ -115,13 +125,51 @@ function wcDisabled(group) {
   return wildcards.value.length >= 8 && !wildcards.value.includes(group)
 }
 
+// ── Knockout bracket logic (march-madness style) ──────────────────────
+// Each round's matchups are derived live from the previous round's picks
+// (not from real results — this is the user's own projected bracket), so
+// picking a Round of 32 winner immediately determines who that team would
+// face in the Round of 16, and so on up to the Final.
+function matchupsFor(round) {
+  return round === 'r32' ? R32_SLOTS : deriveRoundMatchups(round, knockout[PREV_ROUND[round]])
+}
+
+// Changing an earlier-round pick can invalidate picks made further down the
+// bracket (the team picked there no longer appears in that matchup) — walk
+// forward clearing only the picks that are now invalid, stopping as soon as
+// a round's picks didn't need to change (nothing further downstream could
+// be affected either).
+function cascadeFrom(round) {
+  const startIdx = ROUNDS.indexOf(round)
+  for (let i = startIdx + 1; i < ROUNDS.length; i++) {
+    const r = ROUNDS[i]
+    const matchups = matchupsFor(r)
+    let changed = false
+    matchups.forEach((pair, slotIdx) => {
+      if (knockout[r][slotIdx] && !pair.includes(knockout[r][slotIdx])) {
+        knockout[r][slotIdx] = null
+        changed = true
+      }
+    })
+    if (!changed) break
+  }
+}
+
+function pickWinner(round, slotIdx, teamId) {
+  if (picksLocked.value) return
+  knockout[round][slotIdx] = teamId
+  cascadeFrom(round)
+}
+
+const knockoutComplete = computed(() => isBracketPickComplete(knockout))
+
 const ready = computed(() => loaded.value && !scoringLoading.value)
 const configMissing = computed(() => ready.value && allProps.value.length === 0)
 
 // ── Progress ───────────────────────────────────────────────────────────
 const doneProps = computed(() => allProps.value.filter(p => propAnswers[p.id] !== '').length)
 const canSubmit = computed(
-  () => !picksLocked.value && allProps.value.length > 0 && wildcards.value.length === 8 && doneProps.value === allProps.value.length
+  () => !picksLocked.value && allProps.value.length > 0 && wildcards.value.length === 8 && knockoutComplete.value && doneProps.value === allProps.value.length
 )
 
 // ── Submit ─────────────────────────────────────────────────────────────
@@ -138,6 +186,7 @@ async function submit() {
       // Store team UUIDs, not names
       groups: Object.fromEntries(GROUPS.map(g => [g, order[g].map(name => TEAM_ID[name])])),
       wildcards: wildcards.value,
+      knockout: Object.fromEntries(ROUNDS.map(r => [r, [...knockout[r]]])),
       // Keyed by prop.id (stable), not prop.key — see seed-scoring-config.mjs.
       // Answers already store UUIDs (from CountrySelect/PlayerSelect); cleanGroupTeam null-safe
       props: Object.fromEntries(
@@ -415,6 +464,63 @@ const POS_COLORS = [
       </div>
     </section>
 
+    <!-- ── SECTION 2.5: Knockout Bracket ── -->
+    <section class="mb-10">
+      <div class="flex items-baseline justify-between mb-1">
+        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Knockout Bracket</h2>
+        <span
+          class="text-[10px] font-mono transition-colors"
+          :class="knockoutComplete ? 'text-emerald-400' : 'text-zinc-400'"
+        >{{ ROUNDS.reduce((n, r) => n + knockout[r].filter(Boolean).length, 0) }}/{{ ROUNDS.reduce((n, r) => n + ROUND_SIZE[r], 0) }}</span>
+      </div>
+      <p class="text-[11px] text-zinc-400 mb-5">Pick a winner for every matchup, round by round.</p>
+
+      <div class="space-y-6">
+        <div v-for="round in ROUNDS" :key="round">
+          <div class="flex items-baseline justify-between mb-2">
+            <h3 class="text-[10px] font-black tracking-[0.2em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</h3>
+            <span class="text-[10px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }} pt{{ ROUND_POINTS[round] !== 1 ? 's' : '' }} each</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div
+              v-for="(pair, slotIdx) in matchupsFor(round)" :key="slotIdx"
+              class="rounded-xl border bg-court-800 border-court-700 p-1 flex flex-col gap-1"
+            >
+              <button
+                v-for="teamId in pair" :key="teamId ?? `tbd-${slotIdx}`"
+                type="button"
+                @click="teamId && pickWinner(round, slotIdx, teamId)"
+                :disabled="picksLocked || !teamId"
+                class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-left transition-all duration-150"
+                :class="knockout[round][slotIdx] === teamId
+                  ? 'bg-emerald-400/10 border-emerald-400/60'
+                  : !teamId
+                    ? 'border-transparent opacity-30 cursor-not-allowed'
+                    : picksLocked
+                      ? 'border-transparent opacity-60'
+                      : 'border-transparent hover:border-court-600 cursor-pointer active:scale-[0.98]'"
+              >
+                <span class="text-sm leading-none shrink-0">{{ teamId ? (TEAM_BY_ID[teamId]?.flag ?? '🏳️') : '🏳️' }}</span>
+                <span
+                  class="text-xs font-medium truncate flex-1 min-w-0"
+                  :class="knockout[round][slotIdx] === teamId ? 'text-white font-bold' : teamId ? 'text-zinc-300' : 'text-zinc-500'"
+                >{{ teamId ? (TEAM_BY_ID[teamId]?.name ?? teamId) : 'TBD' }}</span>
+                <div
+                  v-if="knockout[round][slotIdx] === teamId"
+                  class="w-3.5 h-3.5 bg-emerald-400 rounded-full flex items-center justify-center shrink-0"
+                >
+                  <svg width="7" height="5" viewBox="0 0 7 5" fill="none" aria-hidden="true">
+                    <path d="M1 2.5L2.8 4.3L6 1" stroke="#06101F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ── SECTION 3: Props (by category) ── -->
     <section
       v-for="cat in propsByCategory" :key="cat.key"
@@ -500,7 +606,9 @@ const POS_COLORS = [
         </button>
         <p v-if="!canSubmit && !submitting" class="text-center text-[11px] text-zinc-400 mt-1.5">
           <span v-if="wildcards.length < 8">{{ 8 - wildcards.length }} wildcard{{ 8 - wildcards.length !== 1 ? 's' : '' }} remaining</span>
-          <span v-if="wildcards.length < 8 && doneProps < allProps.length"> · </span>
+          <span v-if="wildcards.length < 8 && !knockoutComplete"> · </span>
+          <span v-if="!knockoutComplete">bracket incomplete</span>
+          <span v-if="(wildcards.length < 8 || !knockoutComplete) && doneProps < allProps.length"> · </span>
           <span v-if="doneProps < allProps.length">{{ allProps.length - doneProps }} prop{{ allProps.length - doneProps !== 1 ? 's' : '' }} remaining</span>
         </p>
         <p v-if="picksLockTime && !picksLocked" class="text-center text-[11px] text-zinc-400 mt-1.5">

@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/vue-query'
 import { GROUPS, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import { useScoring } from '../composables/useScoring.js'
-import { groupsQueryOptions, wildcardsQueryOptions, scoreQueryOptions } from '../queries.js'
+import { groupsQueryOptions, wildcardsQueryOptions, scoreQueryOptions, matchesQueryOptions } from '../queries.js'
 import PropPointsBadge from './PropPointsBadge.vue'
+import KnockoutBracket from './KnockoutBracket.vue'
 
 // Captured (not destructured as `props`) because the prop-pick-answers prop
 // below is itself named `props` — see usage in the template, which can
@@ -14,6 +15,7 @@ import PropPointsBadge from './PropPointsBadge.vue'
 const componentProps = defineProps({
   groups: Object,    // { A: [uuid1, uuid2, uuid3, uuid4], ... }
   wildcards: Array,  // [groupLetters]
+  knockout: Object,  // { r32:[16], r16:[8], qf:[4], sf:[2], final:[1] }
   props: Object,     // { goldenBoot: uuid, ... }
   uid: String,       // whose pick this is — used to fetch their scores/{uid}
 })
@@ -34,6 +36,10 @@ const { scoring, propsByCategory } = useScoring()
 const groupsQuery = useQuery(groupsQueryOptions())
 const wildcardsQuery = useQuery(wildcardsQueryOptions())
 const scoreQuery = useQuery(computed(() => scoreQueryOptions(componentProps.uid)))
+const matchesQuery = useQuery(matchesQueryOptions())
+
+const matches = computed(() => matchesQuery.data.value ?? [])
+const knockoutBreakdown = computed(() => scoreQuery.data.value?.breakdown?.knockout ?? null)
 
 const advancingLetters = computed(() => new Set(wildcardsQuery.data.value?.advancingLetters ?? []))
 
@@ -162,6 +168,12 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
           <span v-else-if="wildcardStatus(g) === 'incorrect'" class="text-red-400/70 text-xs shrink-0">✗</span>
         </div>
       </div>
+    </section>
+
+    <!-- Knockout Bracket -->
+    <section v-if="knockout">
+      <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Knockout Bracket</h2>
+      <KnockoutBracket :matches="matches" :picks="knockout" :breakdown="knockoutBreakdown" compact />
     </section>
 
     <!-- Props — individual cards, grouped by category -->

@@ -231,6 +231,7 @@ function requestClose() {
           :uid="props.uid"
           :groups="data.groups"
           :wildcards="data.wildcards"
+          :knockout="data.knockout"
           :props="data.props"
         />
       </div>
