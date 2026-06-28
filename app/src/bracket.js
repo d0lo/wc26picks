@@ -1,19 +1,23 @@
 // Static knockout-bracket structure for the 2026 World Cup (48-team format,
 // single Round of 32 play-in before the familiar 16-team knockout tree).
 //
-// R32_SLOTS (the 16 actual Round of 32 matchups) and ADJACENCY (which two
-// slots in round N feed a given slot in round N+1) are both derived straight
-// from ESPN's own fetched schedule, not from outside research:
-//   - R32_SLOTS: the 16 real round-of-32 events from GET /scoreboard, sorted
-//     by kickoff date (matches the standard FIFA convention of numbering
-//     matches in chronological order, and slot 1 here corresponds to FIFA's
-//     official Match 73).
-//   - ADJACENCY: ESPN's own R16/QF/SF/Final placeholder events spell the
-//     tree out directly in their names before the prerequisite round
-//     finishes, e.g. event 760502 is literally named
-//     "Round of 32 3 Winner at Round of 32 1 Winner" — so r16[0] = [1, 3].
-// Slot numbers below are 1-indexed to match those ESPN placeholder labels
-// exactly; code should subtract 1 when indexing into a 0-indexed picks array.
+// Slot N (1-indexed) within a round equals the official FIFA match number
+// minus a fixed per-round offset (R32: match-72, R16: match-88, QF:
+// match-96, SF: match-100) — confirmed against FIFA's official bracket
+// (https://en.wikipedia.org/wiki/2026_FIFA_World_Cup_knockout_stage) cross-
+// checked with ESPN's own placeholder event names, e.g. event 760502 is
+// named "Round of 32 1 Winner vs Round of 32 3 Winner" and is officially
+// Match 90 = Winner Match 73 vs Winner Match 75, confirming relative-N =
+// match-72. This is NOT chronological kickoff order: two R32 matches can
+// (and do) kick off out of official-number order — e.g. Match 76
+// (Brazil-Japan) kicks off before Match 74 (Germany-Paraguay) — so an
+// earlier version of R32_SLOTS/EVENT_SLOT_MAP, built by sorting kickoffs
+// chronologically, silently misassigned slots and routed R32 winners into
+// the wrong Round of 16 matchup. ADJACENCY was unaffected by that bug (it's
+// built straight from ESPN's relative-N labels, already match-number-based);
+// only the R32_SLOTS/EVENT_SLOT_MAP slot assignment needed fixing.
+// Slot numbers below are 1-indexed; code should subtract 1 when indexing
+// into a 0-indexed picks array.
 import { TEAM_ID } from './data.js'
 
 export const ROUNDS = ['r32', 'r16', 'qf', 'sf', 'final']
@@ -59,68 +63,66 @@ export const ADJACENCY = {
   third: [[1, 2]],
 }
 
-// The 16 real Round of 32 matchups, as fetched — slot N (1-indexed) holds
-// the two team UUIDs playing in that match. teams[0]/teams[1] order has no
-// bracket meaning (home/away only); pick UI should just show "winner of".
+// The 16 real Round of 32 matchups — slot N (1-indexed) = FIFA Match (72+N).
+// teams[0]/teams[1] order has no bracket meaning (home/away only).
 export const R32_SLOTS = [
-  [TEAM_ID['South Africa'], TEAM_ID.Canada],
-  [TEAM_ID.Brazil, TEAM_ID.Japan],
-  [TEAM_ID.Germany, TEAM_ID.Paraguay],
-  [TEAM_ID.Netherlands, TEAM_ID.Morocco],
-  [TEAM_ID['Ivory Coast'], TEAM_ID.Norway],
-  [TEAM_ID.France, TEAM_ID.Sweden],
-  [TEAM_ID.Mexico, TEAM_ID.Ecuador],
-  [TEAM_ID.England, TEAM_ID['DR Congo']],
-  [TEAM_ID.Belgium, TEAM_ID.Senegal],
-  [TEAM_ID.USA, TEAM_ID['Bosnia-Herzegovina']],
-  [TEAM_ID.Spain, TEAM_ID.Austria],
-  [TEAM_ID.Portugal, TEAM_ID.Croatia],
-  [TEAM_ID.Switzerland, TEAM_ID.Algeria],
-  [TEAM_ID.Australia, TEAM_ID.Egypt],
-  [TEAM_ID.Argentina, TEAM_ID['Cape Verde']],
-  [TEAM_ID.Colombia, TEAM_ID.Ghana],
+  [TEAM_ID['South Africa'], TEAM_ID.Canada],        // slot 1  = Match 73
+  [TEAM_ID.Germany, TEAM_ID.Paraguay],              // slot 2  = Match 74
+  [TEAM_ID.Netherlands, TEAM_ID.Morocco],           // slot 3  = Match 75
+  [TEAM_ID.Brazil, TEAM_ID.Japan],                  // slot 4  = Match 76
+  [TEAM_ID.France, TEAM_ID.Sweden],                 // slot 5  = Match 77
+  [TEAM_ID['Ivory Coast'], TEAM_ID.Norway],         // slot 6  = Match 78
+  [TEAM_ID.Mexico, TEAM_ID.Ecuador],                // slot 7  = Match 79
+  [TEAM_ID.England, TEAM_ID['DR Congo']],           // slot 8  = Match 80
+  [TEAM_ID.USA, TEAM_ID['Bosnia-Herzegovina']],     // slot 9  = Match 81
+  [TEAM_ID.Belgium, TEAM_ID.Senegal],               // slot 10 = Match 82
+  [TEAM_ID.Portugal, TEAM_ID.Croatia],              // slot 11 = Match 83
+  [TEAM_ID.Spain, TEAM_ID.Austria],                 // slot 12 = Match 84
+  [TEAM_ID.Switzerland, TEAM_ID.Algeria],           // slot 13 = Match 85
+  [TEAM_ID.Argentina, TEAM_ID['Cape Verde']],       // slot 14 = Match 86
+  [TEAM_ID.Colombia, TEAM_ID.Ghana],                // slot 15 = Match 87
+  [TEAM_ID.Australia, TEAM_ID.Egypt],               // slot 16 = Match 88
 ]
 
 // ESPN event id → { round, slot } for all 32 real knockout-stage events.
-// Event ids are stable for the life of the tournament — ESPN keeps the same
-// id for a fixture as it goes from a "Round of 32 N Winner" placeholder to
-// real teams to a final score, so this map (built once from our own fetched
-// schedule, sorted by kickoff date per slot) is a direct, unambiguous way to
-// assign every match to its round/slot without re-deriving it from team
-// names or re-matching against ADJACENCY at runtime.
+// Slot = official FIFA match number minus per-round offset (see file header).
 export const EVENT_SLOT_MAP = {
-  760486: { round: 'r32', slot: 1 },
-  760487: { round: 'r32', slot: 2 },
-  760489: { round: 'r32', slot: 3 },
-  760488: { round: 'r32', slot: 4 },
-  760490: { round: 'r32', slot: 5 },
-  760492: { round: 'r32', slot: 6 },
-  760491: { round: 'r32', slot: 7 },
-  760495: { round: 'r32', slot: 8 },
-  760493: { round: 'r32', slot: 9 },
-  760494: { round: 'r32', slot: 10 },
-  760497: { round: 'r32', slot: 11 },
-  760496: { round: 'r32', slot: 12 },
-  760498: { round: 'r32', slot: 13 },
-  760499: { round: 'r32', slot: 14 },
-  760500: { round: 'r32', slot: 15 },
-  760501: { round: 'r32', slot: 16 },
-  760502: { round: 'r16', slot: 1 },
-  760503: { round: 'r16', slot: 2 },
-  760504: { round: 'r16', slot: 3 },
-  760505: { round: 'r16', slot: 4 },
-  760506: { round: 'r16', slot: 5 },
-  760507: { round: 'r16', slot: 6 },
-  760509: { round: 'r16', slot: 7 },
-  760508: { round: 'r16', slot: 8 },
-  760510: { round: 'qf', slot: 1 },
-  760511: { round: 'qf', slot: 2 },
-  760512: { round: 'qf', slot: 3 },
-  760513: { round: 'qf', slot: 4 },
-  760514: { round: 'sf', slot: 1 },
-  760515: { round: 'sf', slot: 2 },
-  760516: { round: 'third', slot: 1 },
-  760517: { round: 'final', slot: 1 },
+  // R32: slot = match - 72
+  760486: { round: 'r32', slot: 1 },   // Match 73: South Africa vs Canada
+  760489: { round: 'r32', slot: 2 },   // Match 74: Germany vs Paraguay
+  760488: { round: 'r32', slot: 3 },   // Match 75: Netherlands vs Morocco
+  760487: { round: 'r32', slot: 4 },   // Match 76: Brazil vs Japan
+  760492: { round: 'r32', slot: 5 },   // Match 77: France vs Sweden
+  760490: { round: 'r32', slot: 6 },   // Match 78: Ivory Coast vs Norway
+  760491: { round: 'r32', slot: 7 },   // Match 79: Mexico vs Ecuador
+  760495: { round: 'r32', slot: 8 },   // Match 80: England vs DR Congo
+  760494: { round: 'r32', slot: 9 },   // Match 81: USA vs Bosnia-Herzegovina
+  760493: { round: 'r32', slot: 10 },  // Match 82: Belgium vs Senegal
+  760496: { round: 'r32', slot: 11 },  // Match 83: Portugal vs Croatia
+  760497: { round: 'r32', slot: 12 },  // Match 84: Spain vs Austria
+  760498: { round: 'r32', slot: 13 },  // Match 85: Switzerland vs Algeria
+  760500: { round: 'r32', slot: 14 },  // Match 86: Argentina vs Cape Verde
+  760501: { round: 'r32', slot: 15 },  // Match 87: Colombia vs Ghana
+  760499: { round: 'r32', slot: 16 },  // Match 88: Australia vs Egypt
+  // R16: slot = match - 88
+  760503: { round: 'r16', slot: 1 },   // Match 89: W74 vs W77
+  760502: { round: 'r16', slot: 2 },   // Match 90: W73 vs W75
+  760504: { round: 'r16', slot: 3 },   // Match 91: W76 vs W78
+  760505: { round: 'r16', slot: 4 },   // Match 92: W79 vs W80
+  760506: { round: 'r16', slot: 5 },   // Match 93: W83 vs W84
+  760507: { round: 'r16', slot: 6 },   // Match 94: W81 vs W82
+  760509: { round: 'r16', slot: 7 },   // Match 95: W86 vs W88
+  760508: { round: 'r16', slot: 8 },   // Match 96: W85 vs W87
+  // QF: slot = match - 96
+  760510: { round: 'qf', slot: 1 },    // Match 97: W89 vs W90
+  760511: { round: 'qf', slot: 2 },    // Match 98: W93 vs W94
+  760512: { round: 'qf', slot: 3 },    // Match 99: W91 vs W92
+  760513: { round: 'qf', slot: 4 },    // Match 100: W95 vs W96
+  // SF: slot = match - 100
+  760514: { round: 'sf', slot: 1 },    // Match 101: W97 vs W98
+  760515: { round: 'sf', slot: 2 },    // Match 102: W99 vs W100
+  760516: { round: 'third', slot: 1 }, // Match 103: L101 vs L102
+  760517: { round: 'final', slot: 1 }, // Match 104: W101 vs W102
 }
 
 // Given the previous round's winners (array of team UUIDs, 0-indexed by
