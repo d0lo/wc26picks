@@ -224,7 +224,7 @@ async function submitKnockout() {
         <div class="flex items-stretch min-w-max h-full sm:h-auto">
           <template v-for="(round, rIdx) in ROUNDS" :key="round">
             <!-- Round column -->
-            <div class="shrink-0 w-[82vw] max-w-[360px] sm:w-[176px] flex flex-col snap-start" :data-round-col="rIdx">
+            <div class="shrink-0 w-[82vw] max-w-[360px] sm:w-[176px] flex flex-col snap-start snap-always" :data-round-col="rIdx">
               <div class="h-6 flex items-baseline justify-between px-0.5">
                 <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</span>
                 <span class="text-[9px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }}pt</span>

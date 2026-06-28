@@ -119,7 +119,7 @@ function statusLabel(match) {
     <div class="flex items-stretch min-w-max h-full sm:h-auto">
       <template v-for="(round, rIdx) in ROUNDS" :key="round">
         <!-- Round column -->
-        <div class="shrink-0 flex flex-col snap-start w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="rIdx">
+        <div class="shrink-0 flex flex-col snap-start snap-always w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="rIdx">
           <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
             {{ ROUND_LABELS[round] }}
           </div>
@@ -177,7 +177,7 @@ function statusLabel(match) {
       </template>
 
       <!-- 3rd-place match: detached column (not part of the win tree) -->
-      <div class="shrink-0 flex flex-col sm:pl-2 snap-start w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="ROUNDS.length">
+      <div class="shrink-0 flex flex-col sm:pl-2 snap-start snap-always w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="ROUNDS.length">
         <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
           {{ ROUND_LABELS.third }}
         </div>
