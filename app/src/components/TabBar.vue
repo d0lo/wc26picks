@@ -2,14 +2,16 @@
 import { computed, reactive, ref } from 'vue'
 
 const props = defineProps({
-  activeTab: String,   // 'picks' | 'leaderboard' | 'live' | 'admin'
+  activeTab: String,   // 'picks' | 'bracket' | 'leaderboard' | 'live' | 'admin'
   showPicksTab: Boolean,
+  showBracketTab: Boolean,
   showAdminTab: Boolean,
 })
 const emit = defineEmits(['navigate'])
 
 const tabs = [
   { id: 'picks', label: 'Picks' },
+  { id: 'bracket', label: 'Bracket' },
   { id: 'leaderboard', label: 'Leaderboard' },
   { id: 'live', label: 'Live' },
   { id: 'admin', label: 'Admin' },
@@ -17,6 +19,7 @@ const tabs = [
 
 const visibleTabs = computed(() => tabs
   .filter(t => t.id !== 'picks' || props.showPicksTab)
+  .filter(t => t.id !== 'bracket' || props.showBracketTab)
   .filter(t => t.id !== 'admin' || props.showAdminTab)
 )
 const activeIndex = computed(() => Math.max(0, visibleTabs.value.findIndex(t => t.id === props.activeTab)))
@@ -207,6 +210,11 @@ const indicatorStyle = computed(() => {
             <path d="M9 2h6a1 1 0 0 1 1 1v1H8V3a1 1 0 0 1 1-1z"/>
             <rect x="4" y="4" width="16" height="17" rx="2"/>
             <path d="M9 10h6M9 14h4"/>
+          </svg>
+
+          <!-- Bracket icon (tournament tree) -->
+          <svg v-else-if="tab.id === 'bracket'" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 4h4M3 9h4M7 4v5M7 6.5h5M3 15h4M3 20h4M7 15v5M7 17.5h5M12 6.5v11M12 12h6"/>
           </svg>
 
           <!-- Leaderboard icon (Material Symbols Rounded — home) -->
