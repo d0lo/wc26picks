@@ -67,13 +67,18 @@ export function useBracketFocus(rounds, roundSize) {
     leftmostIdx.value = best
   }
 
-  let raf = 0
+  // Only re-focus once scrolling has SETTLED — never mid-fling. Collapsing the
+  // height / flipping flex-grow while momentum is running reflows the bracket
+  // and makes native scroll-snap overshoot. 'scrollend' fires on settle (incl.
+  // after snap); the timeout is a fallback for browsers without it.
+  let settleTimer = 0
+  function onSettle() {
+    clearTimeout(settleTimer)
+    updateLeftmost()
+  }
   function onScroll() {
-    if (raf) return
-    raf = requestAnimationFrame(() => {
-      raf = 0
-      updateLeftmost()
-    })
+    clearTimeout(settleTimer)
+    settleTimer = setTimeout(updateLeftmost, 140)
   }
 
   let mql
@@ -89,14 +94,16 @@ export function useBracketFocus(rounds, roundSize) {
     mql.addEventListener('change', syncViewport)
     syncViewport()
     scrollRef.value?.addEventListener('scroll', onScroll, { passive: true })
+    scrollRef.value?.addEventListener('scrollend', onSettle, { passive: true })
     window.addEventListener('resize', syncViewport)
   })
 
   onBeforeUnmount(() => {
     scrollRef.value?.removeEventListener('scroll', onScroll)
+    scrollRef.value?.removeEventListener('scrollend', onSettle)
     window.removeEventListener('resize', syncViewport)
     mql?.removeEventListener('change', syncViewport)
-    if (raf) cancelAnimationFrame(raf)
+    clearTimeout(settleTimer)
   })
 
   return { scrollRef, focusedIdx, containerHeight }
