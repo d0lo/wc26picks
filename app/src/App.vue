@@ -80,6 +80,13 @@ const debugInfo = computed(() => {
     }
   })
 })
+// Raw groupLetter/round/slot/status as actually stored, per match doc —
+// to see exactly what value is wrong instead of just whether it matches.
+const rawMatchSample = computed(() =>
+  (matchesQuery.data.value ?? [])
+    .map((m) => ({ id: m.id, groupLetter: m.groupLetter, round: m.round, slot: m.slot, state: m.status?.state }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+)
 const knockoutWindowOpen = computed(() => groupStageComplete.value && !r32Started.value)
 const knockoutComplete = computed(() => !!pickQuery.data.value?.knockout && isBracketPickComplete(pickQuery.data.value.knockout))
 const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickQuery.isFetched.value && !knockoutComplete.value)
@@ -343,7 +350,9 @@ function onNameSaved() {
 r32Started: {{ r32Started }}
 matchesQuery.isFetched: {{ matchesQuery.isFetched.value }}  groupsQuery.isFetched: {{ groupsQuery.isFetched.value }}
 totalMatches: {{ (matchesQuery.data.value ?? []).length }}
-{{ JSON.stringify(debugInfo, null, 1) }}</pre>
+{{ JSON.stringify(debugInfo, null, 1) }}
+RAW SAMPLE (first 15):
+{{ JSON.stringify(rawMatchSample.slice(0, 15), null, 1) }}</pre>
     </template>
   </div>
 </template>
