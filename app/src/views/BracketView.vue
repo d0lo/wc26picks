@@ -12,10 +12,10 @@ const user = inject('user')
 const r32Started = inject('r32Started')
 const queryClient = useQueryClient()
 
-// Mobile-only: snap to one round at a time and collapse the height to the
-// leftmost (current) round so it has no empty space. Desktop keeps the fanned
-// conventional bracket via the template's sm: classes.
-const { scrollRef, containerHeight } = useBracketFocus(ROUNDS, ROUND_SIZE)
+// ESPN-style focus (mobile only): the snapped/leftmost round fans in (dense),
+// rounds to its right stay fanned out over its height. Desktop pins focus to
+// Round of 32 → the full conventional fanned bracket.
+const { scrollRef, focusedIdx, containerHeight } = useBracketFocus(ROUNDS, ROUND_SIZE)
 
 const knockout = reactive(Object.fromEntries(ROUNDS.map(r => [r, Array(ROUND_SIZE[r]).fill(null)])))
 const submitting = ref(false)
@@ -218,7 +218,7 @@ async function submitKnockout() {
            so the ┤ connectors line up at exactly 25%/75% of each gap. -->
       <div
         ref="scrollRef"
-        class="overflow-x-auto -mx-4 px-4 overflow-y-hidden sm:overflow-y-visible snap-x snap-mandatory sm:snap-none transition-[height] duration-300 ease-out"
+        class="overflow-x-auto -mx-4 px-4 scroll-px-4 sm:scroll-px-0 overflow-y-hidden sm:overflow-y-visible snap-x snap-mandatory sm:snap-none transition-[height] duration-300 ease-out"
         :style="{ height: containerHeight }"
       >
         <div class="flex items-stretch min-w-max h-full sm:h-auto">
@@ -233,7 +233,8 @@ async function submitKnockout() {
               <div
                 v-for="(pair, slotIdx) in matchupsFor(round)" :key="slotIdx"
                 :data-row-probe="rIdx === 0 && slotIdx === 0 ? '' : undefined"
-                class="flex items-center justify-center py-1 shrink-0 grow-0 sm:grow"
+                class="flex items-center justify-center py-1 shrink-0 transition-[flex-grow] duration-300 ease-out"
+                :style="{ flexGrow: rIdx > focusedIdx ? 1 : 0 }"
               >
                 <div class="w-full rounded-xl border bg-court-800 border-court-700 p-1 flex flex-col gap-1">
                   <button
@@ -284,10 +285,10 @@ async function submitKnockout() {
               </div>
             </div>
 
-            <!-- Connector column (desktop only): ┤ joining each next-round match to its feeders -->
+            <!-- Connector column: ┤ joining each next-round match to its two feeders -->
             <div
               v-if="rIdx < ROUNDS.length - 1"
-              class="hidden sm:flex shrink-0 w-4 flex-col"
+              class="shrink-0 w-4 flex flex-col"
             >
               <div class="h-6"></div>
               <div v-for="n in ROUND_SIZE[ROUNDS[rIdx + 1]]" :key="n" class="flex-1 relative min-h-0">

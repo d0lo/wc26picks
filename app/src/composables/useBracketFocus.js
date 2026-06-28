@@ -1,36 +1,40 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
-// Mobile-only snap-to-round behaviour for the horizontally-scrolling knockout
-// bracket. On phones (< sm) each round is a compact column and the scroll snaps
-// to one round at a time; the *leftmost* (snapped) round is the "current" one,
-// and the container height collapses to that round's content height so there's
-// no empty space below it. On desktop this is inert (height stays auto) and the
-// template's CSS keeps the fanned-out conventional bracket.
+// Mobile-only "ESPN-style" bracket focus. The bracket stays fanned out, but the
+// round you snap to (the leftmost one) "fans in": its matches squeeze together
+// into a dense column, and every round to its right fans out over THAT round's
+// height — so children still sit centred between their two parents and the
+// connectors line up. As you scroll right, each round in turn becomes the dense
+// focused column and the container height collapses to it (no empty space).
 //
-// Everything else (compact vs fanned rows, snap, overflow clipping, hiding the
-// connectors, column width) is done with Tailwind `sm:` classes so it needs no
-// JS; only the collapsed pixel height has to be measured/computed here.
+// On desktop this is inert: focusedIdx is pinned to 0 (Round of 32 dense, all
+// later rounds fanned = the full conventional bracket) and the height stays
+// auto, driven by the template's flex `items-stretch`.
 //
-// DOM contract (set by the consuming template):
-//   - the scroll element is bound to `scrollRef`
-//   - each round column carries `data-round-col="<index into rounds[]>"`
-//   - one representative match row carries `data-row-probe`
+// The template drives the per-round fan with `flex-grow: rIdx > focusedIdx`
+// (0 = dense/fanned-in, 1 = fanned-out); this composable only supplies
+// focusedIdx + the collapsed pixel height.
+//
+// DOM contract:
+//   - scroll element bound to `scrollRef`
+//   - each round column carries `data-round-col="<index>"`
+//   - one match row carries `data-row-probe`
 export function useBracketFocus(rounds, roundSize) {
   const scrollRef = ref(null)
-  const activeIdx = ref(0)
+  const leftmostIdx = ref(0)
   const rowH = ref(96)            // measured height of one match row (incl. padding)
   const isMobile = ref(false)
   const HEADER_H = 24             // round-label header (h-6)
 
-  const activeRound = computed(() => rounds[activeIdx.value])
+  const focusedIdx = computed(() => (isMobile.value ? leftmostIdx.value : 0))
 
-  function heightFor(round) {
-    return HEADER_H + (roundSize[round] ?? 1) * rowH.value
+  function heightFor(i) {
+    return HEADER_H + (roundSize[rounds[i]] ?? 1) * rowH.value
   }
 
-  // Empty string on desktop → no inline height → CSS-driven natural height.
+  // Empty string on desktop → no inline height → flex items-stretch decides it.
   const containerHeight = computed(() =>
-    isMobile.value ? `${heightFor(activeRound.value)}px` : ''
+    isMobile.value ? `${heightFor(focusedIdx.value)}px` : ''
   )
 
   let measured = false
@@ -43,9 +47,9 @@ export function useBracketFocus(rounds, roundSize) {
     }
   }
 
-  // The current round is the one whose left edge sits closest to the scroll
-  // container's left content edge (it's snapped to the left).
-  function updateActive() {
+  // The focused round is the one whose left edge sits closest to the scroll
+  // container's left content edge (snapped to the left).
+  function updateLeftmost() {
     const el = scrollRef.value
     if (!el) return
     if (!measured) measure()
@@ -60,7 +64,7 @@ export function useBracketFocus(rounds, roundSize) {
         best = Number(col.dataset.roundCol)
       }
     })
-    activeIdx.value = best
+    leftmostIdx.value = best
   }
 
   let raf = 0
@@ -68,7 +72,7 @@ export function useBracketFocus(rounds, roundSize) {
     if (raf) return
     raf = requestAnimationFrame(() => {
       raf = 0
-      updateActive()
+      updateLeftmost()
     })
   }
 
@@ -76,7 +80,7 @@ export function useBracketFocus(rounds, roundSize) {
   function syncViewport() {
     isMobile.value = !!mql?.matches
     measure()
-    updateActive()
+    updateLeftmost()
   }
 
   onMounted(async () => {
@@ -95,5 +99,5 @@ export function useBracketFocus(rounds, roundSize) {
     if (raf) cancelAnimationFrame(raf)
   })
 
-  return { scrollRef, containerHeight }
+  return { scrollRef, focusedIdx, containerHeight }
 }

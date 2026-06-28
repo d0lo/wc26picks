@@ -15,11 +15,11 @@ const props = defineProps({
   compact: { type: Boolean, default: false },
 })
 
-// Mobile-only: snap to one round at a time (incl. the detached 3rd-place
-// column) and collapse the height to the leftmost (current) round so it has no
-// empty space. Desktop keeps the fanned conventional bracket via sm: classes.
+// ESPN-style focus (mobile only): the snapped/leftmost round fans in (dense),
+// rounds to its right (incl. the detached 3rd-place column) stay fanned out
+// over its height. Desktop pins focus to Round of 32 → the full bracket.
 const DISPLAY_ROUNDS = [...ROUNDS, 'third']
-const { scrollRef, containerHeight } = useBracketFocus(DISPLAY_ROUNDS, ROUND_SIZE)
+const { scrollRef, focusedIdx, containerHeight } = useBracketFocus(DISPLAY_ROUNDS, ROUND_SIZE)
 
 function teamLabel(teamId) {
   return teamId ? TEAM_BY_ID[teamId] ?? { name: teamId, flag: '🏳️' } : null
@@ -112,7 +112,7 @@ function statusLabel(match) {
        the side as a detached column, since it isn't part of the win tree. -->
   <div
     ref="scrollRef"
-    class="overflow-x-auto overflow-y-hidden sm:overflow-y-visible snap-x snap-mandatory sm:snap-none transition-[height] duration-300 ease-out"
+    class="overflow-x-auto scroll-px-4 sm:scroll-px-0 overflow-y-hidden sm:overflow-y-visible snap-x snap-mandatory sm:snap-none transition-[height] duration-300 ease-out"
     :class="compact ? '' : '-mx-4 px-4'"
     :style="{ height: containerHeight }"
   >
@@ -126,7 +126,8 @@ function statusLabel(match) {
           <div
             v-for="(slotInfo, slotIdx) in bracket[round]" :key="slotInfo.slot"
             :data-row-probe="rIdx === 0 && slotIdx === 0 ? '' : undefined"
-            class="flex items-center justify-center py-1 shrink-0 grow-0 sm:grow"
+            class="flex items-center justify-center py-1 shrink-0 transition-[flex-grow] duration-300 ease-out"
+            :style="{ flexGrow: rIdx > focusedIdx ? 1 : 0 }"
           >
             <div class="w-full bg-court-800 border border-court-700 rounded-xl px-2.5 py-2 flex flex-col gap-1">
               <div
@@ -159,10 +160,10 @@ function statusLabel(match) {
           </div>
         </div>
 
-        <!-- Connector column (desktop only): ┤ joining each next-round match to its feeders -->
+        <!-- Connector column: ┤ joining each next-round match to its two feeders -->
         <div
           v-if="rIdx < ROUNDS.length - 1"
-          class="hidden sm:flex shrink-0 flex-col"
+          class="shrink-0 flex flex-col"
           :class="compact ? 'w-3' : 'w-4'"
         >
           <div class="h-6"></div>
@@ -182,7 +183,8 @@ function statusLabel(match) {
         </div>
         <div
           v-for="slotInfo in bracket.third" :key="slotInfo.slot"
-          class="flex items-center justify-center py-1 shrink-0 grow-0 sm:grow"
+          class="flex items-center justify-center py-1 shrink-0 transition-[flex-grow] duration-300 ease-out"
+          :style="{ flexGrow: ROUNDS.length > focusedIdx ? 1 : 0 }"
         >
           <div class="w-full bg-court-800 border border-court-700 rounded-xl px-2.5 py-2 flex flex-col gap-1">
             <div
