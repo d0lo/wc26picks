@@ -4,7 +4,7 @@ import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { TEAM_BY_ID, FIFA_RANKING } from '../data.js'
-import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, ADJACENCY, R32_SLOTS, MATCH_SCHEDULE, EVENT_SLOT_MAP, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
+import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, ADJACENCY, R32_SLOTS, MATCH_SCHEDULE, EVENT_SLOT_MAP, SLOT_MATCH_NUM, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
 import { pickQueryOptions, matchesQueryOptions, scoreboardQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
 import { useBracketFocus } from '../composables/useBracketFocus.js'
 
@@ -114,16 +114,6 @@ const matchBySlot = computed(() => {
 
 function matchForSlot(round, slotIdx) {
   return matchBySlot.value.get(`${round}_${slotIdx + 1}`) ?? null
-}
-
-// Match numbers in visual bracket order (slot N → FIFA match #), 1-indexed slots.
-const SLOT_MATCH_NUM = {
-  r32:   [74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87],
-  r16:   [89, 90, 93, 94, 91, 92, 95, 96],
-  qf:    [97, 98, 99, 100],
-  sf:    [101, 102],
-  third: [103],
-  final: [104],
 }
 
 function matchNum(round, slotIdx) {

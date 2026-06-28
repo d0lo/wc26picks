@@ -120,6 +120,18 @@ export const EVENT_SLOT_MAP = {
   760517: { round: 'final', slot: 1 }, // Match 104: W101 vs W102
 }
 
+// Slot N (1-indexed, visual bracket order) → its FIFA match number, per round.
+// Used to look up MATCH_SCHEDULE (keyed by match number) and to render "Winner
+// of M##" labels. Shared by the bracket picker and the stadium schedule.
+export const SLOT_MATCH_NUM = {
+  r32:   [74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87],
+  r16:   [89, 90, 93, 94, 91, 92, 95, 96],
+  qf:    [97, 98, 99, 100],
+  sf:    [101, 102],
+  third: [103],
+  final: [104],
+}
+
 // Official 2026 World Cup knockout schedule, keyed by FIFA match number
 // (73–104). These date/venue assignments are fixed by FIFA regardless of
 // which teams advance, so the picker can show kickoff date/time and venue
