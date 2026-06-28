@@ -52,8 +52,14 @@ const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
 // this gap) — the group stage is complete once all 72 of those are "post".
 const GROUP_STAGE_MATCH_COUNT = 72
 const groupStageComplete = computed(() => {
-  const groupMatches = (matchesQuery.data.value ?? []).filter((m) => m.round == null)
-  return groupMatches.length === GROUP_STAGE_MATCH_COUNT && groupMatches.every((m) => m.status?.state === 'post')
+  const matches = matchesQuery.data.value ?? []
+  // Any knockout match having data means the group stage is definitionally over.
+  if (matches.some((m) => m.round)) return true
+  // Otherwise the group stage is done once at least all 72 group matches are
+  // post. Use >= (not ===) so a knockout doc that ever lands untagged (missing
+  // round/slot) inflating the count can't hide the bracket again.
+  const groupMatches = matches.filter((m) => m.round == null)
+  return groupMatches.length >= GROUP_STAGE_MATCH_COUNT && groupMatches.every((m) => m.status?.state === 'post')
 })
 const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
 const knockoutWindowOpen = computed(() => groupStageComplete.value && !r32Started.value)
