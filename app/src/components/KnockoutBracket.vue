@@ -14,8 +14,6 @@ const props = defineProps({
   compact: { type: Boolean, default: false },
 })
 
-const DISPLAY_ROUNDS = [...ROUNDS, 'third']
-
 function teamLabel(teamId) {
   return teamId ? TEAM_BY_ID[teamId] ?? { name: teamId, flag: '🏳️' } : null
 }
@@ -101,46 +99,101 @@ function statusLabel(match) {
 </script>
 
 <template>
+  <!-- Conventional bracket: the r32→final rounds fan in toward the Final with
+       ┤ connector lines (flex-1 rows + items-stretch keep columns equal-height
+       so connectors hit 25%/75% of each gap); the 3rd-place match hangs off to
+       the side as a detached column, since it isn't part of the win tree. -->
   <div class="overflow-x-auto" :class="compact ? '' : '-mx-4 px-4'">
-    <div class="flex gap-3" :class="compact ? 'pb-1' : 'pb-2'">
-      <div
-        v-for="round in DISPLAY_ROUNDS" :key="round"
-        class="shrink-0 flex flex-col gap-2"
-        :class="compact ? 'w-[148px]' : 'w-[180px]'"
-      >
-        <div class="text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
-          {{ ROUND_LABELS[round] }}
+    <div class="flex items-stretch min-w-max" :class="compact ? 'pb-1' : 'pb-2'">
+      <template v-for="(round, rIdx) in ROUNDS" :key="round">
+        <!-- Round column -->
+        <div class="shrink-0 flex flex-col" :class="compact ? 'w-[150px]' : 'w-[176px]'">
+          <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
+            {{ ROUND_LABELS[round] }}
+          </div>
+          <div
+            v-for="slotInfo in bracket[round]" :key="slotInfo.slot"
+            class="flex-1 flex items-center justify-center py-1 min-h-0"
+          >
+            <div class="w-full bg-court-800 border border-court-700 rounded-xl px-2.5 py-2 flex flex-col gap-1">
+              <div
+                v-for="(teamId, i) in slotInfo.teams" :key="i"
+                class="flex items-center gap-1.5 text-[11px]"
+              >
+                <span class="text-sm leading-none shrink-0">{{ teamLabel(teamId)?.flag ?? '🏳️' }}</span>
+                <span class="truncate min-w-0 flex-1" :class="rowClass(slotInfo, teamId)">
+                  {{ teamLabel(teamId)?.name ?? 'TBD' }}
+                </span>
+                <span
+                  v-if="slotInfo.match"
+                  class="text-[10px] font-mono tabular-nums shrink-0"
+                  :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
+                >{{ slotInfo.match.competitors?.find((c) => c.teamId === teamId)?.score ?? '' }}</span>
+                <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-emerald-400 text-[10px] shrink-0">✓</span>
+                <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
+              </div>
+
+              <div v-if="statusLabel(slotInfo.match) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
+                <span
+                  class="text-[9px] font-bold uppercase tracking-wide"
+                  :class="slotInfo.match?.status?.state === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
+                >{{ statusLabel(slotInfo.match) ?? '' }}</span>
+                <span v-if="pointsFor(slotInfo) !== null" class="text-[9px] font-mono tabular-nums text-zinc-400">
+                  {{ pointsFor(slotInfo) }}/{{ ROUND_POINTS[slotInfo.round] ?? '–' }} pts
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div
-          v-for="slotInfo in bracket[round]" :key="slotInfo.slot"
-          class="bg-court-800 border border-court-700 rounded-xl px-2.5 py-2 flex flex-col gap-1"
-        >
-          <div
-            v-for="(teamId, i) in slotInfo.teams" :key="i"
-            class="flex items-center gap-1.5 text-[11px]"
-          >
-            <span class="text-sm leading-none shrink-0">{{ teamLabel(teamId)?.flag ?? '🏳️' }}</span>
-            <span class="truncate min-w-0 flex-1" :class="rowClass(slotInfo, teamId)">
-              {{ teamLabel(teamId)?.name ?? 'TBD' }}
-            </span>
-            <span
-              v-if="slotInfo.match"
-              class="text-[10px] font-mono tabular-nums shrink-0"
-              :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
-            >{{ slotInfo.match.competitors?.find((c) => c.teamId === teamId)?.score ?? '' }}</span>
-            <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-emerald-400 text-[10px] shrink-0">✓</span>
-            <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
+        <!-- Connector column: one ┤ per next-round match, joining its two feeders -->
+        <div v-if="rIdx < ROUNDS.length - 1" class="shrink-0 flex flex-col" :class="compact ? 'w-3' : 'w-4'">
+          <div class="h-6"></div>
+          <div v-for="n in ROUND_SIZE[ROUNDS[rIdx + 1]]" :key="n" class="flex-1 relative min-h-0">
+            <span class="absolute left-0 top-1/4 w-1/2 h-px bg-court-600"></span>
+            <span class="absolute left-0 top-3/4 w-1/2 h-px bg-court-600"></span>
+            <span class="absolute left-1/2 top-1/4 h-1/2 w-px bg-court-600"></span>
+            <span class="absolute left-1/2 top-1/2 w-1/2 h-px bg-court-600"></span>
           </div>
+        </div>
+      </template>
 
-          <div v-if="statusLabel(slotInfo.match) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
-            <span
-              class="text-[9px] font-bold uppercase tracking-wide"
-              :class="slotInfo.match?.status?.state === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
-            >{{ statusLabel(slotInfo.match) ?? '' }}</span>
-            <span v-if="pointsFor(slotInfo) !== null" class="text-[9px] font-mono tabular-nums text-zinc-400">
-              {{ pointsFor(slotInfo) }}/{{ ROUND_POINTS[slotInfo.round] ?? '–' }} pts
-            </span>
+      <!-- 3rd-place match: detached column (not part of the win tree) -->
+      <div class="shrink-0 flex flex-col pl-2" :class="compact ? 'w-[150px]' : 'w-[176px]'">
+        <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
+          {{ ROUND_LABELS.third }}
+        </div>
+        <div
+          v-for="slotInfo in bracket.third" :key="slotInfo.slot"
+          class="flex-1 flex items-center justify-center py-1 min-h-0"
+        >
+          <div class="w-full bg-court-800 border border-court-700 rounded-xl px-2.5 py-2 flex flex-col gap-1">
+            <div
+              v-for="(teamId, i) in slotInfo.teams" :key="i"
+              class="flex items-center gap-1.5 text-[11px]"
+            >
+              <span class="text-sm leading-none shrink-0">{{ teamLabel(teamId)?.flag ?? '🏳️' }}</span>
+              <span class="truncate min-w-0 flex-1" :class="rowClass(slotInfo, teamId)">
+                {{ teamLabel(teamId)?.name ?? 'TBD' }}
+              </span>
+              <span
+                v-if="slotInfo.match"
+                class="text-[10px] font-mono tabular-nums shrink-0"
+                :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
+              >{{ slotInfo.match.competitors?.find((c) => c.teamId === teamId)?.score ?? '' }}</span>
+              <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-emerald-400 text-[10px] shrink-0">✓</span>
+              <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
+            </div>
+
+            <div v-if="statusLabel(slotInfo.match) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
+              <span
+                class="text-[9px] font-bold uppercase tracking-wide"
+                :class="slotInfo.match?.status?.state === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
+              >{{ statusLabel(slotInfo.match) ?? '' }}</span>
+              <span v-if="pointsFor(slotInfo) !== null" class="text-[9px] font-mono tabular-nums text-zinc-400">
+                {{ pointsFor(slotInfo) }}/{{ ROUND_POINTS[slotInfo.round] ?? '–' }} pts
+              </span>
+            </div>
           </div>
         </div>
       </div>
