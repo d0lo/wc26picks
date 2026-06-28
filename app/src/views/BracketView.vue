@@ -12,10 +12,10 @@ const user = inject('user')
 const r32Started = inject('r32Started')
 const queryClient = useQueryClient()
 
-// ESPN-style focus (mobile only): the snapped/leftmost round fans in (dense),
-// rounds to its right stay fanned out over its height. Desktop pins focus to
-// Round of 32 → the full conventional fanned bracket.
-const { scrollRef, focusedIdx, containerHeight } = useBracketFocus(ROUNDS, ROUND_SIZE)
+// ESPN-style pager (mobile only): swipe moves exactly one round; the snapped
+// round fans in (dense) while rounds to its right fan out over its height.
+// Desktop pins focus to Round of 32 → the full conventional fanned bracket.
+const { scrollRef, trackRef, focusedIdx, containerHeight, trackStyle } = useBracketFocus(ROUNDS, ROUND_SIZE)
 
 const knockout = reactive(Object.fromEntries(ROUNDS.map(r => [r, Array(ROUND_SIZE[r]).fill(null)])))
 const submitting = ref(false)
@@ -218,13 +218,13 @@ async function submitKnockout() {
            so the ┤ connectors line up at exactly 25%/75% of each gap. -->
       <div
         ref="scrollRef"
-        class="overflow-x-auto -mx-4 px-4 scroll-px-4 sm:scroll-px-0 overflow-y-hidden sm:overflow-y-visible snap-x snap-mandatory sm:snap-none transition-[height] duration-300 ease-out"
+        class="-mx-4 px-4 overflow-hidden touch-pan-y sm:overflow-x-auto sm:overflow-y-visible sm:touch-auto transition-[height] duration-300 ease-out"
         :style="{ height: containerHeight }"
       >
-        <div class="flex items-stretch min-w-max h-full sm:h-auto">
+        <div ref="trackRef" class="relative flex items-stretch min-w-max h-full sm:h-auto" :style="trackStyle">
           <template v-for="(round, rIdx) in ROUNDS" :key="round">
             <!-- Round column -->
-            <div class="shrink-0 w-[82vw] max-w-[360px] sm:w-[176px] flex flex-col snap-start snap-always" :data-round-col="rIdx">
+            <div class="shrink-0 w-[82vw] max-w-[360px] sm:w-[176px] flex flex-col" :data-round-col="rIdx">
               <div class="h-6 flex items-baseline justify-between px-0.5">
                 <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</span>
                 <span class="text-[9px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }}pt</span>

@@ -15,11 +15,11 @@ const props = defineProps({
   compact: { type: Boolean, default: false },
 })
 
-// ESPN-style focus (mobile only): the snapped/leftmost round fans in (dense),
-// rounds to its right (incl. the detached 3rd-place column) stay fanned out
-// over its height. Desktop pins focus to Round of 32 → the full bracket.
+// ESPN-style pager (mobile only): swipe moves exactly one round; the snapped
+// round fans in (dense) while rounds to its right (incl. the detached 3rd-place
+// column) fan out over its height. Desktop = full conventional fanned bracket.
 const DISPLAY_ROUNDS = [...ROUNDS, 'third']
-const { scrollRef, focusedIdx, containerHeight } = useBracketFocus(DISPLAY_ROUNDS, ROUND_SIZE)
+const { scrollRef, trackRef, focusedIdx, containerHeight, trackStyle } = useBracketFocus(DISPLAY_ROUNDS, ROUND_SIZE)
 
 function teamLabel(teamId) {
   return teamId ? TEAM_BY_ID[teamId] ?? { name: teamId, flag: '🏳️' } : null
@@ -112,14 +112,14 @@ function statusLabel(match) {
        the side as a detached column, since it isn't part of the win tree. -->
   <div
     ref="scrollRef"
-    class="overflow-x-auto scroll-px-4 sm:scroll-px-0 overflow-y-hidden sm:overflow-y-visible snap-x snap-mandatory sm:snap-none transition-[height] duration-300 ease-out"
+    class="overflow-hidden touch-pan-y sm:overflow-x-auto sm:overflow-y-visible sm:touch-auto transition-[height] duration-300 ease-out"
     :class="compact ? '' : '-mx-4 px-4'"
     :style="{ height: containerHeight }"
   >
-    <div class="flex items-stretch min-w-max h-full sm:h-auto">
+    <div ref="trackRef" class="relative flex items-stretch min-w-max h-full sm:h-auto" :style="trackStyle">
       <template v-for="(round, rIdx) in ROUNDS" :key="round">
         <!-- Round column -->
-        <div class="shrink-0 flex flex-col snap-start snap-always w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="rIdx">
+        <div class="shrink-0 flex flex-col w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="rIdx">
           <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
             {{ ROUND_LABELS[round] }}
           </div>
@@ -177,7 +177,7 @@ function statusLabel(match) {
       </template>
 
       <!-- 3rd-place match: detached column (not part of the win tree) -->
-      <div class="shrink-0 flex flex-col sm:pl-2 snap-start snap-always w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="ROUNDS.length">
+      <div class="shrink-0 flex flex-col sm:pl-2 w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="ROUNDS.length">
         <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
           {{ ROUND_LABELS.third }}
         </div>
