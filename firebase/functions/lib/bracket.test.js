@@ -34,7 +34,7 @@ test('deriveRoundMatchups maps previous winners through ADJACENCY', () => {
   const r32Winners = R32_SLOTS.map((slot) => slot[0]) // pretend team[0] always wins
   const r16 = deriveRoundMatchups('r16', r32Winners)
   assert.equal(r16.length, ROUND_SIZE.r16)
-  assert.deepEqual(r16[0], [r32Winners[0], r32Winners[2]]) // ADJACENCY.r16[0] = [1, 3]
+  assert.deepEqual(r16[0], [r32Winners[0], r32Winners[1]]) // ADJACENCY.r16[0] = [1, 2]
 })
 
 test('EVENT_SLOT_MAP has exactly one event per slot per round, covering every round', () => {

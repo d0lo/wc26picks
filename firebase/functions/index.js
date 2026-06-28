@@ -3,7 +3,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import logger from 'firebase-functions/logger'
-import { fetchScoreboard, fetchSummary } from './lib/espn.js'
+import { fetchScoreboard, fetchScoreboardForDate, fetchSummary } from './lib/espn.js'
 import { normalizeEvent, normalizeMatch, parseGroupLetter } from './lib/normalize.js'
 import {
   scoreGroupPrediction,
@@ -65,6 +65,46 @@ export const espnPoller = onSchedule({ schedule: '* * * * *', timeZone: 'UTC' },
     },
     { merge: true }
   )
+})
+
+// Full-tournament fixture index for the stadium schedule's date selector.
+// Runs once a day: walks every day of the tournament, fetches that day's
+// scoreboard, and writes one liveData/schedule doc of all fixtures (skeleton
+// only — id/date/teams/venue/round/group/state, no live scores). Live scores
+// and completed-match detail stay where they already live (liveData/scoreboard
+// for today's in-progress games, matches/{eventId} for finished ones); this
+// function never re-fetches a game's detail and does no per-match polling.
+const SCHEDULE_START = '2026-06-11'   // tournament opening match
+const SCHEDULE_END = '2026-07-19'     // final
+
+function* scheduleDates(startISO, endISO) {
+  const day = new Date(`${startISO}T00:00:00Z`)
+  const end = new Date(`${endISO}T00:00:00Z`)
+  while (day <= end) {
+    yield utcDateString(day)
+    day.setUTCDate(day.getUTCDate() + 1)
+  }
+}
+
+export const scheduleSync = onSchedule({ schedule: '0 7 * * *', timeZone: 'UTC' }, async () => {
+  const byId = new Map()
+  for (const ymd of scheduleDates(SCHEDULE_START, SCHEDULE_END)) {
+    let raw
+    try {
+      raw = await fetchScoreboardForDate(ymd)
+    } catch (err) {
+      logger.warn(`schedule fetch failed for ${ymd}: ${err.message}`)
+      continue
+    }
+    for (const ev of raw.events || []) byId.set(String(ev.id), normalizeEvent(ev))
+  }
+  const events = [...byId.values()].sort((a, b) => new Date(a.date) - new Date(b.date))
+  await db.doc('liveData/schedule').set({
+    updatedAt: FieldValue.serverTimestamp(),
+    count: events.length,
+    events,
+  })
+  logger.info(`schedule synced: ${events.length} fixtures`)
 })
 
 // Fires on every liveData/scoreboard write. For each match that just

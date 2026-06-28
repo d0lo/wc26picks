@@ -14,6 +14,7 @@ export const queryKeys = {
   usersList: ['users', 'list'],
   usersByIds: (sortedUids) => ['users', 'byIds', sortedUids],
   scoreboard: ['liveData', 'scoreboard'],
+  schedule: ['liveData', 'schedule'],
   groups: ['groups'],
   wildcards: ['liveData', 'wildcards'],
   matches: ['matches'],
@@ -197,6 +198,21 @@ export function stopScoreboardListener() {
   if (scoreboardRefCount === 0) {
     scoreboardUnsub?.()
     scoreboardUnsub = null
+  }
+}
+
+// liveData/schedule — the full-tournament fixture index (skeleton only) written
+// daily by the scheduleSync Cloud Function. Used by the stadium date selector
+// to show every match day, incl. future games. Changes ~once a day, so a plain
+// cached fetch is enough (no realtime listener). null until the function runs.
+export function scheduleQueryOptions() {
+  return {
+    queryKey: queryKeys.schedule,
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, 'liveData/schedule'))
+      return snap.exists() ? snap.data() : null
+    },
+    staleTime: FIVE_MINUTES,
   }
 }
 

@@ -8,10 +8,11 @@ import { buildFixtures, fixtureDays } from '../lib/fixtures.js'
 // schedule — see lib/fixtures.js.
 const props = defineProps({
   matches: { type: Array, default: () => [] },
-  events: { type: Array, default: () => [] },   // today's liveData/scoreboard events
+  events: { type: Array, default: () => [] },     // today's liveData/scoreboard events
+  schedule: { type: Array, default: () => [] },   // liveData/schedule.events (full fixture index)
 })
 
-const fixtures = computed(() => buildFixtures(props.matches, props.events))
+const fixtures = computed(() => buildFixtures(props.matches, props.events, props.schedule))
 const days = computed(() => fixtureDays(fixtures.value))
 
 function dayDate(key) {

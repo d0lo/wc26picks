@@ -24,7 +24,8 @@ function makeEvent(overrides = {}) {
 }
 
 test('knockoutRoundSlot resolves a known event id to its round/slot', () => {
-  assert.deepEqual(knockoutRoundSlot('760486'), { round: 'r32', slot: 1 })
+  // 760486 = Match 73 (South Africa vs Canada) — slot 3 in visual bracket order.
+  assert.deepEqual(knockoutRoundSlot('760486'), { round: 'r32', slot: 3 })
   assert.deepEqual(knockoutRoundSlot(760517), { round: 'final', slot: 1 })
 })
 
@@ -35,7 +36,7 @@ test('knockoutRoundSlot returns null for a group-stage (unmapped) event id', () 
 test('normalizeEvent tags a knockout match with round/slot and no group', () => {
   const e = normalizeEvent(makeEvent())
   assert.equal(e.round, 'r32')
-  assert.equal(e.slot, 1)
+  assert.equal(e.slot, 3)
   assert.equal(e.group, null)
 })
 
