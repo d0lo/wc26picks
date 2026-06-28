@@ -62,7 +62,6 @@ const groupStageComplete = computed(() => {
   return groupMatches.length >= GROUP_STAGE_MATCH_COUNT && groupMatches.every((m) => m.status?.state === 'post')
 })
 const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
-const knockoutWindowOpen = computed(() => groupStageComplete.value && !r32Started.value)
 
 // Knockout bracket lock — separate from the group-stage picks lock
 // (picksLockAt), set independently at config/public.knockoutLockAt and managed
@@ -73,6 +72,11 @@ const knockoutLocked = computed(() => {
   const lockMs = knockoutLockTime.value?.toDate?.().getTime() ?? knockoutLockTime.value
   return Date.now() >= lockMs
 })
+
+// The "make your knockout picks" window: from group-stage completion until the
+// bracket locks (knockoutLockAt) — not R32 kickoff — so the prompt/banner stays
+// up for anyone who hasn't filled out their bracket while it's still editable.
+const knockoutWindowOpen = computed(() => groupStageComplete.value && !knockoutLocked.value)
 
 // TEMPORARY — diagnostic overlay, gated on ?debug=1, to be removed once
 // groupStageComplete is confirmed correct against production data.
