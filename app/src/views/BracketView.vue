@@ -33,16 +33,44 @@ const saved = ref(false)
 
 const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
 
+// Local (not DB) draft of an in-progress bracket, so a half-filled bracket
+// survives navigating/tabbing away before hitting Save. Keyed per user; cleared
+// once the bracket is saved or fully reset.
+const DRAFT_PREFIX = 'wc26:knockoutDraft:'
+function draftKey() { return user.value?.uid ? DRAFT_PREFIX + user.value.uid : null }
+function hasAnyPick(obj) { return ROUNDS.some((r) => Array.isArray(obj?.[r]) && obj[r].some(Boolean)) }
+function applyKnockout(src) {
+  for (const round of ROUNDS) {
+    if (Array.isArray(src[round]) && src[round].length === ROUND_SIZE[round]) knockout[round] = [...src[round]]
+  }
+}
+function loadDraft() {
+  const key = draftKey()
+  if (!key) return null
+  try { return JSON.parse(localStorage.getItem(key) || 'null') } catch { return null }
+}
+function saveDraft() {
+  const key = draftKey()
+  if (!key) return
+  const snapshot = Object.fromEntries(ROUNDS.map((r) => [r, [...knockout[r]]]))
+  try {
+    if (hasAnyPick(snapshot)) localStorage.setItem(key, JSON.stringify(snapshot))
+    else localStorage.removeItem(key)
+  } catch { /* storage unavailable/full — fall back to in-memory only */ }
+}
+function clearDraft() {
+  const key = draftKey()
+  if (key) { try { localStorage.removeItem(key) } catch { /* ignore */ } }
+}
+
 watch(pickQuery.isFetched, (fetched) => {
   if (!fetched) return
-  const data = pickQuery.data.value
-  if (data?.knockout) {
-    for (const round of ROUNDS) {
-      if (Array.isArray(data.knockout[round]) && data.knockout[round].length === ROUND_SIZE[round]) {
-        knockout[round] = [...data.knockout[round]]
-      }
-    }
-  }
+  if (pickQuery.data.value?.knockout) applyKnockout(pickQuery.data.value.knockout)
+  // Overlay any locally-saved in-progress draft (unsaved edits) on top of the
+  // saved picks — but not once the bracket is locked, where the official saved
+  // state should show.
+  const draft = loadDraft()
+  if (draft && hasAnyPick(draft) && !knockoutLocked.value) applyKnockout(draft)
 }, { immediate: true })
 
 // Each round's matchups are derived live from the previous round's picks
@@ -79,6 +107,7 @@ function pickWinner(round, slotIdx, teamId) {
   knockout[round][slotIdx] = teamId
   cascadeFrom(round)
   saved.value = false
+  saveDraft() // persist the in-progress bracket locally so it survives navigation
 }
 
 // Styling for a team row: highlight the picked winner, dim the other team in
@@ -221,6 +250,7 @@ async function submitKnockout() {
     const knockoutField = Object.fromEntries(ROUNDS.map(r => [r, [...knockout[r]]]))
     await setDoc(doc(db, 'picks', user.value.uid), { knockout: knockoutField }, { merge: true })
     queryClient.setQueryData(queryKeys.pick(user.value.uid), (old) => ({ ...old, knockout: knockoutField }))
+    clearDraft() // saved to DB now — drop the local draft so it can't override later
     saved.value = true
   } catch {
     submitError.value = 'Save failed — check your connection and try again.'
