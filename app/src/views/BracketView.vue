@@ -1,16 +1,25 @@
 <script setup>
-import { reactive, ref, computed, inject, watch } from 'vue'
+import { reactive, ref, computed, inject, watch, onMounted, onUnmounted } from 'vue'
 import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { TEAM_BY_ID, FIFA_RANKING } from '../data.js'
-import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, ADJACENCY, R32_SLOTS, MATCH_SCHEDULE, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
-import { pickQueryOptions, matchesQueryOptions, queryKeys } from '../queries.js'
+import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, ADJACENCY, R32_SLOTS, MATCH_SCHEDULE, EVENT_SLOT_MAP, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
+import { pickQueryOptions, matchesQueryOptions, scoreboardQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
 import { useBracketFocus } from '../composables/useBracketFocus.js'
 
 const user = inject('user')
-const r32Started = inject('r32Started')
+// Bracket edits lock at the knockout deadline (or R32 kickoff); see App.vue.
+const knockoutLocked = inject('knockoutLocked')
+const knockoutLockTime = inject('knockoutLockTime')
 const queryClient = useQueryClient()
+
+// Live scoreboard (today's matches) — overlaid on the bracket so in-progress
+// knockout games show their live score and clock, which the matches/{eventId}
+// docs (written only at state flips) don't carry mid-match.
+const scoreboardQuery = useQuery(scoreboardQueryOptions())
+onMounted(() => startScoreboardListener(queryClient))
+onUnmounted(() => stopScoreboardListener())
 
 // ESPN-style pager (mobile only): swipe moves exactly one round; the snapped
 // round fans in (dense) while rounds to its right fan out over its height.
@@ -66,7 +75,7 @@ function cascadeFrom(round) {
 }
 
 function pickWinner(round, slotIdx, teamId) {
-  if (r32Started.value) return
+  if (knockoutLocked.value) return
   knockout[round][slotIdx] = teamId
   cascadeFrom(round)
   saved.value = false
@@ -81,11 +90,11 @@ function teamBtnClass(round, slotIdx, teamId) {
   const picked = knockout[round][slotIdx]
   if (picked === teamId) return 'bg-emerald-400/10 border-emerald-400/60'
   if (picked) {
-    return r32Started.value
+    return knockoutLocked.value
       ? 'border-transparent opacity-40'
       : 'border-transparent opacity-40 hover:opacity-100 hover:border-court-600 cursor-pointer active:scale-[0.98]'
   }
-  return r32Started.value
+  return knockoutLocked.value
     ? 'border-transparent opacity-60'
     : 'border-transparent hover:border-court-600 cursor-pointer active:scale-[0.98]'
 }
@@ -136,8 +145,14 @@ function rankFor(teamId) {
   return name ? (FIFA_RANKING[name] ?? null) : null
 }
 
-function scoreFor(match, teamId) {
-  return match?.competitors?.find((c) => c.teamId === teamId)?.score ?? null
+function fmtLockTime(ts) {
+  if (!ts) return null
+  const d = ts?.toDate?.() ?? new Date(ts)
+  const time = d.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+  const isToday = new Date().toDateString() === d.toDateString()
+  if (isToday) return `at ${time}`
+  const date = d.toLocaleString('en-US', { month: 'short', day: 'numeric' })
+  return `on ${date} at ${time}`
 }
 
 function winnerOf(match) {
@@ -149,12 +164,43 @@ function winnerOf(match) {
   return Number(a.score) > Number(b.score) ? a.teamId : b.teamId
 }
 
-function matchStatusLabel(match) {
-  if (!match) return null
-  const s = match.status
-  if (s?.state === 'in') return s.displayClock || 'Live'
-  if (s?.state === 'post') return 'Final'
+// Today's live scoreboard event for a slot, mapped via the static event-id
+// table. Present (and live) only for matches happening today.
+const liveBySlot = computed(() => {
+  const map = new Map()
+  for (const ev of scoreboardQuery.data.value?.events ?? []) {
+    const meta = EVENT_SLOT_MAP[ev.id]
+    if (meta) map.set(`${meta.round}_${meta.slot}`, ev)
+  }
+  return map
+})
+function liveEvent(round, slotIdx) {
+  return liveBySlot.value.get(`${round}_${slotIdx + 1}`) ?? null
+}
+
+// State/clock/score merged from the live scoreboard (fresh, mid-match) and the
+// matches/{eventId} doc (authoritative final + winner flag). The live event
+// wins while a game is in progress; the doc carries the finished result.
+function slotState(round, slotIdx) {
+  if (liveEvent(round, slotIdx)?.status?.state === 'in') return 'in'
+  return matchForSlot(round, slotIdx)?.status?.state ?? liveEvent(round, slotIdx)?.status?.state ?? null
+}
+function slotClock(round, slotIdx) {
+  const st = slotState(round, slotIdx)
+  if (st === 'in') {
+    return liveEvent(round, slotIdx)?.status?.displayClock
+      || matchForSlot(round, slotIdx)?.status?.displayClock || 'Live'
+  }
+  if (st === 'post') return 'Final'
   return null
+}
+function slotScore(round, slotIdx, teamId) {
+  const ev = liveEvent(round, slotIdx)
+  if (ev && ev.status?.state !== 'pre') {
+    const s = ev.competitors?.find((c) => c.teamId === teamId)?.score
+    if (s != null && s !== '') return s
+  }
+  return matchForSlot(round, slotIdx)?.competitors?.find((c) => c.teamId === teamId)?.score ?? null
 }
 
 // Kickoff date/time for a slot — prefers the live ESPN doc (real, possibly
@@ -208,7 +254,7 @@ async function submitKnockout() {
         </span>
       </div>
       <p class="text-[11px] text-zinc-400 mb-5">
-        <template v-if="r32Started">The Round of 32 has started — your bracket is locked in.</template>
+        <template v-if="knockoutLocked">The bracket is locked in.</template>
         <template v-else>Pick a winner for every matchup, round by round.</template>
       </p>
 
@@ -241,7 +287,7 @@ async function submitKnockout() {
                     v-for="(teamId, teamIdx) in pair" :key="teamId ?? `tbd-${slotIdx}-${teamIdx}`"
                     type="button"
                     @click="teamId && pickWinner(round, slotIdx, teamId)"
-                    :disabled="r32Started || !teamId"
+                    :disabled="knockoutLocked || !teamId"
                     class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-left transition-all duration-150"
                     :class="teamBtnClass(round, slotIdx, teamId)"
                   >
@@ -254,10 +300,10 @@ async function submitKnockout() {
                       <span v-if="teamId && rankFor(teamId)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ rankFor(teamId) }}</span>
                     </span>
                     <span
-                      v-if="teamId && matchForSlot(round, slotIdx)"
+                      v-if="teamId && slotState(round, slotIdx) && slotState(round, slotIdx) !== 'pre'"
                       class="text-[10px] font-mono tabular-nums shrink-0"
                       :class="teamId === winnerOf(matchForSlot(round, slotIdx)) ? 'text-white font-bold' : 'text-zinc-400'"
-                    >{{ scoreFor(matchForSlot(round, slotIdx), teamId) ?? '' }}</span>
+                    >{{ slotScore(round, slotIdx, teamId) ?? '' }}</span>
                     <div
                       v-if="teamId && knockout[round][slotIdx] === teamId"
                       class="w-3.5 h-3.5 bg-emerald-400 rounded-full flex items-center justify-center shrink-0"
@@ -274,10 +320,10 @@ async function submitKnockout() {
                       <span class="text-[9px] font-mono font-bold text-zinc-400 shrink-0">M{{ matchNum(round, slotIdx) }}</span>
                       <span v-if="matchDate(round, slotIdx)" class="text-[9px] text-zinc-500 truncate min-w-0">{{ matchDate(round, slotIdx) }}</span>
                       <span
-                        v-if="matchStatusLabel(matchForSlot(round, slotIdx))"
+                        v-if="slotClock(round, slotIdx)"
                         class="text-[9px] font-bold uppercase tracking-wide ml-auto shrink-0"
-                        :class="matchForSlot(round, slotIdx)?.status?.state === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
-                      >{{ matchStatusLabel(matchForSlot(round, slotIdx)) }}</span>
+                        :class="slotState(round, slotIdx) === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
+                      >{{ slotClock(round, slotIdx) }}</span>
                     </div>
                     <span v-if="matchVenue(round, slotIdx)" class="text-[9px] text-zinc-600 truncate">{{ matchVenue(round, slotIdx) }}</span>
                   </div>
@@ -303,7 +349,7 @@ async function submitKnockout() {
       </div>
 
       <div class="mt-6">
-        <div v-if="r32Started" class="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-court-800 border border-court-700">
+        <div v-if="knockoutLocked" class="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-court-800 border border-court-700">
           <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
@@ -331,6 +377,9 @@ async function submitKnockout() {
             <span v-else>Save Bracket</span>
           </button>
           <p v-if="!knockoutComplete && !submitting" class="text-center text-[11px] text-zinc-400 mt-1.5">bracket incomplete</p>
+          <p v-if="knockoutLockTime && knockoutComplete && !submitting" class="text-center text-[11px] text-zinc-400 mt-1.5">
+            Bracket locks {{ fmtLockTime(knockoutLockTime) }}
+          </p>
         </template>
       </div>
     </template>

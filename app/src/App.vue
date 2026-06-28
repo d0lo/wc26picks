@@ -18,6 +18,7 @@ const queryClient = useQueryClient()
 const loading = ref(true)
 const user = ref(null)
 const picksLockTime = ref(null)
+const knockoutLockTime = ref(null)
 const hasSubmitted = ref(false)
 const dataReady = ref(false)
 const showProfile = ref(false)
@@ -57,6 +58,16 @@ const groupStageComplete = computed(() => {
 const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
 const knockoutWindowOpen = computed(() => groupStageComplete.value && !r32Started.value)
 
+// Knockout bracket lock — separate from the group-stage picks lock
+// (picksLockAt). Locks at config/public.knockoutLockAt, or the instant the
+// Round of 32 actually kicks off, whichever comes first.
+const knockoutLocked = computed(() => {
+  if (r32Started.value) return true
+  if (!knockoutLockTime.value) return false
+  const lockMs = knockoutLockTime.value?.toDate?.().getTime() ?? knockoutLockTime.value
+  return Date.now() >= lockMs
+})
+
 // TEMPORARY — diagnostic overlay, gated on ?debug=1, to be removed once
 // groupStageComplete is confirmed correct against production data.
 const debugMode = new URLSearchParams(window.location.search).has('debug')
@@ -88,6 +99,8 @@ provide('hasSubmitted', hasSubmitted)
 provide('isAdmin', isAdmin)
 provide('knockoutWindowOpen', knockoutWindowOpen)
 provide('r32Started', r32Started)
+provide('knockoutLocked', knockoutLocked)
+provide('knockoutLockTime', knockoutLockTime)
 
 // Show the "fill out your bracket" dialog once per page load (i.e. on
 // refresh), the first time the window/incompleteness conditions are met —
@@ -184,6 +197,7 @@ onMounted(async () => {
   // straight to /picks.
   const configReady = queryClient.ensureQueryData(configQueryOptions()).then(data => {
     picksLockTime.value = data?.picksLockAt ?? null
+    knockoutLockTime.value = data?.knockoutLockAt ?? null
   }).catch(() => {})
 
   onAuthStateChanged(auth, async (u) => {
@@ -281,8 +295,27 @@ function onNameSaved() {
       <!-- TEMPORARY debug overlay, ?debug=1 -->
       <pre v-if="debugMode" class="fixed top-0 left-0 z-[9999] bg-black text-emerald-300 text-[10px] p-2 max-h-[60vh] overflow-auto w-full">{{ JSON.stringify(debugInfo, null, 2) }}</pre>
 
-      <!-- Persistent header (authenticated non-auth pages) -->
-      <AppHeader v-if="showChrome" :user="user" @profile="openProfile(false)" />
+      <!-- Persistent header + knockout banner, pinned together so the banner
+           stays stuck right under the header as the page scrolls. -->
+      <div v-if="showChrome" class="sticky top-0 z-50">
+        <AppHeader :user="user" @profile="openProfile(false)" />
+
+        <!-- Knockout-picks reminder banner — visible for the whole window
+             between group-stage completion and Round of 32 kickoff, for
+             anyone who hasn't filled out their bracket yet. -->
+        <div
+          v-if="needsKnockoutPicks && route.path !== '/bracket'"
+          class="flex items-center gap-3 px-4 py-2.5 bg-court-950/95 backdrop-blur-md border-b border-emerald-400/30"
+        >
+          <span class="text-sm leading-none shrink-0">🏆</span>
+          <span class="text-xs font-bold text-emerald-300 flex-1 min-w-0 truncate">Make your knockout picks!</span>
+          <button
+            type="button"
+            @click="router.push('/bracket')"
+            class="shrink-0 text-[11px] font-black tracking-[0.08em] uppercase px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white transition-colors"
+          >Pick Now</button>
+        </div>
+      </div>
 
       <!-- Profile modal (global) -->
       <ProfileModal
@@ -299,22 +332,6 @@ function onNameSaved() {
         @confirm="goToKnockoutPicks"
         @close="showKnockoutDialog = false"
       />
-
-      <!-- Knockout-picks reminder banner — visible for the whole window
-           between group-stage completion and Round of 32 kickoff, for
-           anyone who hasn't filled out their bracket yet. -->
-      <div
-        v-if="needsKnockoutPicks && route.path !== '/bracket'"
-        class="flex items-center gap-3 px-4 py-2.5 bg-emerald-500/15 border-b border-emerald-400/30"
-      >
-        <span class="text-sm leading-none shrink-0">🏆</span>
-        <span class="text-xs font-bold text-emerald-300 flex-1 min-w-0 truncate">Make your knockout picks!</span>
-        <button
-          type="button"
-          @click="router.push('/bracket')"
-          class="shrink-0 text-[11px] font-black tracking-[0.08em] uppercase px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white transition-colors"
-        >Pick Now</button>
-      </div>
 
       <!-- flex-1 so short pages still push the sticky tab bar to the
            viewport bottom instead of leaving it floating mid-page. -->

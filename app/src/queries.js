@@ -21,7 +21,8 @@ export const queryKeys = {
 }
 
 // config/public shape:
-//   picksLockAt: Timestamp
+//   picksLockAt: Timestamp       // group-stage picks lock (set-picks-lock.mjs)
+//   knockoutLockAt: Timestamp    // knockout bracket lock (set-knockout-lock.mjs)
 //   scoring: {
 //     groupExact: { 1: number, 2: number, 3: number, 4: number }  // pts per exact predicted position
 //     perfectGroupBonus: number                                   // bonus when all 4 positions are exact
