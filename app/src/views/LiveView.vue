@@ -27,7 +27,7 @@ onUnmounted(() => stopScoreboardListener())
 
     <section v-if="matches.some((m) => m.round)">
       <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-3">Knockout Bracket</h2>
-      <KnockoutBracket :matches="matches" compact />
+      <KnockoutBracket :matches="matches" :events="events" compact />
     </section>
 
     <GroupStandingsBoard :groups="groups" />

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/vue-query'
 import { GROUPS, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import { useScoring } from '../composables/useScoring.js'
-import { groupsQueryOptions, wildcardsQueryOptions, scoreQueryOptions, matchesQueryOptions } from '../queries.js'
+import { groupsQueryOptions, wildcardsQueryOptions, scoreQueryOptions, matchesQueryOptions, scoreboardQueryOptions } from '../queries.js'
 import PropPointsBadge from './PropPointsBadge.vue'
 import KnockoutBracket from './KnockoutBracket.vue'
 
@@ -37,8 +37,12 @@ const groupsQuery = useQuery(groupsQueryOptions())
 const wildcardsQuery = useQuery(wildcardsQueryOptions())
 const scoreQuery = useQuery(computed(() => scoreQueryOptions(componentProps.uid)))
 const matchesQuery = useQuery(matchesQueryOptions())
+// Reads the shared scoreboard cache (listener owned by LeaderboardView) for the
+// bracket's live-score overlay.
+const scoreboardQuery = useQuery(scoreboardQueryOptions())
 
 const matches = computed(() => matchesQuery.data.value ?? [])
+const liveEvents = computed(() => scoreboardQuery.data.value?.events ?? [])
 const knockoutBreakdown = computed(() => scoreQuery.data.value?.breakdown?.knockout ?? null)
 
 const advancingLetters = computed(() => new Set(wildcardsQuery.data.value?.advancingLetters ?? []))
@@ -173,7 +177,7 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
     <!-- Knockout Bracket -->
     <section v-if="knockout">
       <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Knockout Bracket</h2>
-      <KnockoutBracket :matches="matches" :picks="knockout" :breakdown="knockoutBreakdown" compact />
+      <KnockoutBracket :matches="matches" :events="liveEvents" :picks="knockout" :breakdown="knockoutBreakdown" compact />
     </section>
 
     <!-- Props — individual cards, grouped by category -->

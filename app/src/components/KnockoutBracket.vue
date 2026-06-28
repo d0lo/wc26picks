@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, R32_SLOTS, deriveRoundMatchups } from '../bracket.js'
+import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, R32_SLOTS, EVENT_SLOT_MAP, deriveRoundMatchups } from '../bracket.js'
 import { TEAM_BY_ID } from '../data.js'
 import { useBracketFocus } from '../composables/useBracketFocus.js'
 
@@ -10,9 +10,22 @@ import { useBracketFocus } from '../composables/useBracketFocus.js'
 // live_tracker/live_bracket requirement to reuse one component for both.
 const props = defineProps({
   matches: { type: Array, default: () => [] },       // matches/{eventId} docs (round/slot tagged)
+  events: { type: Array, default: () => [] },         // today's liveData/scoreboard events (live overlay)
   picks: { type: Object, default: null },             // picks/{uid}.knockout — { r32:[16], r16:[8], qf:[4], sf:[2], final:[1] }
   breakdown: { type: Object, default: null },         // scores/{uid}.breakdown.knockout — { [round]: { [slotIndex]: points } }
   compact: { type: Boolean, default: false },
+})
+
+// Today's live scoreboard events, mapped to bracket slots — overlaid so an
+// in-progress match shows its live score and clock (the matches/{eventId} doc
+// only carries the score at state flips, not mid-match).
+const liveByKey = computed(() => {
+  const map = new Map()
+  for (const ev of props.events ?? []) {
+    const meta = EVENT_SLOT_MAP[ev.id]
+    if (meta) map.set(`${meta.round}_${meta.slot}`, ev)
+  }
+  return map
 })
 
 // ESPN-style pager (mobile only): swipe moves exactly one round; the snapped
@@ -44,7 +57,28 @@ function decideMatch(match) {
 function makeSlot(round, slot, teams) {
   const match = matchByKey.value.get(`${round}_${slot}`)
   const { winner, loser } = decideMatch(match)
-  return { round, slot, teams, match, winner, loser }
+  return { round, slot, teams, match, winner, loser, live: liveByKey.value.get(`${round}_${slot}`) ?? null }
+}
+
+// State/score/clock merged from the live scoreboard (fresh, mid-match) and the
+// matches/{eventId} doc (authoritative final). Live wins while in progress.
+function slotState(slotInfo) {
+  if (slotInfo.live?.status?.state === 'in') return 'in'
+  return slotInfo.match?.status?.state ?? slotInfo.live?.status?.state ?? null
+}
+function slotClock(slotInfo) {
+  const st = slotState(slotInfo)
+  if (st === 'in') return slotInfo.live?.status?.displayClock || slotInfo.match?.status?.displayClock || 'Live'
+  if (st === 'post') return 'Final'
+  return null
+}
+function slotScore(slotInfo, teamId) {
+  const ev = slotInfo.live
+  if (ev && ev.status?.state !== 'pre') {
+    const s = ev.competitors?.find((c) => c.teamId === teamId)?.score
+    if (s != null && s !== '') return s
+  }
+  return slotInfo.match?.competitors?.find((c) => c.teamId === teamId)?.score ?? null
 }
 
 // Each round's matchups are derived from the previous round's actual
@@ -96,13 +130,6 @@ function rowClass(slotInfo, teamId) {
   return 'text-zinc-300'
 }
 
-function statusLabel(match) {
-  if (!match) return null
-  const s = match.status
-  if (s?.state === 'in') return s.displayClock || 'Live'
-  if (s?.state === 'post') return 'Final'
-  return null
-}
 </script>
 
 <template>
@@ -139,19 +166,19 @@ function statusLabel(match) {
                   {{ teamLabel(teamId)?.name ?? 'TBD' }}
                 </span>
                 <span
-                  v-if="slotInfo.match"
+                  v-if="slotState(slotInfo) && slotState(slotInfo) !== 'pre'"
                   class="text-[10px] font-mono tabular-nums shrink-0"
                   :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
-                >{{ slotInfo.match.competitors?.find((c) => c.teamId === teamId)?.score ?? '' }}</span>
+                >{{ slotScore(slotInfo, teamId) ?? '' }}</span>
                 <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-emerald-400 text-[10px] shrink-0">✓</span>
                 <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
               </div>
 
-              <div v-if="statusLabel(slotInfo.match) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
+              <div v-if="slotClock(slotInfo) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
                 <span
                   class="text-[9px] font-bold uppercase tracking-wide"
-                  :class="slotInfo.match?.status?.state === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
-                >{{ statusLabel(slotInfo.match) ?? '' }}</span>
+                  :class="slotState(slotInfo) === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
+                >{{ slotClock(slotInfo) ?? '' }}</span>
                 <span v-if="pointsFor(slotInfo) !== null" class="text-[9px] font-mono tabular-nums text-zinc-400">
                   {{ pointsFor(slotInfo) }}/{{ ROUND_POINTS[slotInfo.round] ?? '–' }} pts
                 </span>
@@ -196,19 +223,19 @@ function statusLabel(match) {
                 {{ teamLabel(teamId)?.name ?? 'TBD' }}
               </span>
               <span
-                v-if="slotInfo.match"
+                v-if="slotState(slotInfo) && slotState(slotInfo) !== 'pre'"
                 class="text-[10px] font-mono tabular-nums shrink-0"
                 :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
-              >{{ slotInfo.match.competitors?.find((c) => c.teamId === teamId)?.score ?? '' }}</span>
+              >{{ slotScore(slotInfo, teamId) ?? '' }}</span>
               <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-emerald-400 text-[10px] shrink-0">✓</span>
               <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
             </div>
 
-            <div v-if="statusLabel(slotInfo.match) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
+            <div v-if="slotClock(slotInfo) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
               <span
                 class="text-[9px] font-bold uppercase tracking-wide"
-                :class="slotInfo.match?.status?.state === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
-              >{{ statusLabel(slotInfo.match) ?? '' }}</span>
+                :class="slotState(slotInfo) === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
+              >{{ slotClock(slotInfo) ?? '' }}</span>
               <span v-if="pointsFor(slotInfo) !== null" class="text-[9px] font-mono tabular-nums text-zinc-400">
                 {{ pointsFor(slotInfo) }}/{{ ROUND_POINTS[slotInfo.round] ?? '–' }} pts
               </span>
