@@ -289,6 +289,7 @@ function resolveTeamFlag(teamId) {
         </div>
         <PicksSummary
           ref="picksSummaryRef"
+          :uid="user?.uid"
           :groups="submission.groups"
           :wildcards="submission.wildcards"
           :props="submission.props"

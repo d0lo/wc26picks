@@ -228,6 +228,7 @@ function requestClose() {
         <PicksSummary
           v-else
           ref="picksSummaryRef"
+          :uid="props.uid"
           :groups="data.groups"
           :wildcards="data.wildcards"
           :props="data.props"

@@ -1,14 +1,21 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
 import { GROUPS, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import { useScoring } from '../composables/useScoring.js'
+import { groupsQueryOptions, wildcardsQueryOptions, scoreQueryOptions } from '../queries.js'
 import PropPointsBadge from './PropPointsBadge.vue'
 
-defineProps({
+// Captured (not destructured as `props`) because the prop-pick-answers prop
+// below is itself named `props` — see usage in the template, which can
+// still reference `groups`/`wildcards`/`props` bare since defineProps()
+// exposes them to the template regardless of how the return value is used.
+const componentProps = defineProps({
   groups: Object,    // { A: [uuid1, uuid2, uuid3, uuid4], ... }
   wildcards: Array,  // [groupLetters]
   props: Object,     // { goldenBoot: uuid, ... }
+  uid: String,       // whose pick this is — used to fetch their scores/{uid}
 })
 
 const PLAYER_BY_ID = {}
@@ -16,7 +23,78 @@ for (const [teamName, players] of Object.entries(ROSTERS)) {
   for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
 }
 
-const { propsByCategory } = useScoring()
+const { scoring, propsByCategory } = useScoring()
+
+// Actual group standings + the real "best 3rd place" advancing set, used to
+// conditionally style each predicted pick as correct/incorrect. Both stay
+// `null`/absent until the relevant backend trigger has run at least once
+// (see firebase/functions/index.js onScoreboardWrite / onGroupsWrite) — that
+// "nothing computed yet" state is rendered as a neutral pending look rather
+// than guessed at.
+const groupsQuery = useQuery(groupsQueryOptions())
+const wildcardsQuery = useQuery(wildcardsQueryOptions())
+const scoreQuery = useQuery(computed(() => scoreQueryOptions(componentProps.uid)))
+
+const advancingLetters = computed(() => new Set(wildcardsQuery.data.value?.advancingLetters ?? []))
+
+function actualOrder(letter) {
+  const entries = groupsQuery.data.value?.[letter]?.entries
+  return entries?.length ? entries.map((e) => e.team.id) : null
+}
+
+// 'pending' — no standings yet for this group, can't compute correctness.
+// 'correct'/'incorrect' — predicted team is/isn't in this exact position.
+function pickStatus(letter, i, teamId) {
+  const order = actualOrder(letter)
+  if (!order) return 'pending'
+  return order[i] === teamId ? 'correct' : 'incorrect'
+}
+
+function rowOpacityClass(letter, i) {
+  return (i === 3 || (i === 2 && !componentProps.wildcards?.includes(letter))) ? 'opacity-30' : ''
+}
+
+// One combined class per row instead of stacking color utilities on top of
+// the existing bold/dim treatment, which would otherwise tie on specificity.
+function rowTextClass(letter, i, teamId) {
+  const status = pickStatus(letter, i, teamId)
+  if (status === 'correct') return 'text-emerald-400 font-bold'
+  if (status === 'incorrect') return 'text-red-400/70'
+  return i < 2 || (i === 2 && componentProps.wildcards?.includes(letter)) ? 'text-white font-bold' : 'text-zinc-300'
+}
+
+// Max points a fully-correct group prediction could earn — static per the
+// current scoring config, independent of whether the group has been played.
+const groupMaxPoints = computed(() => {
+  const exact = scoring.value?.groupExact
+  if (!exact) return null
+  const sum = Object.values(exact).reduce((total, v) => total + Number(v ?? 0), 0)
+  return sum + Number(scoring.value?.perfectGroupBonus ?? 0)
+})
+
+function groupPointsEarned(letter) {
+  return scoreQuery.data.value?.breakdown?.groups?.[letter] ?? null
+}
+
+function wildcardStatus(letter) {
+  if (wildcardsQuery.data.value == null) return 'pending'
+  return advancingLetters.value.has(letter) ? 'correct' : 'incorrect'
+}
+
+function wildcardBorderClass(letter) {
+  const status = wildcardStatus(letter)
+  if (status === 'correct') return 'border-emerald-500/40'
+  if (status === 'incorrect') return 'border-red-500/20'
+  return 'border-court-700'
+}
+
+const wildcardPointsPossible = computed(() => {
+  const perPick = scoring.value?.wildcard
+  if (perPick == null) return null
+  return (componentProps.wildcards?.length ?? 0) * Number(perPick)
+})
+
+const wildcardPointsEarned = computed(() => scoreQuery.data.value?.breakdown?.wildcards ?? null)
 
 const groupCardRefs = reactive({})
 const wildcardsSectionRef = ref(null)
@@ -32,12 +110,17 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
       <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-4">Group Standings</div>
       <div class="grid grid-cols-2 gap-x-5 gap-y-4">
         <div v-for="g in GROUPS" :key="g" :ref="el => { if (el) groupCardRefs[g] = el }">
-          <div class="text-[10px] font-black tracking-[0.15em] text-emerald-400 mb-1.5">GROUP {{ g }}</div>
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[10px] font-black tracking-[0.15em] text-emerald-400">GROUP {{ g }}</span>
+            <span class="text-[9px] font-mono tabular-nums" :class="groupPointsEarned(g) === null ? 'text-zinc-500' : 'text-zinc-400'">
+              {{ groupPointsEarned(g) === null ? '–' : `${groupPointsEarned(g)}/${groupMaxPoints} pts` }}
+            </span>
+          </div>
           <div class="space-y-0.5">
             <div
               v-for="(teamId, i) in groups?.[g]" :key="i"
               class="flex items-center gap-1.5 text-[11px] transition-opacity"
-              :class="(i === 3 || (i === 2 && !wildcards?.includes(g))) ? 'opacity-30' : ''"
+              :class="rowOpacityClass(g, i)"
             >
               <span
                 class="text-[9px] font-black w-4 text-right tabular-nums shrink-0"
@@ -45,11 +128,10 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
               >{{ i + 1 }}</span>
               <span class="text-base leading-none shrink-0">{{ TEAM_BY_ID[teamId]?.flag ?? '🏳️' }}</span>
               <span class="flex items-center gap-1 min-w-0 flex-1">
-                <span
-                  class="truncate"
-                  :class="i < 2 || (i === 2 && wildcards?.includes(g)) ? 'text-white font-bold' : 'text-zinc-300'"
-                >{{ TEAM_BY_ID[teamId]?.name ?? teamId }}</span>
+                <span class="truncate" :class="rowTextClass(g, i, teamId)">{{ TEAM_BY_ID[teamId]?.name ?? teamId }}</span>
                 <span class="text-[8px] text-zinc-500 font-mono shrink-0">#{{ FIFA_RANKING[TEAM_BY_ID[teamId]?.name] ?? '–' }}</span>
+                <span v-if="pickStatus(g, i, teamId) === 'correct'" class="text-emerald-400 text-[10px] shrink-0">✓</span>
+                <span v-else-if="pickStatus(g, i, teamId) === 'incorrect'" class="text-red-400/70 text-[10px] shrink-0">✗</span>
               </span>
             </div>
           </div>
@@ -59,17 +141,25 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
 
     <!-- Best 3rd-Place Teams -->
     <section v-if="wildcards?.length" ref="wildcardsSectionRef">
-      <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Best 3rd-Place Teams</h2>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Best 3rd-Place Teams</h2>
+        <span class="text-[10px] font-mono tabular-nums" :class="wildcardPointsEarned === null ? 'text-zinc-500' : 'text-zinc-400'">
+          {{ wildcardPointsEarned === null ? '–' : `${wildcardPointsEarned}/${wildcardPointsPossible} pts` }}
+        </span>
+      </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div
           v-for="g in [...wildcards].sort()" :key="g"
-          class="flex items-center gap-2 bg-court-800 border border-court-700 rounded-xl px-3 py-2.5"
+          class="flex items-center gap-2 bg-court-800 border rounded-xl px-3 py-2.5"
+          :class="wildcardBorderClass(g)"
         >
           <span class="text-lg leading-none">{{ TEAM_BY_ID[groups?.[g]?.[2]]?.flag ?? '🏳️' }}</span>
-          <div>
+          <div class="min-w-0 flex-1">
             <div class="text-[9px] font-black tracking-wider text-emerald-400">Group {{ g }}</div>
             <div class="text-xs font-semibold text-white truncate">{{ TEAM_BY_ID[groups?.[g]?.[2]]?.name ?? '—' }}</div>
           </div>
+          <span v-if="wildcardStatus(g) === 'correct'" class="text-emerald-400 text-xs shrink-0">✓</span>
+          <span v-else-if="wildcardStatus(g) === 'incorrect'" class="text-red-400/70 text-xs shrink-0">✗</span>
         </div>
       </div>
     </section>
