@@ -138,16 +138,17 @@ Rules: `config/{docId}` is `allow read: if true; allow write: if false` — publ
 
 ## Live Tracking Feature Plan
 
-Five features that turn the picks app into a live World Cup tracker. Build them **in order** — each branch is listed below and each feature depends on the one before it being merged to `main` first.
+Six features that turn the picks app into a live World Cup tracker. Build them **in order** — each branch is listed below and each feature depends on the one before it being merged to `main` first.
 
 ### Dependency chain
 
 ```
-1. feature/live-match-engine   ← build first; all others depend on it
-2. feature/auto-scoring-engine ← depends on Firestore docs written by #1
-3. feature/group-tracker       ← depends on Firestore docs written by #1
-4. feature/prop-tracker        ← depends on Firestore docs written by #1
-5. feature/event-ticker        ← depends on Firestore docs written by #1
+1. feature/live-match-engine        ← build first; all others depend on it
+2. feature/auto-scoring-engine      ← depends on Firestore docs written by #1
+3. feature/group-tracker            ← depends on Firestore docs written by #1
+4. feature/prop-tracker             ← depends on Firestore docs written by #1
+5. feature/event-ticker             ← depends on Firestore docs written by #1
+6. feature/live-results-projection  ← depends on Firestore docs written by #1; client-only
 ```
 
 Before starting any branch other than #1, confirm that `feature/live-match-engine` has been merged to `main` and rebase your branch onto the updated `main`.
@@ -298,3 +299,26 @@ Check `app/src/data.js` PROPS array for the exact keys used in submissions.
 - Mount `<EventTicker>` at the top of `LiveView.vue`, above `<LiveScoreboard>`. Mount the toast system at the app root in `App.vue` so it persists across route changes.
 
 **No Cloud Functions needed** — all logic is client-side diffing of Firestore `onSnapshot` payloads.
+
+---
+
+### Feature 6 — Live Results Projection / "If Results Stand" (`feature/live-results-projection`) — 📋 scoped, not built
+
+**Problem:** `groups/{letter}` (and everything derived from it — `liveData/wildcards.advancingLetters`, `scores/{uid}.breakdown`) is only written by `processMatchUpdate` at the two match state-flip events (`pre→in`, `in→post`). During the 90 minutes a match is actually live, none of those documents change — only `liveData/scoreboard.events[].competitors[].score` does, via the per-minute `espnPoller`. So there's currently no way to show "here's how the group/wildcards/my score would look if the live match(es) ended right now" — the data simply isn't computed anywhere, client or server.
+
+**Key insight that shrinks this feature:** the client already receives everything needed to compute that projection itself, with zero new backend work:
+- The authoritative *pre-match* baseline for every team in a group — `groups/{letter}.entries`, last written at kickoff (`pre→in`), i.e. before the live match's result counts.
+- The live match's *current* score — already streaming via the existing `liveData/scoreboard` `onSnapshot` listener.
+
+So "if results stand" is a pure client-side projection: baseline standings (minus the in-progress matches) + the current score of each `state: "in"` match treated as a hypothetical final result, recomputed with the same points/GD/GF comparator the backend uses. No new Cloud Function, no new Firestore writes, no extra ESPN calls — purely new frontend math layered on data already in the client.
+
+**What to build:**
+- `app/src/lib/projection.js` — pure functions, no Firestore/network access (mirrors how `lib/propLeaders.js` and the backend's `lib/scoring.js`/`lib/tournament.js` are kept Firestore-free for testability):
+  - `projectGroupStandings(letter, baselineEntries, liveMatchesForGroup)` — for each `state: "in"` match belonging to the group, derive a hypothetical W/D/L from `competitors[].score`, fold it into `baselineEntries`' points/GF/GA/GD, then re-sort with the **same tie-break order** the backend's standings use (points → GD → GF — confirm exact order against what ESPN's `groupStandings` block actually applies, since drifting from it would make the projection silently wrong even though it looks plausible).
+  - `projectAdvancingLetters(allGroupsProjectedOrBaseline)` — same shape as `advancingThirdPlaceLetters` in `lib/scoring.js`, but fed each group's *projected* 3rd-place entry where a live match exists in that group, baseline otherwise. Must handle the case where two groups both have simultaneous live matches affecting different 3rd-place teams at once (common on a final group-stage matchday with 3 kickoffs at once).
+  - Must NOT touch any authoritative `groups/{letter}`, `liveData/wildcards`, or `scores/{uid}` document — this is render-time-only derived state, recomputed on every relevant `onSnapshot` tick, never persisted.
+- Reuse, don't fork: feed the projected standings/advancing-set into the *existing* `pickStatus()` / `wildcardStatus()` / `groupPointsEarned()` logic in `PicksSummary.vue` (and the static board in `GroupStandingsBoard.vue`) by giving them a projected data source instead of (or alongside) the authoritative one — avoids a second parallel correctness-styling implementation.
+- UI: a clearly-labeled "Projected — if current results hold" toggle/badge wherever projected data is shown, visually distinct from official standings (e.g. dashed border, amber badge instead of emerald/red) — critical so a user can't mistake a hypothetical in-progress projection for a final, scored result. Only render the toggle at all when at least one group has a live (`state: "in"`) match; otherwise projected === authoritative and there's nothing to show.
+- Tie-break parity risk: ESPN's returned `groupStandings` may apply tie-break rules beyond points/GD/GF (head-to-head, fair-play points, lots) that aren't worth reimplementing exactly. Scope this feature to the common case (clear points/GD/GF separation) and explicitly fall back to "can't project a tie-break-dependent ordering" (reuse the existing `pending`/non-computable styling convention) rather than guessing at a tie-break the backend itself doesn't replicate.
+
+**Explicitly out of scope for this feature:** any change to the authoritative scoring engine (Feature 2) or its trigger cadence — this is additive, display-only, and must not alter `scores/{uid}.breakdown`, `groups/{letter}`, or `liveData/wildcards` in any way.
