@@ -56,6 +56,28 @@ const groupStageComplete = computed(() => {
 })
 const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
 const knockoutWindowOpen = computed(() => groupStageComplete.value && !r32Started.value)
+
+// TEMPORARY — diagnostic overlay, gated on ?debug=1, to be removed once
+// groupStageComplete is confirmed correct against production data.
+const debugMode = new URLSearchParams(window.location.search).has('debug')
+const debugInfo = computed(() => {
+  const matches = matchesQuery.data.value ?? []
+  const notPost = matches.filter((m) => m.status?.state !== 'post')
+  return {
+    isFetched: matchesQuery.isFetched.value,
+    isError: matchesQuery.isError.value,
+    error: matchesQuery.error.value?.message ?? null,
+    totalCount: matches.length,
+    postCount: matches.filter((m) => m.status?.state === 'post').length,
+    notPostIds: notPost.map((m) => ({ id: m.id, state: m.status?.state, round: m.round })),
+    roundCounts: matches.reduce((acc, m) => {
+      const key = m.round == null ? 'null' : String(m.round)
+      acc[key] = (acc[key] ?? 0) + 1
+      return acc
+    }, {}),
+    groupStageComplete: groupStageComplete.value,
+  }
+})
 const knockoutComplete = computed(() => !!pickQuery.data.value?.knockout && isBracketPickComplete(pickQuery.data.value.knockout))
 const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickQuery.isFetched.value && !knockoutComplete.value)
 
@@ -256,6 +278,9 @@ function onNameSaved() {
     </div>
 
     <template v-else>
+      <!-- TEMPORARY debug overlay, ?debug=1 -->
+      <pre v-if="debugMode" class="fixed top-0 left-0 z-[9999] bg-black text-emerald-300 text-[10px] p-2 max-h-[60vh] overflow-auto w-full">{{ JSON.stringify(debugInfo, null, 2) }}</pre>
+
       <!-- Persistent header (authenticated non-auth pages) -->
       <AppHeader v-if="showChrome" :user="user" @profile="openProfile(false)" />
 
