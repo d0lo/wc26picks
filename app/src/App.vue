@@ -61,6 +61,25 @@ const groupStageComplete = computed(() => {
   })
 })
 const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
+
+// Temporary diagnostic overlay (?debug=1) for tracking down why
+// groupStageComplete reads false in production — remove once resolved.
+const debugMode = new URLSearchParams(window.location.search).has('debug')
+const debugInfo = computed(() => {
+  const matches = matchesQuery.data.value ?? []
+  const groups = groupsQuery.data.value ?? {}
+  return GROUPS.map((letter) => {
+    const groupMatches = matches.filter((m) => m.groupLetter === letter)
+    const entries = groups[letter]?.entries ?? []
+    return {
+      letter,
+      matchCount: groupMatches.length,
+      matchesPost: groupMatches.filter((m) => m.status?.state === 'post').length,
+      entriesCount: entries.length,
+      gamesPlayed: entries.map((e) => e.gamesPlayed),
+    }
+  })
+})
 const knockoutWindowOpen = computed(() => groupStageComplete.value && !r32Started.value)
 const knockoutComplete = computed(() => !!pickQuery.data.value?.knockout && isBracketPickComplete(pickQuery.data.value.knockout))
 const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickQuery.isFetched.value && !knockoutComplete.value)
@@ -315,6 +334,16 @@ function onNameSaved() {
         :showAdminTab="isAdmin"
         @navigate="onTabNavigate"
       />
+
+      <!-- Temporary diagnostic overlay (?debug=1) — remove once resolved -->
+      <pre
+        v-if="debugMode"
+        class="fixed top-0 left-0 right-0 z-[999] max-h-[50vh] overflow-auto bg-black/90 text-emerald-300 text-[10px] p-2 whitespace-pre-wrap"
+      >groupStageComplete: {{ groupStageComplete }}
+r32Started: {{ r32Started }}
+matchesQuery.isFetched: {{ matchesQuery.isFetched.value }}  groupsQuery.isFetched: {{ groupsQuery.isFetched.value }}
+totalMatches: {{ (matchesQuery.data.value ?? []).length }}
+{{ JSON.stringify(debugInfo, null, 1) }}</pre>
     </template>
   </div>
 </template>
