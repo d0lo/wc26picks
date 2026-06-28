@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, R32_SLOTS, deriveRoundMatchups } from '../bracket.js'
 import { TEAM_BY_ID } from '../data.js'
+import { useBracketFocus } from '../composables/useBracketFocus.js'
 
 // Read-only knockout bracket display — shared by the live stadium page
 // (matches only, no picks/breakdown) and the leaderboard's graded view (a
@@ -13,6 +14,17 @@ const props = defineProps({
   breakdown: { type: Object, default: null },         // scores/{uid}.breakdown.knockout — { [round]: { [slotIndex]: points } }
   compact: { type: Boolean, default: false },
 })
+
+// Snap-to-round focus (incl. the detached 3rd-place column): the centred round
+// collapses to its compact height and squeezes its matches together; the rest
+// stay fanned out.
+const DISPLAY_ROUNDS = [...ROUNDS, 'third']
+const { scrollRef, activeRound, isActive: isRoundFocused, containerHeight } = useBracketFocus(DISPLAY_ROUNDS, ROUND_SIZE)
+
+function connectorFaded(rIdx) {
+  const a = ROUND_SIZE[activeRound.value] ?? 1
+  return (ROUND_SIZE[ROUNDS[rIdx]] ?? 1) > a || (ROUND_SIZE[ROUNDS[rIdx + 1]] ?? 1) > a
+}
 
 function teamLabel(teamId) {
   return teamId ? TEAM_BY_ID[teamId] ?? { name: teamId, flag: '🏳️' } : null
@@ -103,17 +115,24 @@ function statusLabel(match) {
        ┤ connector lines (flex-1 rows + items-stretch keep columns equal-height
        so connectors hit 25%/75% of each gap); the 3rd-place match hangs off to
        the side as a detached column, since it isn't part of the win tree. -->
-  <div class="overflow-x-auto" :class="compact ? '' : '-mx-4 px-4'">
-    <div class="flex items-stretch min-w-max" :class="compact ? 'pb-1' : 'pb-2'">
+  <div
+    ref="scrollRef"
+    class="overflow-x-auto overflow-y-hidden snap-x snap-mandatory transition-[height] duration-300 ease-out"
+    :class="compact ? '' : '-mx-4 px-4'"
+    :style="{ height: containerHeight }"
+  >
+    <div class="flex items-stretch h-full min-w-max">
       <template v-for="(round, rIdx) in ROUNDS" :key="round">
         <!-- Round column -->
-        <div class="shrink-0 flex flex-col" :class="compact ? 'w-[150px]' : 'w-[176px]'">
+        <div class="shrink-0 flex flex-col snap-center" :class="compact ? 'w-[150px]' : 'w-[176px]'" :data-round-col="rIdx">
           <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
             {{ ROUND_LABELS[round] }}
           </div>
           <div
-            v-for="slotInfo in bracket[round]" :key="slotInfo.slot"
-            class="flex-1 flex items-center justify-center py-1 min-h-0"
+            v-for="(slotInfo, slotIdx) in bracket[round]" :key="slotInfo.slot"
+            :data-row-probe="rIdx === 0 && slotIdx === 0 ? '' : undefined"
+            class="flex items-center justify-center py-1 shrink-0 transition-[flex-grow] duration-300 ease-out"
+            :style="{ flexGrow: isRoundFocused(round) ? 0 : 1 }"
           >
             <div class="w-full bg-court-800 border border-court-700 rounded-xl px-2.5 py-2 flex flex-col gap-1">
               <div
@@ -147,7 +166,11 @@ function statusLabel(match) {
         </div>
 
         <!-- Connector column: one ┤ per next-round match, joining its two feeders -->
-        <div v-if="rIdx < ROUNDS.length - 1" class="shrink-0 flex flex-col" :class="compact ? 'w-3' : 'w-4'">
+        <div
+          v-if="rIdx < ROUNDS.length - 1"
+          class="shrink-0 flex flex-col transition-opacity duration-300"
+          :class="[compact ? 'w-3' : 'w-4', connectorFaded(rIdx) ? 'opacity-0' : 'opacity-100']"
+        >
           <div class="h-6"></div>
           <div v-for="n in ROUND_SIZE[ROUNDS[rIdx + 1]]" :key="n" class="flex-1 relative min-h-0">
             <span class="absolute left-0 top-1/4 w-1/2 h-px bg-court-600"></span>
@@ -159,13 +182,14 @@ function statusLabel(match) {
       </template>
 
       <!-- 3rd-place match: detached column (not part of the win tree) -->
-      <div class="shrink-0 flex flex-col pl-2" :class="compact ? 'w-[150px]' : 'w-[176px]'">
+      <div class="shrink-0 flex flex-col pl-2 snap-center" :class="compact ? 'w-[150px]' : 'w-[176px]'" :data-round-col="ROUNDS.length">
         <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
           {{ ROUND_LABELS.third }}
         </div>
         <div
           v-for="slotInfo in bracket.third" :key="slotInfo.slot"
-          class="flex-1 flex items-center justify-center py-1 min-h-0"
+          class="flex items-center justify-center py-1 shrink-0 transition-[flex-grow] duration-300 ease-out"
+          :style="{ flexGrow: isRoundFocused('third') ? 0 : 1 }"
         >
           <div class="w-full bg-court-800 border border-court-700 rounded-xl px-2.5 py-2 flex flex-col gap-1">
             <div

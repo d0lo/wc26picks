@@ -6,10 +6,22 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, ADJACENCY, R32_SLOTS, MATCH_SCHEDULE, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
 import { pickQueryOptions, matchesQueryOptions, queryKeys } from '../queries.js'
+import { useBracketFocus } from '../composables/useBracketFocus.js'
 
 const user = inject('user')
 const r32Started = inject('r32Started')
 const queryClient = useQueryClient()
+
+// Snap-to-round focus: the centred round collapses to its compact height and
+// squeezes its matches together; the others stay fanned out.
+const { scrollRef, activeRound, isActive: isRoundFocused, containerHeight } = useBracketFocus(ROUNDS, ROUND_SIZE)
+
+// A connector is only geometrically aligned with rounds no taller than the
+// focused (compact) round; fade the ones touching a taller, clipped round.
+function connectorFaded(rIdx) {
+  const a = ROUND_SIZE[activeRound.value] ?? 1
+  return (ROUND_SIZE[ROUNDS[rIdx]] ?? 1) > a || (ROUND_SIZE[ROUNDS[rIdx + 1]] ?? 1) > a
+}
 
 const knockout = reactive(Object.fromEntries(ROUNDS.map(r => [r, Array(ROUND_SIZE[r]).fill(null)])))
 const submitting = ref(false)
@@ -210,11 +222,15 @@ async function submitKnockout() {
            vertically centred between its two feeders and joined by connector
            lines. flex-1 rows + items-stretch keep every column the same height
            so the ┤ connectors line up at exactly 25%/75% of each gap. -->
-      <div class="overflow-x-auto -mx-4 px-4">
-        <div class="flex items-stretch min-w-max pb-2">
+      <div
+        ref="scrollRef"
+        class="overflow-x-auto overflow-y-hidden -mx-4 px-4 snap-x snap-mandatory transition-[height] duration-300 ease-out"
+        :style="{ height: containerHeight }"
+      >
+        <div class="flex items-stretch h-full min-w-max">
           <template v-for="(round, rIdx) in ROUNDS" :key="round">
             <!-- Round column -->
-            <div class="shrink-0 w-[176px] flex flex-col">
+            <div class="shrink-0 w-[176px] flex flex-col snap-center" :data-round-col="rIdx">
               <div class="h-6 flex items-baseline justify-between px-0.5">
                 <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</span>
                 <span class="text-[9px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }}pt</span>
@@ -222,7 +238,9 @@ async function submitKnockout() {
 
               <div
                 v-for="(pair, slotIdx) in matchupsFor(round)" :key="slotIdx"
-                class="flex-1 flex items-center justify-center py-1 min-h-0"
+                :data-row-probe="rIdx === 0 && slotIdx === 0 ? '' : undefined"
+                class="flex items-center justify-center py-1 shrink-0 transition-[flex-grow] duration-300 ease-out"
+                :style="{ flexGrow: isRoundFocused(round) ? 0 : 1 }"
               >
                 <div class="w-full rounded-xl border bg-court-800 border-court-700 p-1 flex flex-col gap-1">
                   <button
@@ -274,7 +292,11 @@ async function submitKnockout() {
             </div>
 
             <!-- Connector column: one ┤ per next-round match, joining its two feeders -->
-            <div v-if="rIdx < ROUNDS.length - 1" class="shrink-0 w-4 flex flex-col">
+            <div
+              v-if="rIdx < ROUNDS.length - 1"
+              class="shrink-0 w-4 flex flex-col transition-opacity duration-300"
+              :class="connectorFaded(rIdx) ? 'opacity-0' : 'opacity-100'"
+            >
               <div class="h-6"></div>
               <div v-for="n in ROUND_SIZE[ROUNDS[rIdx + 1]]" :key="n" class="flex-1 relative min-h-0">
                 <span class="absolute left-0 top-1/4 w-1/2 h-px bg-court-600"></span>
