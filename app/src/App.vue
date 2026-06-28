@@ -5,8 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
-import { configQueryOptions, pickQueryOptions, userQueryOptions, matchesQueryOptions, queryKeys } from './queries.js'
-import { GROUPS } from './data.js'
+import { configQueryOptions, pickQueryOptions, userQueryOptions, matchesQueryOptions, groupsQueryOptions, queryKeys } from './queries.js'
+import { GROUPS, GROUP_TEAMS } from './data.js'
 import { isBracketPickComplete } from './bracket.js'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
@@ -40,19 +40,24 @@ const picksLocked = computed(() => {
 // pre-emptive kickoff-date check; the window simply closes the instant the
 // first Round of 32 match doc appears.
 const matchesQuery = useQuery(matchesQueryOptions())
+const groupsQuery = useQuery(groupsQueryOptions())
 const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
 
-// Derived straight from matches/{eventId} (groupLetter + status.state),
-// the same source of truth the backend's markGroupCompleteIfDecided uses —
-// not from groups/{letter}.complete, which only gets (re)written reactively
-// off a match write and can lag behind reality if a group's matches were
-// backfilled rather than written through the normal pre->in->post flow.
-const GROUP_MATCH_COUNT = 6
+// Derived from groups/{letter}.entries[].gamesPlayed (ESPN's own per-team
+// played-count), not from counting matches/{eventId} docs by groupLetter.
+// onScoreboardWrite only re-fires processMatchUpdate for a match whose state
+// just flipped, so a match that finished before groupLetter started being
+// written can never get that field backfilled — permanently undercounting
+// that group if completeness were derived from matches. groups/{letter}
+// has no such gap: its entries get rewritten from the live standings block
+// every time any match in that group fires, keyed off a freshly-parsed
+// letter rather than a possibly-stale stored one.
 const groupStageComplete = computed(() => {
-  const matches = matchesQuery.data.value ?? []
+  const groups = groupsQuery.data.value ?? {}
   return GROUPS.every((letter) => {
-    const groupMatches = matches.filter((m) => m.groupLetter === letter)
-    return groupMatches.length === GROUP_MATCH_COUNT && groupMatches.every((m) => m.status?.state === 'post')
+    const entries = groups[letter]?.entries ?? []
+    const teamCount = GROUP_TEAMS[letter].length
+    return entries.length === teamCount && entries.every((e) => (e.gamesPlayed ?? 0) >= teamCount - 1)
   })
 })
 const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
