@@ -12,16 +12,10 @@ const user = inject('user')
 const r32Started = inject('r32Started')
 const queryClient = useQueryClient()
 
-// Snap-to-round focus: the centred round collapses to its compact height and
-// squeezes its matches together; the others stay fanned out.
-const { scrollRef, activeRound, isActive: isRoundFocused, containerHeight } = useBracketFocus(ROUNDS, ROUND_SIZE)
-
-// A connector is only geometrically aligned with rounds no taller than the
-// focused (compact) round; fade the ones touching a taller, clipped round.
-function connectorFaded(rIdx) {
-  const a = ROUND_SIZE[activeRound.value] ?? 1
-  return (ROUND_SIZE[ROUNDS[rIdx]] ?? 1) > a || (ROUND_SIZE[ROUNDS[rIdx + 1]] ?? 1) > a
-}
+// Mobile-only: snap to one round at a time and collapse the height to the
+// leftmost (current) round so it has no empty space. Desktop keeps the fanned
+// conventional bracket via the template's sm: classes.
+const { scrollRef, containerHeight } = useBracketFocus(ROUNDS, ROUND_SIZE)
 
 const knockout = reactive(Object.fromEntries(ROUNDS.map(r => [r, Array(ROUND_SIZE[r]).fill(null)])))
 const submitting = ref(false)
@@ -224,13 +218,13 @@ async function submitKnockout() {
            so the ┤ connectors line up at exactly 25%/75% of each gap. -->
       <div
         ref="scrollRef"
-        class="overflow-x-auto overflow-y-hidden -mx-4 px-4 snap-x snap-mandatory transition-[height] duration-300 ease-out"
+        class="overflow-x-auto -mx-4 px-4 overflow-y-hidden sm:overflow-y-visible snap-x snap-mandatory sm:snap-none transition-[height] duration-300 ease-out"
         :style="{ height: containerHeight }"
       >
-        <div class="flex items-stretch h-full min-w-max">
+        <div class="flex items-stretch min-w-max h-full sm:h-auto">
           <template v-for="(round, rIdx) in ROUNDS" :key="round">
             <!-- Round column -->
-            <div class="shrink-0 w-[176px] flex flex-col snap-center" :data-round-col="rIdx">
+            <div class="shrink-0 w-[82vw] max-w-[360px] sm:w-[176px] flex flex-col snap-start" :data-round-col="rIdx">
               <div class="h-6 flex items-baseline justify-between px-0.5">
                 <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</span>
                 <span class="text-[9px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }}pt</span>
@@ -239,8 +233,7 @@ async function submitKnockout() {
               <div
                 v-for="(pair, slotIdx) in matchupsFor(round)" :key="slotIdx"
                 :data-row-probe="rIdx === 0 && slotIdx === 0 ? '' : undefined"
-                class="flex items-center justify-center py-1 shrink-0 transition-[flex-grow] duration-300 ease-out"
-                :style="{ flexGrow: isRoundFocused(round) ? 0 : 1 }"
+                class="flex items-center justify-center py-1 shrink-0 grow-0 sm:grow"
               >
                 <div class="w-full rounded-xl border bg-court-800 border-court-700 p-1 flex flex-col gap-1">
                   <button
@@ -291,11 +284,10 @@ async function submitKnockout() {
               </div>
             </div>
 
-            <!-- Connector column: one ┤ per next-round match, joining its two feeders -->
+            <!-- Connector column (desktop only): ┤ joining each next-round match to its feeders -->
             <div
               v-if="rIdx < ROUNDS.length - 1"
-              class="shrink-0 w-4 flex flex-col transition-opacity duration-300"
-              :class="connectorFaded(rIdx) ? 'opacity-0' : 'opacity-100'"
+              class="hidden sm:flex shrink-0 w-4 flex-col"
             >
               <div class="h-6"></div>
               <div v-for="n in ROUND_SIZE[ROUNDS[rIdx + 1]]" :key="n" class="flex-1 relative min-h-0">

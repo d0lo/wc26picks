@@ -1,24 +1,25 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
-// Drives the snap-to-round behaviour for the horizontally-scrolling knockout
-// bracket. The round whose column is centred in the viewport becomes the
-// "focused" round: the parent collapses its container height down to that
-// round's natural (compact) content height and squeezes that round's match
-// rows together (flex-grow 1 → 0), so the focused round has no empty vertical
-// space, while the other rounds keep their fanned-out bracket spacing.
+// Mobile-only snap-to-round behaviour for the horizontally-scrolling knockout
+// bracket. On phones (< sm) each round is a compact column and the scroll snaps
+// to one round at a time; the *leftmost* (snapped) round is the "current" one,
+// and the container height collapses to that round's content height so there's
+// no empty space below it. On desktop this is inert (height stays auto) and the
+// template's CSS keeps the fanned-out conventional bracket.
+//
+// Everything else (compact vs fanned rows, snap, overflow clipping, hiding the
+// connectors, column width) is done with Tailwind `sm:` classes so it needs no
+// JS; only the collapsed pixel height has to be measured/computed here.
 //
 // DOM contract (set by the consuming template):
 //   - the scroll element is bound to `scrollRef`
 //   - each round column carries `data-round-col="<index into rounds[]>"`
-//   - one representative match row carries `data-row-probe` (any round) so we
-//     can measure a single row's height analytically
-//
-// rounds:    ordered array of round keys actually rendered as snap columns
-// roundSize: map of round key → number of matches in that round
+//   - one representative match row carries `data-row-probe`
 export function useBracketFocus(rounds, roundSize) {
   const scrollRef = ref(null)
   const activeIdx = ref(0)
   const rowH = ref(96)            // measured height of one match row (incl. padding)
+  const isMobile = ref(false)
   const HEADER_H = 24             // round-label header (h-6)
 
   const activeRound = computed(() => rounds[activeIdx.value])
@@ -27,11 +28,10 @@ export function useBracketFocus(rounds, roundSize) {
     return HEADER_H + (roundSize[round] ?? 1) * rowH.value
   }
 
-  const containerHeight = computed(() => `${heightFor(activeRound.value)}px`)
-
-  function isActive(round) {
-    return activeRound.value === round
-  }
+  // Empty string on desktop → no inline height → CSS-driven natural height.
+  const containerHeight = computed(() =>
+    isMobile.value ? `${heightFor(activeRound.value)}px` : ''
+  )
 
   let measured = false
   function measure() {
@@ -43,17 +43,18 @@ export function useBracketFocus(rounds, roundSize) {
     }
   }
 
-  let raf = 0
+  // The current round is the one whose left edge sits closest to the scroll
+  // container's left content edge (it's snapped to the left).
   function updateActive() {
     const el = scrollRef.value
     if (!el) return
-    if (!measured) measure()   // mounted-while-hidden fallback: retry on interaction
-    const center = el.scrollLeft + el.clientWidth / 2
-    let best = activeIdx.value
+    if (!measured) measure()
+    const elRect = el.getBoundingClientRect()
+    const anchor = elRect.left + (parseFloat(getComputedStyle(el).paddingLeft) || 0)
+    let best = 0
     let bestDist = Infinity
     el.querySelectorAll('[data-round-col]').forEach((col) => {
-      const colCenter = col.offsetLeft + col.offsetWidth / 2
-      const dist = Math.abs(colCenter - center)
+      const dist = Math.abs(col.getBoundingClientRect().left - anchor)
       if (dist < bestDist) {
         bestDist = dist
         best = Number(col.dataset.roundCol)
@@ -62,6 +63,7 @@ export function useBracketFocus(rounds, roundSize) {
     activeIdx.value = best
   }
 
+  let raf = 0
   function onScroll() {
     if (raf) return
     raf = requestAnimationFrame(() => {
@@ -70,24 +72,28 @@ export function useBracketFocus(rounds, roundSize) {
     })
   }
 
-  function onResize() {
+  let mql
+  function syncViewport() {
+    isMobile.value = !!mql?.matches
     measure()
     updateActive()
   }
 
   onMounted(async () => {
     await nextTick()
-    measure()
-    updateActive()
+    mql = window.matchMedia('(max-width: 639.98px)')
+    mql.addEventListener('change', syncViewport)
+    syncViewport()
     scrollRef.value?.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('resize', onResize)
+    window.addEventListener('resize', syncViewport)
   })
 
   onBeforeUnmount(() => {
     scrollRef.value?.removeEventListener('scroll', onScroll)
-    window.removeEventListener('resize', onResize)
+    window.removeEventListener('resize', syncViewport)
+    mql?.removeEventListener('change', syncViewport)
     if (raf) cancelAnimationFrame(raf)
   })
 
-  return { scrollRef, activeRound, isActive, containerHeight, measure }
+  return { scrollRef, containerHeight }
 }
