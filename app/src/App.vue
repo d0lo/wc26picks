@@ -1,14 +1,17 @@
 <script setup>
 import { ref, computed, provide, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useQueryClient } from '@tanstack/vue-query'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
-import { configQueryOptions, pickQueryOptions, userQueryOptions, queryKeys } from './queries.js'
+import { configQueryOptions, pickQueryOptions, userQueryOptions, groupsQueryOptions, matchesQueryOptions, queryKeys } from './queries.js'
+import { GROUPS } from './data.js'
+import { isBracketPickComplete } from './bracket.js'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
 import ProfileModal from './components/ProfileModal.vue'
+import KnockoutPromptModal from './components/KnockoutPromptModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -28,11 +31,49 @@ const picksLocked = computed(() => {
   return Date.now() >= lockMs
 })
 
+// Knockout window: between the group stage finishing (all 12 groups
+// decided) and the Round of 32 actually kicking off, users who deferred
+// their bracket at the original picksLockAt deadline get a chance to fill
+// it in. r32Started is the only available client-side signal for "has the
+// Round of 32 started" — matches/{eventId} docs are only created reactively
+// once a match flips to "in"/"post" (see CLAUDE.md), so there's no
+// pre-emptive kickoff-date check; the window simply closes the instant the
+// first Round of 32 match doc appears.
+const groupsQuery = useQuery(groupsQueryOptions())
+const matchesQuery = useQuery(matchesQueryOptions())
+const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
+
+const groupStageComplete = computed(() => GROUPS.every((g) => groupsQuery.data.value?.[g]?.complete === true))
+const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
+const knockoutWindowOpen = computed(() => groupStageComplete.value && !r32Started.value)
+const knockoutComplete = computed(() => !!pickQuery.data.value?.knockout && isBracketPickComplete(pickQuery.data.value.knockout))
+const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickQuery.isFetched.value && !knockoutComplete.value)
+
 provide('user', user)
 provide('picksLocked', picksLocked)
 provide('picksLockTime', picksLockTime)
 provide('hasSubmitted', hasSubmitted)
 provide('isAdmin', isAdmin)
+provide('knockoutWindowOpen', knockoutWindowOpen)
+provide('r32Started', r32Started)
+
+// Show the "fill out your bracket" dialog once per page load (i.e. on
+// refresh), the first time the window/incompleteness conditions are met —
+// not on every reactive recompute, so dismissing it ("I'll do it later")
+// doesn't make it reappear later in the same session.
+const showKnockoutDialog = ref(false)
+const knockoutDialogShown = ref(false)
+watch(needsKnockoutPicks, (needed) => {
+  if (needed && !knockoutDialogShown.value) {
+    showKnockoutDialog.value = true
+    knockoutDialogShown.value = true
+  }
+})
+
+function goToKnockoutPicks() {
+  showKnockoutDialog.value = false
+  router.push('/picks')
+}
 
 // Lets any view open the global ProfileModal directly into edit-name mode
 // (e.g. the inline pencil button next to "you" on the leaderboard).
@@ -195,6 +236,29 @@ function onNameSaved() {
         @close="showProfile = false; editNameMode = false"
         @name-saved="onNameSaved"
       />
+
+      <!-- Knockout-picks reminder dialog (global, shown once per page load) -->
+      <KnockoutPromptModal
+        v-if="showKnockoutDialog"
+        @confirm="goToKnockoutPicks"
+        @close="showKnockoutDialog = false"
+      />
+
+      <!-- Knockout-picks reminder banner — visible for the whole window
+           between group-stage completion and Round of 32 kickoff, for
+           anyone who hasn't filled out their bracket yet. -->
+      <div
+        v-if="needsKnockoutPicks && route.path !== '/picks'"
+        class="flex items-center gap-3 px-4 py-2.5 bg-emerald-500/15 border-b border-emerald-400/30"
+      >
+        <span class="text-sm leading-none shrink-0">🏆</span>
+        <span class="text-xs font-bold text-emerald-300 flex-1 min-w-0 truncate">Make your knockout picks!</span>
+        <button
+          type="button"
+          @click="router.push('/picks')"
+          class="shrink-0 text-[11px] font-black tracking-[0.08em] uppercase px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white transition-colors"
+        >Pick Now</button>
+      </div>
 
       <!-- flex-1 so short pages still push the sticky tab bar to the
            viewport bottom instead of leaving it floating mid-page. -->

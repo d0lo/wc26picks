@@ -19,6 +19,8 @@ const router = useRouter()
 const user = inject('user')
 const picksLocked = inject('picksLocked')
 const picksLockTime = inject('picksLockTime')
+const knockoutWindowOpen = inject('knockoutWindowOpen')
+const r32Started = inject('r32Started')
 const queryClient = useQueryClient()
 
 function fmtLockTime(ts) {
@@ -155,8 +157,12 @@ function cascadeFrom(round) {
   }
 }
 
+// Knockout-bracket editing is gated on the Round of 32 actually starting,
+// not the main picksLocked deadline — the bracket stays editable through
+// the window between group-stage completion and r32 kickoff, after the
+// main lock (and the rest of the picks doc) has already passed.
 function pickWinner(round, slotIdx, teamId) {
-  if (picksLocked.value) return
+  if (r32Started.value) return
   knockout[round][slotIdx] = teamId
   cascadeFrom(round)
 }
@@ -166,10 +172,18 @@ const knockoutComplete = computed(() => isBracketPickComplete(knockout))
 const ready = computed(() => loaded.value && !scoringLoading.value)
 const configMissing = computed(() => ready.value && allProps.value.length === 0)
 
+// Once the user has already submitted, the only thing left to fill out
+// during the knockout window is the bracket — the rest of the picks doc
+// is locked and irrelevant, so the page collapses to bracket-only.
+const showKnockoutOnly = computed(() => knockoutWindowOpen.value && isUpdate.value)
+
 // ── Progress ───────────────────────────────────────────────────────────
 const doneProps = computed(() => allProps.value.filter(p => propAnswers[p.id] !== '').length)
+// Knockout picks are deliberately not required here — a user can submit
+// groups/wildcards/props before the lock and fill out their bracket later,
+// any time before the Round of 32 starts (see showKnockoutOnly above).
 const canSubmit = computed(
-  () => !picksLocked.value && allProps.value.length > 0 && wildcards.value.length === 8 && knockoutComplete.value && doneProps.value === allProps.value.length
+  () => !picksLocked.value && allProps.value.length > 0 && wildcards.value.length === 8 && doneProps.value === allProps.value.length
 )
 
 // ── Submit ─────────────────────────────────────────────────────────────
@@ -204,6 +218,28 @@ async function submit() {
     router.push('/leaderboard')
   } catch {
     submitError.value = 'Save failed — check your connection and try again.'
+    submitting.value = false
+  }
+}
+
+// Independent save path for the knockout-only window: writes just the
+// `knockout` field via partial merge, decoupled from the main submit()'s
+// !picksLocked gate — by the time this window opens, picksLocked is
+// already true (the original deadline has long passed), but the bracket
+// itself is still meant to be editable until the Round of 32 starts.
+async function submitKnockout() {
+  if (!knockoutComplete.value || submitting.value) return
+  submitting.value = true
+  submitError.value = ''
+  try {
+    const knockoutField = Object.fromEntries(ROUNDS.map(r => [r, [...knockout[r]]]))
+    await setDoc(doc(db, 'picks', user.value.uid), { knockout: knockoutField }, { merge: true })
+    queryClient.setQueryData(queryKeys.pick(user.value.uid), (old) => ({ ...old, knockout: knockoutField }))
+    savedSnapshot.value = makeSnapshot()
+    router.push('/leaderboard')
+  } catch {
+    submitError.value = 'Save failed — check your connection and try again.'
+  } finally {
     submitting.value = false
   }
 }
@@ -338,7 +374,7 @@ const POS_COLORS = [
 
     <template v-if="ready && !configMissing">
 
-    <section class="mt-4 mb-10">
+    <section v-if="!showKnockoutOnly" class="mt-4 mb-10">
       <div class="flex items-start justify-between mb-5">
         <div>
           <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Group Standings</h2>
@@ -419,7 +455,7 @@ const POS_COLORS = [
     </section>
 
     <!-- ── SECTION 2: Wildcards ── -->
-    <section ref="wildcardsSectionRef" class="mb-10">
+    <section v-if="!showKnockoutOnly" ref="wildcardsSectionRef" class="mb-10">
       <div class="flex items-baseline justify-between mb-1">
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Best 3rd-Place Teams</h2>
         <span class="text-[10px] text-zinc-400 font-mono">{{ scoring?.wildcard ?? '–' }} pts each</span>
@@ -473,16 +509,19 @@ const POS_COLORS = [
           :class="knockoutComplete ? 'text-emerald-400' : 'text-zinc-400'"
         >{{ ROUNDS.reduce((n, r) => n + knockout[r].filter(Boolean).length, 0) }}/{{ ROUNDS.reduce((n, r) => n + ROUND_SIZE[r], 0) }}</span>
       </div>
-      <p class="text-[11px] text-zinc-400 mb-5">Pick a winner for every matchup, round by round.</p>
+      <p class="text-[11px] mb-5" :class="showKnockoutOnly ? 'text-emerald-400' : 'text-zinc-400'">
+        <template v-if="showKnockoutOnly">Your group/wildcard/prop picks are locked — just the bracket is left.</template>
+        <template v-else>Pick a winner for every matchup, round by round.</template>
+      </p>
 
-      <div class="space-y-6">
-        <div v-for="round in ROUNDS" :key="round">
-          <div class="flex items-baseline justify-between mb-2">
-            <h3 class="text-[10px] font-black tracking-[0.2em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</h3>
-            <span class="text-[10px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }} pt{{ ROUND_POINTS[round] !== 1 ? 's' : '' }} each</span>
-          </div>
+      <div class="overflow-x-auto -mx-4 px-4">
+        <div class="flex gap-3 pb-2">
+          <div v-for="round in ROUNDS" :key="round" class="shrink-0 w-[180px] flex flex-col gap-2">
+            <div class="flex items-baseline justify-between px-0.5">
+              <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</span>
+              <span class="text-[9px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }}pt</span>
+            </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div
               v-for="(pair, slotIdx) in matchupsFor(round)" :key="slotIdx"
               class="rounded-xl border bg-court-800 border-court-700 p-1 flex flex-col gap-1"
@@ -491,13 +530,13 @@ const POS_COLORS = [
                 v-for="teamId in pair" :key="teamId ?? `tbd-${slotIdx}`"
                 type="button"
                 @click="teamId && pickWinner(round, slotIdx, teamId)"
-                :disabled="picksLocked || !teamId"
+                :disabled="r32Started || !teamId"
                 class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-left transition-all duration-150"
                 :class="knockout[round][slotIdx] === teamId
                   ? 'bg-emerald-400/10 border-emerald-400/60'
                   : !teamId
                     ? 'border-transparent opacity-30 cursor-not-allowed'
-                    : picksLocked
+                    : r32Started
                       ? 'border-transparent opacity-60'
                       : 'border-transparent hover:border-court-600 cursor-pointer active:scale-[0.98]'"
               >
@@ -522,6 +561,7 @@ const POS_COLORS = [
     </section>
 
     <!-- ── SECTION 3: Props (by category) ── -->
+    <template v-if="!showKnockoutOnly">
     <section
       v-for="cat in propsByCategory" :key="cat.key"
       :ref="cat.key === 'group' ? 'propsSectionRef' : undefined"
@@ -573,11 +613,45 @@ const POS_COLORS = [
         </div>
       </div>
     </section>
+    </template>
 
     <!-- Submit section -->
     <div class="mt-2 mb-10">
+      <!-- Knockout-only window: independent bracket save, decoupled from
+           the main picksLocked gate (already true by this point). -->
+      <template v-if="showKnockoutOnly">
+        <div v-if="r32Started" class="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-court-800 border border-court-700">
+          <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          <span class="text-sm font-black tracking-[0.08em] uppercase text-zinc-400">Bracket Locked</span>
+        </div>
+        <template v-else>
+          <p v-if="submitError" class="text-red-400 text-xs text-center mb-2">{{ submitError }}</p>
+          <button
+            type="button"
+            :disabled="!knockoutComplete || submitting"
+            @click="submitKnockout"
+            class="w-full py-4 rounded-2xl font-black text-sm tracking-[0.08em] uppercase transition-all duration-150"
+            :class="knockoutComplete
+              ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-[0_0_32px_-4px_rgba(14,165,233,0.45)] active:scale-[0.99]'
+              : 'bg-court-700 text-zinc-400 cursor-not-allowed'"
+          >
+            <span v-if="submitting" class="flex items-center justify-center gap-2">
+              <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.5" stroke-dasharray="31.4" class="opacity-30"/>
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+              Saving…
+            </span>
+            <span v-else>Save Bracket</span>
+          </button>
+          <p v-if="!knockoutComplete && !submitting" class="text-center text-[11px] text-zinc-400 mt-1.5">bracket incomplete</p>
+        </template>
+      </template>
+
       <!-- Locked state -->
-      <div v-if="picksLocked" class="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-court-800 border border-court-700">
+      <div v-else-if="picksLocked" class="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-court-800 border border-court-700">
         <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
         </svg>
@@ -606,10 +680,13 @@ const POS_COLORS = [
         </button>
         <p v-if="!canSubmit && !submitting" class="text-center text-[11px] text-zinc-400 mt-1.5">
           <span v-if="wildcards.length < 8">{{ 8 - wildcards.length }} wildcard{{ 8 - wildcards.length !== 1 ? 's' : '' }} remaining</span>
-          <span v-if="wildcards.length < 8 && !knockoutComplete"> · </span>
-          <span v-if="!knockoutComplete">bracket incomplete</span>
-          <span v-if="(wildcards.length < 8 || !knockoutComplete) && doneProps < allProps.length"> · </span>
+          <span v-if="wildcards.length < 8 && doneProps < allProps.length"> · </span>
           <span v-if="doneProps < allProps.length">{{ allProps.length - doneProps }} prop{{ allProps.length - doneProps !== 1 ? 's' : '' }} remaining</span>
+        </p>
+        <!-- Knockout bracket isn't required to submit — it can be filled in
+             now or any time before the Round of 32 starts. -->
+        <p v-if="canSubmit && !knockoutComplete && !submitting" class="text-center text-[11px] text-amber-400 mt-1.5">
+          Tip: fill out your bracket now, or come back before the Round of 32 starts.
         </p>
         <p v-if="picksLockTime && !picksLocked" class="text-center text-[11px] text-zinc-400 mt-1.5">
           Picks lock {{ fmtLockTime(picksLockTime) }}
