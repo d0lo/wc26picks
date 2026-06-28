@@ -120,6 +120,47 @@ export const EVENT_SLOT_MAP = {
   760517: { round: 'final', slot: 1 }, // Match 104: W101 vs W102
 }
 
+// Official 2026 World Cup knockout schedule, keyed by FIFA match number
+// (73–104). These date/venue assignments are fixed by FIFA regardless of
+// which teams advance, so the picker can show kickoff date/time and venue
+// before any live `matches/*` doc exists (live ESPN data overrides this when
+// present). `date` is the kickoff in UTC (ISO); the UI formats it to ET.
+// `venue` is the host city. Source: Wikipedia 2026 WC knockout stage schedule.
+export const MATCH_SCHEDULE = {
+  73:  { date: '2026-06-28T19:00:00Z', venue: 'Inglewood' },
+  74:  { date: '2026-06-29T20:30:00Z', venue: 'Foxborough' },
+  75:  { date: '2026-06-30T01:00:00Z', venue: 'Monterrey' },
+  76:  { date: '2026-06-29T17:00:00Z', venue: 'Houston' },
+  77:  { date: '2026-06-30T21:00:00Z', venue: 'East Rutherford' },
+  78:  { date: '2026-06-30T17:00:00Z', venue: 'Arlington' },
+  79:  { date: '2026-07-01T01:00:00Z', venue: 'Mexico City' },
+  80:  { date: '2026-07-01T16:00:00Z', venue: 'Atlanta' },
+  81:  { date: '2026-07-02T00:00:00Z', venue: 'Santa Clara' },
+  82:  { date: '2026-07-01T20:00:00Z', venue: 'Seattle' },
+  83:  { date: '2026-07-02T23:00:00Z', venue: 'Toronto' },
+  84:  { date: '2026-07-02T19:00:00Z', venue: 'Inglewood' },
+  85:  { date: '2026-07-03T03:00:00Z', venue: 'Vancouver' },
+  86:  { date: '2026-07-03T22:00:00Z', venue: 'Miami Gardens' },
+  87:  { date: '2026-07-04T01:30:00Z', venue: 'Kansas City' },
+  88:  { date: '2026-07-03T18:00:00Z', venue: 'Arlington' },
+  89:  { date: '2026-07-04T21:00:00Z', venue: 'Philadelphia' },
+  90:  { date: '2026-07-04T17:00:00Z', venue: 'Houston' },
+  91:  { date: '2026-07-05T20:00:00Z', venue: 'East Rutherford' },
+  92:  { date: '2026-07-06T00:00:00Z', venue: 'Mexico City' },
+  93:  { date: '2026-07-06T19:00:00Z', venue: 'Arlington' },
+  94:  { date: '2026-07-07T00:00:00Z', venue: 'Seattle' },
+  95:  { date: '2026-07-07T16:00:00Z', venue: 'Atlanta' },
+  96:  { date: '2026-07-07T20:00:00Z', venue: 'Vancouver' },
+  97:  { date: '2026-07-09T20:00:00Z', venue: 'Foxborough' },
+  98:  { date: '2026-07-10T19:00:00Z', venue: 'Inglewood' },
+  99:  { date: '2026-07-11T21:00:00Z', venue: 'Miami Gardens' },
+  100: { date: '2026-07-12T01:00:00Z', venue: 'Kansas City' },
+  101: { date: '2026-07-14T19:00:00Z', venue: 'Arlington' },
+  102: { date: '2026-07-15T19:00:00Z', venue: 'Atlanta' },
+  103: { date: '2026-07-18T21:00:00Z', venue: 'Miami Gardens' },
+  104: { date: '2026-07-19T19:00:00Z', venue: 'East Rutherford' },
+}
+
 // Given the previous round's winners (array of team UUIDs, 0-indexed by
 // slot — prevWinners[i] is the winner of prevRound slot i+1), returns this
 // round's matchups as an array of [teamA, teamB] pairs, 0-indexed by slot.

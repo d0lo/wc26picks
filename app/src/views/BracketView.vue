@@ -4,7 +4,7 @@ import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { TEAM_BY_ID, FIFA_RANKING } from '../data.js'
-import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, ADJACENCY, R32_SLOTS, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
+import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, ADJACENCY, R32_SLOTS, MATCH_SCHEDULE, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
 import { pickQueryOptions, matchesQueryOptions, queryKeys } from '../queries.js'
 
 const user = inject('user')
@@ -64,6 +64,24 @@ function pickWinner(round, slotIdx, teamId) {
   knockout[round][slotIdx] = teamId
   cascadeFrom(round)
   saved.value = false
+}
+
+// Styling for a team row: highlight the picked winner, dim the other team in
+// a decided matchup (the chosen "loser") to match the opacity treatment used
+// elsewhere (locked group rows, disabled wildcards). Dimming lifts on hover
+// while the bracket is still editable so the pick can be changed.
+function teamBtnClass(round, slotIdx, teamId) {
+  if (!teamId) return 'border-transparent cursor-default'
+  const picked = knockout[round][slotIdx]
+  if (picked === teamId) return 'bg-emerald-400/10 border-emerald-400/60'
+  if (picked) {
+    return r32Started.value
+      ? 'border-transparent opacity-40'
+      : 'border-transparent opacity-40 hover:opacity-100 hover:border-court-600 cursor-pointer active:scale-[0.98]'
+  }
+  return r32Started.value
+    ? 'border-transparent opacity-60'
+    : 'border-transparent hover:border-court-600 cursor-pointer active:scale-[0.98]'
 }
 
 const knockoutComplete = computed(() => isBracketPickComplete(knockout))
@@ -133,19 +151,24 @@ function matchStatusLabel(match) {
   return null
 }
 
-function matchDate(match) {
-  const iso = match?.header?.competitions?.[0]?.date
+// Kickoff date/time for a slot — prefers the live ESPN doc (real, possibly
+// rescheduled) and falls back to the fixed FIFA schedule so every card shows
+// a date/time even before any match has live data.
+function matchDate(round, slotIdx) {
+  const iso = matchForSlot(round, slotIdx)?.header?.competitions?.[0]?.date
+    ?? MATCH_SCHEDULE[matchNum(round, slotIdx)]?.date
+    ?? null
   if (!iso) return null
   const d = new Date(iso)
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })
-    + ', '
-    + d.toLocaleTimeString('en-US', { hour: 'numeric', timeZone: 'America/New_York' })
+    + ' · '
+    + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })
 }
 
-function matchVenue(match) {
-  const comp = match?.header?.competitions?.[0]
-  if (!comp) return null
-  return comp.venue?.address?.city || comp.venue?.fullName || null
+function matchVenue(round, slotIdx) {
+  const comp = matchForSlot(round, slotIdx)?.header?.competitions?.[0]
+  return comp?.venue?.address?.city || comp?.venue?.fullName
+    || MATCH_SCHEDULE[matchNum(round, slotIdx)]?.venue || null
 }
 
 async function submitKnockout() {
@@ -183,68 +206,84 @@ async function submitKnockout() {
         <template v-else>Pick a winner for every matchup, round by round.</template>
       </p>
 
-      <div class="overflow-x-auto -mx-4 px-4 snap-x snap-mandatory">
-        <div class="flex gap-3 pb-2">
-          <div v-for="round in ROUNDS" :key="round" class="shrink-0 w-[180px] flex flex-col gap-2 snap-start">
-            <div class="flex items-baseline justify-between px-0.5">
-              <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</span>
-              <span class="text-[9px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }}pt</span>
-            </div>
+      <!-- Conventional bracket: rounds fan in toward the final, each match
+           vertically centred between its two feeders and joined by connector
+           lines. flex-1 rows + items-stretch keep every column the same height
+           so the ┤ connectors line up at exactly 25%/75% of each gap. -->
+      <div class="overflow-x-auto -mx-4 px-4">
+        <div class="flex items-stretch min-w-max pb-2">
+          <template v-for="(round, rIdx) in ROUNDS" :key="round">
+            <!-- Round column -->
+            <div class="shrink-0 w-[176px] flex flex-col">
+              <div class="h-6 flex items-baseline justify-between px-0.5">
+                <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</span>
+                <span class="text-[9px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }}pt</span>
+              </div>
 
-            <div
-              v-for="(pair, slotIdx) in matchupsFor(round)" :key="slotIdx"
-              class="rounded-xl border bg-court-800 border-court-700 p-1 flex flex-col gap-1"
-            >
-              <button
-                v-for="(teamId, teamIdx) in pair" :key="teamId ?? `tbd-${slotIdx}-${teamIdx}`"
-                type="button"
-                @click="teamId && pickWinner(round, slotIdx, teamId)"
-                :disabled="r32Started || !teamId"
-                class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-left transition-all duration-150"
-                :class="!teamId
-                  ? 'border-transparent cursor-default'
-                  : knockout[round][slotIdx] === teamId
-                    ? 'bg-emerald-400/10 border-emerald-400/60'
-                    : r32Started
-                      ? 'border-transparent opacity-60'
-                      : 'border-transparent hover:border-court-600 cursor-pointer active:scale-[0.98]'"
+              <div
+                v-for="(pair, slotIdx) in matchupsFor(round)" :key="slotIdx"
+                class="flex-1 flex items-center justify-center py-1 min-h-0"
               >
-                <span class="text-sm leading-none shrink-0">{{ teamId ? (TEAM_BY_ID[teamId]?.flag ?? '🏳️') : '🏳️' }}</span>
-                <span
-                  class="text-xs font-medium truncate flex-1 min-w-0"
-                  :class="!teamId ? 'text-zinc-500 italic' : knockout[round][slotIdx] === teamId ? 'text-white font-bold' : 'text-zinc-300'"
-                >{{ teamId ? (TEAM_BY_ID[teamId]?.name ?? teamId) : tbdLabel(round, slotIdx, teamIdx) }}</span>
-                <span v-if="teamId && rankFor(teamId)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ rankFor(teamId) }}</span>
-                <span
-                  v-if="teamId && matchForSlot(round, slotIdx)"
-                  class="text-[10px] font-mono tabular-nums shrink-0"
-                  :class="teamId === winnerOf(matchForSlot(round, slotIdx)) ? 'text-white font-bold' : 'text-zinc-400'"
-                >{{ scoreFor(matchForSlot(round, slotIdx), teamId) ?? '' }}</span>
-                <div
-                  v-if="teamId && knockout[round][slotIdx] === teamId"
-                  class="w-3.5 h-3.5 bg-emerald-400 rounded-full flex items-center justify-center shrink-0"
-                >
-                  <svg width="7" height="5" viewBox="0 0 7 5" fill="none" aria-hidden="true">
-                    <path d="M1 2.5L2.8 4.3L6 1" stroke="#06101F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </div>
-              </button>
+                <div class="w-full rounded-xl border bg-court-800 border-court-700 p-1 flex flex-col gap-1">
+                  <button
+                    v-for="(teamId, teamIdx) in pair" :key="teamId ?? `tbd-${slotIdx}-${teamIdx}`"
+                    type="button"
+                    @click="teamId && pickWinner(round, slotIdx, teamId)"
+                    :disabled="r32Started || !teamId"
+                    class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-left transition-all duration-150"
+                    :class="teamBtnClass(round, slotIdx, teamId)"
+                  >
+                    <span class="text-sm leading-none shrink-0">{{ teamId ? (TEAM_BY_ID[teamId]?.flag ?? '🏳️') : '🏳️' }}</span>
+                    <span class="flex-1 min-w-0 flex items-center gap-1.5">
+                      <span
+                        class="text-xs font-medium truncate"
+                        :class="!teamId ? 'text-zinc-500 italic' : knockout[round][slotIdx] === teamId ? 'text-white font-bold' : 'text-zinc-300'"
+                      >{{ teamId ? (TEAM_BY_ID[teamId]?.name ?? teamId) : tbdLabel(round, slotIdx, teamIdx) }}</span>
+                      <span v-if="teamId && rankFor(teamId)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ rankFor(teamId) }}</span>
+                    </span>
+                    <span
+                      v-if="teamId && matchForSlot(round, slotIdx)"
+                      class="text-[10px] font-mono tabular-nums shrink-0"
+                      :class="teamId === winnerOf(matchForSlot(round, slotIdx)) ? 'text-white font-bold' : 'text-zinc-400'"
+                    >{{ scoreFor(matchForSlot(round, slotIdx), teamId) ?? '' }}</span>
+                    <div
+                      v-if="teamId && knockout[round][slotIdx] === teamId"
+                      class="w-3.5 h-3.5 bg-emerald-400 rounded-full flex items-center justify-center shrink-0"
+                    >
+                      <svg width="7" height="5" viewBox="0 0 7 5" fill="none" aria-hidden="true">
+                        <path d="M1 2.5L2.8 4.3L6 1" stroke="#06101F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                  </button>
 
-              <!-- Match metadata footer: always shown -->
-              <div class="px-2 pt-0.5 pb-0.5 mt-0.5 border-t border-court-700/60 flex flex-col gap-0">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-[9px] font-mono font-bold text-zinc-400 shrink-0">M{{ matchNum(round, slotIdx) }}</span>
-                  <span v-if="matchDate(matchForSlot(round, slotIdx))" class="text-[9px] text-zinc-500 truncate min-w-0">{{ matchDate(matchForSlot(round, slotIdx)) }}</span>
-                  <span
-                    v-if="matchStatusLabel(matchForSlot(round, slotIdx))"
-                    class="text-[9px] font-bold uppercase tracking-wide ml-auto shrink-0"
-                    :class="matchForSlot(round, slotIdx)?.status?.state === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
-                  >{{ matchStatusLabel(matchForSlot(round, slotIdx)) }}</span>
+                  <!-- Match metadata footer: number, kickoff, venue, live status -->
+                  <div class="px-1.5 pt-1 mt-0.5 border-t border-court-700/60 flex flex-col gap-0.5">
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-[9px] font-mono font-bold text-zinc-400 shrink-0">M{{ matchNum(round, slotIdx) }}</span>
+                      <span v-if="matchDate(round, slotIdx)" class="text-[9px] text-zinc-500 truncate min-w-0">{{ matchDate(round, slotIdx) }}</span>
+                      <span
+                        v-if="matchStatusLabel(matchForSlot(round, slotIdx))"
+                        class="text-[9px] font-bold uppercase tracking-wide ml-auto shrink-0"
+                        :class="matchForSlot(round, slotIdx)?.status?.state === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
+                      >{{ matchStatusLabel(matchForSlot(round, slotIdx)) }}</span>
+                    </div>
+                    <span v-if="matchVenue(round, slotIdx)" class="text-[9px] text-zinc-600 truncate">{{ matchVenue(round, slotIdx) }}</span>
+                  </div>
                 </div>
-                <span v-if="matchVenue(matchForSlot(round, slotIdx))" class="text-[9px] text-zinc-600 truncate">{{ matchVenue(matchForSlot(round, slotIdx)) }}</span>
               </div>
             </div>
-          </div>
+
+            <!-- Connector column: one ┤ per next-round match, joining its two feeders -->
+            <div v-if="rIdx < ROUNDS.length - 1" class="shrink-0 w-4 flex flex-col">
+              <div class="h-6"></div>
+              <div v-for="n in ROUND_SIZE[ROUNDS[rIdx + 1]]" :key="n" class="flex-1 relative min-h-0">
+                <span class="absolute left-0 top-1/4 w-1/2 h-px bg-court-600"></span>
+                <span class="absolute left-0 top-3/4 w-1/2 h-px bg-court-600"></span>
+                <span class="absolute left-1/2 top-1/4 h-1/2 w-px bg-court-600"></span>
+                <span class="absolute left-1/2 top-1/2 w-1/2 h-px bg-court-600"></span>
+              </div>
+            </div>
+          </template>
         </div>
       </div>
 
