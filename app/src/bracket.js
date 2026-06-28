@@ -1,21 +1,16 @@
 // Static knockout-bracket structure for the 2026 World Cup (48-team format,
 // single Round of 32 play-in before the familiar 16-team knockout tree).
 //
-// Slot N (1-indexed) within a round equals the official FIFA match number
-// minus a fixed per-round offset (R32: match-72, R16: match-88, QF:
-// match-96, SF: match-100) — confirmed against FIFA's official bracket
-// (https://en.wikipedia.org/wiki/2026_FIFA_World_Cup_knockout_stage) cross-
-// checked with ESPN's own placeholder event names, e.g. event 760502 is
-// named "Round of 32 1 Winner vs Round of 32 3 Winner" and is officially
-// Match 90 = Winner Match 73 vs Winner Match 75, confirming relative-N =
-// match-72. This is NOT chronological kickoff order: two R32 matches can
-// (and do) kick off out of official-number order — e.g. Match 76
-// (Brazil-Japan) kicks off before Match 74 (Germany-Paraguay) — so an
-// earlier version of R32_SLOTS/EVENT_SLOT_MAP, built by sorting kickoffs
-// chronologically, silently misassigned slots and routed R32 winners into
-// the wrong Round of 16 matchup. ADJACENCY was unaffected by that bug (it's
-// built straight from ESPN's relative-N labels, already match-number-based);
-// only the R32_SLOTS/EVENT_SLOT_MAP slot assignment needed fixing.
+// Slot N (1-indexed) follows the official FIFA bracket's visual top-to-bottom
+// ordering, confirmed against the Wikipedia bracket view for the 2026 World
+// Cup (https://en.wikipedia.org/wiki/2026_FIFA_World_Cup_knockout_stage).
+// This is neither chronological kickoff order nor sequential FIFA match
+// number order — e.g. slot 1 is Match 74 (Germany/Paraguay, Jun 29) and
+// slot 3 is Match 73 (South Africa/Canada, Jun 28), because Germany appears
+// above South Africa in the visual bracket. Using visual bracket order means
+// ADJACENCY is perfectly sequential: adjacent slot pairs always feed the
+// same next-round matchup ([1,2]→r16 slot1, [3,4]→r16 slot2, etc.), which
+// is the natural way to reason about a bracket and what the UI renders.
 // Slot numbers below are 1-indexed; code should subtract 1 when indexing
 // into a 0-indexed picks array.
 import { TEAM_ID } from './data.js'
@@ -51,74 +46,74 @@ export const ROUND_POINTS = { r32: 1, r16: 2, qf: 4, sf: 8, final: 16 }
 
 export const PREV_ROUND = { r16: 'r32', qf: 'r16', sf: 'qf', final: 'sf', third: 'sf' }
 
-// ADJACENCY[round] is an array of [prevSlotA, prevSlotB] pairs (1-indexed,
-// matching ESPN's own placeholder slot numbering) — round's slot i is fed by
-// the winners of prevRound's slots ADJACENCY[round][i].
+// ADJACENCY[round] is an array of [prevSlotA, prevSlotB] pairs (1-indexed).
+// Round's slot i is fed by the winners of prevRound slots ADJACENCY[round][i].
+// With visual-bracket slot ordering, adjacent pairs are always sequential.
 export const ADJACENCY = {
-  r16: [[1, 3], [2, 5], [4, 6], [7, 8], [11, 12], [9, 10], [14, 16], [13, 15]],
-  qf: [[1, 2], [5, 6], [3, 4], [7, 8]],
-  sf: [[1, 2], [3, 4]],
+  r16: [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16]],
+  qf:  [[1, 2], [3, 4], [5, 6], [7, 8]],
+  sf:  [[1, 2], [3, 4]],
   final: [[1, 2]],
   // 3rd place match takes the *losers* of semifinal slots 1 and 2, not winners.
   third: [[1, 2]],
 }
 
-// The 16 real Round of 32 matchups — slot N (1-indexed) = FIFA Match (72+N).
+// The 16 real Round of 32 matchups in visual bracket order (top to bottom).
 // teams[0]/teams[1] order has no bracket meaning (home/away only).
 export const R32_SLOTS = [
-  [TEAM_ID['South Africa'], TEAM_ID.Canada],        // slot 1  = Match 73
-  [TEAM_ID.Germany, TEAM_ID.Paraguay],              // slot 2  = Match 74
-  [TEAM_ID.Netherlands, TEAM_ID.Morocco],           // slot 3  = Match 75
-  [TEAM_ID.Brazil, TEAM_ID.Japan],                  // slot 4  = Match 76
-  [TEAM_ID.France, TEAM_ID.Sweden],                 // slot 5  = Match 77
-  [TEAM_ID['Ivory Coast'], TEAM_ID.Norway],         // slot 6  = Match 78
-  [TEAM_ID.Mexico, TEAM_ID.Ecuador],                // slot 7  = Match 79
-  [TEAM_ID.England, TEAM_ID['DR Congo']],           // slot 8  = Match 80
-  [TEAM_ID.USA, TEAM_ID['Bosnia-Herzegovina']],     // slot 9  = Match 81
-  [TEAM_ID.Belgium, TEAM_ID.Senegal],               // slot 10 = Match 82
-  [TEAM_ID.Portugal, TEAM_ID.Croatia],              // slot 11 = Match 83
-  [TEAM_ID.Spain, TEAM_ID.Austria],                 // slot 12 = Match 84
-  [TEAM_ID.Switzerland, TEAM_ID.Algeria],           // slot 13 = Match 85
-  [TEAM_ID.Argentina, TEAM_ID['Cape Verde']],       // slot 14 = Match 86
-  [TEAM_ID.Colombia, TEAM_ID.Ghana],                // slot 15 = Match 87
-  [TEAM_ID.Australia, TEAM_ID.Egypt],               // slot 16 = Match 88
+  [TEAM_ID.Germany, TEAM_ID.Paraguay],              // slot 1  = Match 74
+  [TEAM_ID.France, TEAM_ID.Sweden],                 // slot 2  = Match 77
+  [TEAM_ID['South Africa'], TEAM_ID.Canada],        // slot 3  = Match 73
+  [TEAM_ID.Netherlands, TEAM_ID.Morocco],           // slot 4  = Match 75
+  [TEAM_ID.Portugal, TEAM_ID.Croatia],              // slot 5  = Match 83
+  [TEAM_ID.Spain, TEAM_ID.Austria],                 // slot 6  = Match 84
+  [TEAM_ID.USA, TEAM_ID['Bosnia-Herzegovina']],     // slot 7  = Match 81
+  [TEAM_ID.Belgium, TEAM_ID.Senegal],               // slot 8  = Match 82
+  [TEAM_ID.Brazil, TEAM_ID.Japan],                  // slot 9  = Match 76
+  [TEAM_ID['Ivory Coast'], TEAM_ID.Norway],         // slot 10 = Match 78
+  [TEAM_ID.Mexico, TEAM_ID.Ecuador],                // slot 11 = Match 79
+  [TEAM_ID.England, TEAM_ID['DR Congo']],           // slot 12 = Match 80
+  [TEAM_ID.Argentina, TEAM_ID['Cape Verde']],       // slot 13 = Match 86
+  [TEAM_ID.Australia, TEAM_ID.Egypt],               // slot 14 = Match 88
+  [TEAM_ID.Switzerland, TEAM_ID.Algeria],           // slot 15 = Match 85
+  [TEAM_ID.Colombia, TEAM_ID.Ghana],                // slot 16 = Match 87
 ]
 
 // ESPN event id → { round, slot } for all 32 real knockout-stage events.
-// Slot = official FIFA match number minus per-round offset (see file header).
+// Slot = visual bracket position (top to bottom); see file header.
 export const EVENT_SLOT_MAP = {
-  // R32: slot = match - 72
-  760486: { round: 'r32', slot: 1 },   // Match 73: South Africa vs Canada
-  760489: { round: 'r32', slot: 2 },   // Match 74: Germany vs Paraguay
-  760488: { round: 'r32', slot: 3 },   // Match 75: Netherlands vs Morocco
-  760487: { round: 'r32', slot: 4 },   // Match 76: Brazil vs Japan
-  760492: { round: 'r32', slot: 5 },   // Match 77: France vs Sweden
-  760490: { round: 'r32', slot: 6 },   // Match 78: Ivory Coast vs Norway
-  760491: { round: 'r32', slot: 7 },   // Match 79: Mexico vs Ecuador
-  760495: { round: 'r32', slot: 8 },   // Match 80: England vs DR Congo
-  760494: { round: 'r32', slot: 9 },   // Match 81: USA vs Bosnia-Herzegovina
-  760493: { round: 'r32', slot: 10 },  // Match 82: Belgium vs Senegal
-  760496: { round: 'r32', slot: 11 },  // Match 83: Portugal vs Croatia
-  760497: { round: 'r32', slot: 12 },  // Match 84: Spain vs Austria
-  760498: { round: 'r32', slot: 13 },  // Match 85: Switzerland vs Algeria
-  760500: { round: 'r32', slot: 14 },  // Match 86: Argentina vs Cape Verde
-  760501: { round: 'r32', slot: 15 },  // Match 87: Colombia vs Ghana
-  760499: { round: 'r32', slot: 16 },  // Match 88: Australia vs Egypt
-  // R16: slot = match - 88
-  760503: { round: 'r16', slot: 1 },   // Match 89: W74 vs W77
-  760502: { round: 'r16', slot: 2 },   // Match 90: W73 vs W75
-  760504: { round: 'r16', slot: 3 },   // Match 91: W76 vs W78
-  760505: { round: 'r16', slot: 4 },   // Match 92: W79 vs W80
-  760506: { round: 'r16', slot: 5 },   // Match 93: W83 vs W84
-  760507: { round: 'r16', slot: 6 },   // Match 94: W81 vs W82
-  760509: { round: 'r16', slot: 7 },   // Match 95: W86 vs W88
-  760508: { round: 'r16', slot: 8 },   // Match 96: W85 vs W87
-  // QF: slot = match - 96
-  760510: { round: 'qf', slot: 1 },    // Match 97: W89 vs W90
-  760511: { round: 'qf', slot: 2 },    // Match 98: W93 vs W94
-  760512: { round: 'qf', slot: 3 },    // Match 99: W91 vs W92
+  // R32 (visual bracket order, top to bottom)
+  760489: { round: 'r32', slot: 1 },   // Match 74:  Germany vs Paraguay
+  760492: { round: 'r32', slot: 2 },   // Match 77:  France vs Sweden
+  760486: { round: 'r32', slot: 3 },   // Match 73:  South Africa vs Canada
+  760488: { round: 'r32', slot: 4 },   // Match 75:  Netherlands vs Morocco
+  760496: { round: 'r32', slot: 5 },   // Match 83:  Portugal vs Croatia
+  760497: { round: 'r32', slot: 6 },   // Match 84:  Spain vs Austria
+  760494: { round: 'r32', slot: 7 },   // Match 81:  USA vs Bosnia-Herzegovina
+  760493: { round: 'r32', slot: 8 },   // Match 82:  Belgium vs Senegal
+  760487: { round: 'r32', slot: 9 },   // Match 76:  Brazil vs Japan
+  760490: { round: 'r32', slot: 10 },  // Match 78:  Ivory Coast vs Norway
+  760491: { round: 'r32', slot: 11 },  // Match 79:  Mexico vs Ecuador
+  760495: { round: 'r32', slot: 12 },  // Match 80:  England vs DR Congo
+  760500: { round: 'r32', slot: 13 },  // Match 86:  Argentina vs Cape Verde
+  760499: { round: 'r32', slot: 14 },  // Match 88:  Australia vs Egypt
+  760498: { round: 'r32', slot: 15 },  // Match 85:  Switzerland vs Algeria
+  760501: { round: 'r32', slot: 16 },  // Match 87:  Colombia vs Ghana
+  // R16 (visual bracket order — upper half before lower half)
+  760503: { round: 'r16', slot: 1 },   // Match 89:  W74 vs W77  → QF slot 1
+  760502: { round: 'r16', slot: 2 },   // Match 90:  W73 vs W75  → QF slot 1
+  760506: { round: 'r16', slot: 3 },   // Match 93:  W83 vs W84  → QF slot 2
+  760507: { round: 'r16', slot: 4 },   // Match 94:  W81 vs W82  → QF slot 2
+  760504: { round: 'r16', slot: 5 },   // Match 91:  W76 vs W78  → QF slot 3
+  760505: { round: 'r16', slot: 6 },   // Match 92:  W79 vs W80  → QF slot 3
+  760509: { round: 'r16', slot: 7 },   // Match 95:  W86 vs W88  → QF slot 4
+  760508: { round: 'r16', slot: 8 },   // Match 96:  W85 vs W87  → QF slot 4
+  // QF (visual bracket order = match number order)
+  760510: { round: 'qf', slot: 1 },    // Match 97:  W89 vs W90
+  760511: { round: 'qf', slot: 2 },    // Match 98:  W93 vs W94
+  760512: { round: 'qf', slot: 3 },    // Match 99:  W91 vs W92
   760513: { round: 'qf', slot: 4 },    // Match 100: W95 vs W96
-  // SF: slot = match - 100
+  // SF
   760514: { round: 'sf', slot: 1 },    // Match 101: W97 vs W98
   760515: { round: 'sf', slot: 2 },    // Match 102: W99 vs W100
   760516: { round: 'third', slot: 1 }, // Match 103: L101 vs L102
