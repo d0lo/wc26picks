@@ -3,9 +3,9 @@ import { reactive, ref, computed, inject, watch } from 'vue'
 import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { TEAM_BY_ID } from '../data.js'
+import { TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, R32_SLOTS, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
-import { pickQueryOptions, queryKeys } from '../queries.js'
+import { pickQueryOptions, matchesQueryOptions, queryKeys } from '../queries.js'
 
 const user = inject('user')
 const r32Started = inject('r32Started')
@@ -70,6 +70,45 @@ const knockoutComplete = computed(() => isBracketPickComplete(knockout))
 const pickedCount = computed(() => ROUNDS.reduce((n, r) => n + knockout[r].filter(Boolean).length, 0))
 const totalCount = ROUNDS.reduce((n, r) => n + ROUND_SIZE[r], 0)
 
+const matchQuery = useQuery(matchesQueryOptions())
+const matchBySlot = computed(() => {
+  const map = new Map()
+  for (const m of matchQuery.data.value ?? []) {
+    if (m.round && m.slot) map.set(`${m.round}_${m.slot}`, m)
+  }
+  return map
+})
+
+function matchForSlot(round, slotIdx) {
+  return matchBySlot.value.get(`${round}_${slotIdx + 1}`) ?? null
+}
+
+function rankFor(teamId) {
+  const name = TEAM_BY_ID[teamId]?.name
+  return name ? (FIFA_RANKING[name] ?? null) : null
+}
+
+function scoreFor(match, teamId) {
+  return match?.competitors?.find((c) => c.teamId === teamId)?.score ?? null
+}
+
+function winnerOf(match) {
+  if (!match || match.status?.state !== 'post') return null
+  const flagged = match.competitors?.find((c) => c.winner)
+  if (flagged) return flagged.teamId
+  const [a, b] = match.competitors ?? []
+  if (!a || !b || a.score == null || b.score == null || a.score === b.score) return null
+  return Number(a.score) > Number(b.score) ? a.teamId : b.teamId
+}
+
+function matchStatusLabel(match) {
+  if (!match) return null
+  const s = match.status
+  if (s?.state === 'in') return s.displayClock || 'Live'
+  if (s?.state === 'post') return 'Final'
+  return null
+}
+
 async function submitKnockout() {
   if (!knockoutComplete.value || submitting.value) return
   submitting.value = true
@@ -105,9 +144,9 @@ async function submitKnockout() {
         <template v-else>Pick a winner for every matchup, round by round.</template>
       </p>
 
-      <div class="overflow-x-auto -mx-4 px-4">
+      <div class="overflow-x-auto -mx-4 px-4 snap-x snap-mandatory">
         <div class="flex gap-3 pb-2">
-          <div v-for="round in ROUNDS" :key="round" class="shrink-0 w-[180px] flex flex-col gap-2">
+          <div v-for="round in ROUNDS" :key="round" class="shrink-0 w-[180px] flex flex-col gap-2 snap-start">
             <div class="flex items-baseline justify-between px-0.5">
               <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</span>
               <span class="text-[9px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }}pt</span>
@@ -123,10 +162,10 @@ async function submitKnockout() {
                 @click="teamId && pickWinner(round, slotIdx, teamId)"
                 :disabled="r32Started || !teamId"
                 class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-left transition-all duration-150"
-                :class="knockout[round][slotIdx] === teamId
-                  ? 'bg-emerald-400/10 border-emerald-400/60'
-                  : !teamId
-                    ? 'border-transparent opacity-30 cursor-not-allowed'
+                :class="!teamId
+                  ? 'bg-emerald-400/10 border-emerald-400/60 cursor-not-allowed'
+                  : knockout[round][slotIdx] === teamId
+                    ? 'bg-emerald-400/10 border-emerald-400/60'
                     : r32Started
                       ? 'border-transparent opacity-60'
                       : 'border-transparent hover:border-court-600 cursor-pointer active:scale-[0.98]'"
@@ -134,10 +173,16 @@ async function submitKnockout() {
                 <span class="text-sm leading-none shrink-0">{{ teamId ? (TEAM_BY_ID[teamId]?.flag ?? '🏳️') : '🏳️' }}</span>
                 <span
                   class="text-xs font-medium truncate flex-1 min-w-0"
-                  :class="knockout[round][slotIdx] === teamId ? 'text-white font-bold' : teamId ? 'text-zinc-300' : 'text-zinc-500'"
+                  :class="!teamId ? 'text-zinc-400' : knockout[round][slotIdx] === teamId ? 'text-white font-bold' : 'text-zinc-300'"
                 >{{ teamId ? (TEAM_BY_ID[teamId]?.name ?? teamId) : 'TBD' }}</span>
+                <span v-if="teamId && rankFor(teamId)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ rankFor(teamId) }}</span>
+                <span
+                  v-if="matchForSlot(round, slotIdx)"
+                  class="text-[10px] font-mono tabular-nums shrink-0"
+                  :class="teamId === winnerOf(matchForSlot(round, slotIdx)) ? 'text-white font-bold' : 'text-zinc-400'"
+                >{{ scoreFor(matchForSlot(round, slotIdx), teamId) ?? '' }}</span>
                 <div
-                  v-if="knockout[round][slotIdx] === teamId"
+                  v-if="!teamId || knockout[round][slotIdx] === teamId"
                   class="w-3.5 h-3.5 bg-emerald-400 rounded-full flex items-center justify-center shrink-0"
                 >
                   <svg width="7" height="5" viewBox="0 0 7 5" fill="none" aria-hidden="true">
@@ -145,6 +190,17 @@ async function submitKnockout() {
                   </svg>
                 </div>
               </button>
+
+              <!-- Match status footer -->
+              <div
+                v-if="matchStatusLabel(matchForSlot(round, slotIdx))"
+                class="flex justify-start pt-0.5 mt-0.5 border-t border-court-700/60 px-2"
+              >
+                <span
+                  class="text-[9px] font-bold uppercase tracking-wide"
+                  :class="matchForSlot(round, slotIdx)?.status?.state === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
+                >{{ matchStatusLabel(matchForSlot(round, slotIdx)) }}</span>
+              </div>
             </div>
           </div>
         </div>
