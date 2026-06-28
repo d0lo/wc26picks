@@ -5,8 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
-import { configQueryOptions, pickQueryOptions, userQueryOptions, matchesQueryOptions, groupsQueryOptions, queryKeys } from './queries.js'
-import { GROUPS, GROUP_TEAMS } from './data.js'
+import { configQueryOptions, pickQueryOptions, userQueryOptions, matchesQueryOptions, queryKeys } from './queries.js'
 import { isBracketPickComplete } from './bracket.js'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
@@ -40,53 +39,22 @@ const picksLocked = computed(() => {
 // pre-emptive kickoff-date check; the window simply closes the instant the
 // first Round of 32 match doc appears.
 const matchesQuery = useQuery(matchesQueryOptions())
-const groupsQuery = useQuery(groupsQueryOptions())
 const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
 
-// Derived from groups/{letter}.entries[].gamesPlayed (ESPN's own per-team
-// played-count), not from counting matches/{eventId} docs by groupLetter.
-// onScoreboardWrite only re-fires processMatchUpdate for a match whose state
-// just flipped, so a match that finished before groupLetter started being
-// written can never get that field backfilled — permanently undercounting
-// that group if completeness were derived from matches. groups/{letter}
-// has no such gap: its entries get rewritten from the live standings block
-// every time any match in that group fires, keyed off a freshly-parsed
-// letter rather than a possibly-stale stored one.
+// Group-stage completeness can't be derived from groupLetter — production
+// matches/{eventId} docs were found to be missing groupLetter (and round/
+// slot) entirely, not just on legacy data but across the whole group stage,
+// so per-group counts built on that field always undercount. status.state
+// is reliably correct on every doc regardless, so instead: a group-stage
+// match is just any match with no round set (knockout matches always carry
+// one, derived fresh from a fixed eventId->round/slot table, unaffected by
+// this gap) — the group stage is complete once all 72 of those are "post".
+const GROUP_STAGE_MATCH_COUNT = 72
 const groupStageComplete = computed(() => {
-  const groups = groupsQuery.data.value ?? {}
-  return GROUPS.every((letter) => {
-    const entries = groups[letter]?.entries ?? []
-    const teamCount = GROUP_TEAMS[letter].length
-    return entries.length === teamCount && entries.every((e) => (e.gamesPlayed ?? 0) >= teamCount - 1)
-  })
+  const groupMatches = (matchesQuery.data.value ?? []).filter((m) => m.round == null)
+  return groupMatches.length === GROUP_STAGE_MATCH_COUNT && groupMatches.every((m) => m.status?.state === 'post')
 })
 const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
-
-// Temporary diagnostic overlay (?debug=1) for tracking down why
-// groupStageComplete reads false in production — remove once resolved.
-const debugMode = new URLSearchParams(window.location.search).has('debug')
-const debugInfo = computed(() => {
-  const matches = matchesQuery.data.value ?? []
-  const groups = groupsQuery.data.value ?? {}
-  return GROUPS.map((letter) => {
-    const groupMatches = matches.filter((m) => m.groupLetter === letter)
-    const entries = groups[letter]?.entries ?? []
-    return {
-      letter,
-      matchCount: groupMatches.length,
-      matchesPost: groupMatches.filter((m) => m.status?.state === 'post').length,
-      entriesCount: entries.length,
-      gamesPlayed: entries.map((e) => e.gamesPlayed),
-    }
-  })
-})
-// Raw groupLetter/round/slot/status as actually stored, per match doc —
-// to see exactly what value is wrong instead of just whether it matches.
-const rawMatchSample = computed(() =>
-  (matchesQuery.data.value ?? [])
-    .map((m) => ({ id: m.id, groupLetter: m.groupLetter, round: m.round, slot: m.slot, state: m.status?.state }))
-    .sort((a, b) => a.id.localeCompare(b.id))
-)
 const knockoutWindowOpen = computed(() => groupStageComplete.value && !r32Started.value)
 const knockoutComplete = computed(() => !!pickQuery.data.value?.knockout && isBracketPickComplete(pickQuery.data.value.knockout))
 const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickQuery.isFetched.value && !knockoutComplete.value)
@@ -341,18 +309,6 @@ function onNameSaved() {
         :showAdminTab="isAdmin"
         @navigate="onTabNavigate"
       />
-
-      <!-- Temporary diagnostic overlay (?debug=1) — remove once resolved -->
-      <pre
-        v-if="debugMode"
-        class="fixed top-0 left-0 right-0 z-[999] max-h-[50vh] overflow-auto bg-black/90 text-emerald-300 text-[10px] p-2 whitespace-pre-wrap"
-      >groupStageComplete: {{ groupStageComplete }}
-r32Started: {{ r32Started }}
-matchesQuery.isFetched: {{ matchesQuery.isFetched.value }}  groupsQuery.isFetched: {{ groupsQuery.isFetched.value }}
-totalMatches: {{ (matchesQuery.data.value ?? []).length }}
-{{ JSON.stringify(debugInfo, null, 1) }}
-RAW SAMPLE (first 15):
-{{ JSON.stringify(rawMatchSample.slice(0, 15), null, 1) }}</pre>
     </template>
   </div>
 </template>
