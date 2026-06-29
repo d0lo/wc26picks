@@ -62,6 +62,12 @@ const grouped = computed(() => {
 function kickoff(iso) {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })
 }
+// "2 – 1", or "–" when a score isn't resolved (avoid a misleading "0 – 0").
+function scoreText(fx) {
+  const a = fx.teams[0]?.score
+  const b = fx.teams[1]?.score
+  return a == null || b == null ? '–' : `${a} – ${b}`
+}
 // In a finished match, the team with fewer goals is the loser (dimmed).
 function isLoser(fx, idx) {
   if (fx.state !== 'post') return false
@@ -114,7 +120,7 @@ function isLoser(fx, idx) {
           <div class="shrink-0 w-16 text-center">
             <div v-if="fx.state === 'pre'" class="text-xs text-zinc-400 font-mono leading-tight">{{ kickoff(fx.dateISO) }}</div>
             <div v-else class="text-sm font-black text-white tabular-nums leading-tight">
-              {{ fx.teams[0]?.score ?? 0 }} – {{ fx.teams[1]?.score ?? 0 }}
+              {{ scoreText(fx) }}
             </div>
             <div v-if="fx.clock" class="text-[9px] font-bold uppercase tracking-wide mt-0.5" :class="fx.state === 'in' ? 'text-amber-400' : 'text-zinc-500'">{{ fx.clock }}</div>
           </div>

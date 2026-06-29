@@ -139,11 +139,22 @@ function buildFixture(sk, doc, live) {
 export function buildFixtures(matches = [], scoreboardEvents = [], scheduleEvents = []) {
   const sbById = new Map(scoreboardEvents.map((e) => [String(e.id), e]))
   const docById = new Map(matches.map((m) => [String(m.id), m]))
+  const staticById = new Map(staticKnockoutSkeletons(matches).map((s) => [s.id, s]))
+  const hasTeams = (sk) => sk.competitors.some((c) => c.teamId)
 
   // Skeletons by id, in priority order — first writer wins.
   const skById = new Map()
-  for (const ev of scheduleEvents) skById.set(String(ev.id), eventSkeleton(ev))
-  for (const k of staticKnockoutSkeletons(matches)) if (!skById.has(k.id)) skById.set(k.id, k)
+  for (const ev of scheduleEvents) {
+    const sk = eventSkeleton(ev)
+    // The schedule doc's future-knockout entries carry no teams yet (synced
+    // before the feeders were decided). If the bracket can already project them
+    // from completed feeder results, fill them in so the row isn't "TBD vs TBD"
+    // once the matchup is actually known.
+    const stat = staticById.get(sk.id)
+    if (stat && !hasTeams(sk) && hasTeams(stat)) sk.competitors = stat.competitors
+    skById.set(sk.id, sk)
+  }
+  for (const [id, s] of staticById) if (!skById.has(id)) skById.set(id, s)
   for (const m of matches) if (!skById.has(String(m.id))) skById.set(String(m.id), docSkeleton(m))
   for (const ev of scoreboardEvents) if (!skById.has(String(ev.id))) skById.set(String(ev.id), eventSkeleton(ev))
 
