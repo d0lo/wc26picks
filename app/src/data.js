@@ -125,6 +125,15 @@ export const TEAM_BY_ID = Object.fromEntries(
   Object.entries(TEAM_ID).map(([name, id]) => [id, { name, flag: TEAM_FLAG[name] ?? '🏳️' }])
 )
 
+// A team's display shape from its UUID, with the same neutral fallbacks the app
+// uses everywhere an unknown/TBD team can appear. Shared so the flag/name
+// fallback rule lives in one place (lib/fixtures.js carries a richer variant
+// that also threads a fallback name + score for unresolved knockout slots).
+export function teamView(teamId) {
+  const t = teamId ? TEAM_BY_ID[teamId] : null
+  return { teamId: teamId ?? null, name: t?.name ?? 'TBD', flag: t?.flag ?? '🏳️' }
+}
+
 // FIFA World Rankings as of April 1, 2026
 export const FIFA_RANKING = {
   France:               1,

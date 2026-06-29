@@ -11,6 +11,7 @@ import { maxPossibleTotal, decidedKnockoutSlots, knockoutEliminatedTeams, isWild
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
+import ChampionHero from '../components/ChampionHero.vue'
 
 const router = useRouter()
 const user = inject('user')
@@ -142,6 +143,10 @@ const myRank = computed(() => {
 
 const myScore = computed(() => scores.value.find(s => s.id === user.value?.uid))
 
+// The user's predicted champion — the single team they picked to win the
+// final. Drives the <ChampionHero> at the top of the home screen.
+const championId = computed(() => submission.value?.knockout?.final?.[0] ?? null)
+
 function fmtName(name) {
   if (!name) return '?'
   const parts = name.trim().split(/\s+/)
@@ -197,37 +202,15 @@ function resolveTeamFlag(teamId) {
       </div>
       <template v-if="!loading">
 
-      <!-- My score card (only when I have submitted) -->
+      <!-- Champion hero (only when I have submitted) -->
       <div v-if="submission" class="mt-4 mb-5">
-        <!-- No scores yet -->
-        <div v-if="!hasScores" class="bg-court-800 border border-court-700 rounded-2xl p-5">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-3xl font-black text-white">0 <span class="text-lg text-zinc-400 font-normal">pts</span></div>
-              <div class="text-xs text-zinc-400 mt-1">Scoring begins once the tournament starts</div>
-              <div v-if="myPotential != null" class="text-xs font-bold text-amber-400 mt-1.5">Up to {{ myPotential }} pts possible</div>
-            </div>
-            <div class="text-4xl select-none">🏆</div>
-          </div>
-        </div>
-
-        <!-- Scores live -->
-        <div v-else class="bg-court-800 border border-court-700 rounded-2xl p-5">
-          <div class="flex items-center gap-3">
-            <div v-if="myRank" class="bg-court-700/70 rounded-xl px-4 py-2 text-center min-w-[60px]">
-              <div class="text-2xl font-black text-white">#{{ myRank }}</div>
-              <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Rank</div>
-            </div>
-            <div v-if="myScore" class="bg-court-700/70 rounded-xl px-4 py-2 text-center min-w-[60px]">
-              <div class="text-2xl font-black text-amber-400">{{ myScore.total }}</div>
-              <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Points</div>
-            </div>
-            <div v-if="myPotential != null" class="bg-court-700/40 rounded-xl px-4 py-2 text-center min-w-[60px] border border-amber-400/20">
-              <div class="text-2xl font-black text-amber-400/70">{{ myPotential }}</div>
-              <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Max</div>
-            </div>
-          </div>
-        </div>
+        <ChampionHero
+          :champion-id="championId"
+          :points="myScore?.total ?? null"
+          :rank="myRank"
+          :total-players="sortedSubmitters.length"
+          :potential="myPotential"
+        />
       </div>
 
       <!-- Leaderboard -->
