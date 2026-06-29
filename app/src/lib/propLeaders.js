@@ -63,7 +63,10 @@ function cleanGroupTeamLeaders(matches) {
       const opponent = (m.competitors ?? []).find((o) => o.teamId !== c.teamId)
       byTeam[c.teamId] ??= { teamId: c.teamId, played: 0, cleanSheets: 0 }
       byTeam[c.teamId].played += 1
-      if ((opponent?.score ?? null) === 0) byTeam[c.teamId].cleanSheets += 1
+      // ESPN scores are strings ('0','1',…); coerce before comparing, and
+      // guard null so a missing score isn't read as 0 (Number(null) === 0).
+      const oppScore = opponent?.score
+      if (oppScore != null && Number(oppScore) === 0) byTeam[c.teamId].cleanSheets += 1
     }
   }
   return Object.values(byTeam).sort(
