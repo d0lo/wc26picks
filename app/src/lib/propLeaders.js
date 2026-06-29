@@ -82,6 +82,9 @@ function cleanGroupTeamLeaders(matches) {
 // non-computable from currently tracked data.
 const RESOLVERS = {
   goldenBoot: goldenBootLeaders,
+  // Key predates the group→tournament prop rename; it now means "most goals in
+  // the tournament" and resolves goals across all matches (see mostGoalsLeaders).
+  // Kept as a stable internal handle — picks key off `id`, not this string.
   mostGroupGoals: mostGoalsLeaders,
   hatTrickScorer: hatTrickScorers,
   cleanGroupTeam: cleanGroupTeamLeaders,

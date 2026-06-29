@@ -220,7 +220,7 @@ liveData/props                    written after each match completion by Feature
   goldenGlove: PlayerStat[]       { playerId, name, team, saves, cleanSheets }
   youngPlayer: PlayerStat[]       { playerId, name, team, dob, goals, assists }
   mostCards: TeamStat[]           { teamId, name, yellowCards, redCards }
-  mostGroupGoals: TeamStat[]      { teamId, name, goalsScored }
+  mostGroupGoals: TeamStat[]      { teamId, name, goalsScored }  // goals across the WHOLE tournament — key name predates the group→tournament rename; do NOT filter to group-stage matches
   cleanSheetGroup: GroupStat[]    { group, cleanSheets }
 ```
 
@@ -285,7 +285,7 @@ goldenBoot       → liveData/props.goldenBoot       (player pick)
 goldenGlove      → liveData/props.goldenGlove       (player pick)
 youngPlayer      → liveData/props.youngPlayer       (player pick)
 mostCards        → liveData/props.mostCards         (team pick)
-mostGroupGoals   → liveData/props.mostGroupGoals    (team pick)
+mostGroupGoals   → liveData/props.mostGroupGoals    (team pick — "Most Goals in Tournament"; counts all matches, not just group stage)
 cleanSheetGroup  → liveData/props.cleanSheetGroup   (group pick)
 ```
 
