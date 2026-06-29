@@ -5,7 +5,9 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { TEAM_BY_ID } from '../data.js'
-import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
+import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, groupsQueryOptions, matchesQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
+import { useScoring } from '../composables/useScoring.js'
+import { maxPossibleTotal, decidedKnockoutSlots, isWildcardSetFinal } from '../lib/potential.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
@@ -23,6 +25,37 @@ const picksListQuery = useQuery(picksListQueryOptions())
 const submission = computed(() => pickQuery.data.value ?? null)
 const scores = computed(() => scoresQuery.data.value ?? [])
 const submitters = computed(() => picksListQuery.data.value ?? [])
+
+// ── Potential ("max possible finish") ──────────────────────────────────
+// The ceiling each pick can still reach: decided picks stay at their actual
+// value, everything still undecided is assumed to hit. Computed client-side
+// from data already cached (picks + standings + results + config) — purely
+// display-derived, never persisted (see lib/potential.js).
+const { scoring } = useScoring()
+const groupsQuery = useQuery(groupsQueryOptions())
+const matchesQuery = useQuery(matchesQueryOptions())
+
+const decidedSlots = computed(() => decidedKnockoutSlots(matchesQuery.data.value ?? []))
+const wildcardsFinal = computed(() => isWildcardSetFinal(groupsQuery.data.value ?? {}))
+const pickByUid = computed(() => Object.fromEntries((picksListQuery.data.value ?? []).map(p => [p.id, p])))
+const scoreByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, s])))
+
+function potentialFor(uid) {
+  const pick = pickByUid.value[uid] ?? (uid === user.value?.uid ? submission.value : null)
+  if (!pick) return null
+  const s = scoreByUid.value[uid] ?? {}
+  return maxPossibleTotal(pick, {
+    total: s.total ?? 0,
+    breakdown: s.breakdown ?? {},
+    scoring: scoring.value,
+    groupsByLetter: groupsQuery.data.value ?? {},
+    decidedSlots: decidedSlots.value,
+    wildcardsFinal: wildcardsFinal.value,
+  })
+}
+
+const myPotential = computed(() => potentialFor(user.value?.uid))
+const potentialByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, potentialFor(s.id)])))
 
 // Only resolve names for uids that actually appear on this page — picks-list
 // submitters plus anyone with a score — instead of pulling the whole users
@@ -170,6 +203,7 @@ function resolveTeamFlag(teamId) {
             <div>
               <div class="text-3xl font-black text-white">0 <span class="text-lg text-zinc-400 font-normal">pts</span></div>
               <div class="text-xs text-zinc-400 mt-1">Scoring begins once the tournament starts</div>
+              <div v-if="myPotential != null" class="text-xs font-bold text-amber-400 mt-1.5">Up to {{ myPotential }} pts possible</div>
             </div>
             <div class="text-4xl select-none">🏆</div>
           </div>
@@ -177,14 +211,18 @@ function resolveTeamFlag(teamId) {
 
         <!-- Scores live -->
         <div v-else class="bg-court-800 border border-court-700 rounded-2xl p-5">
-          <div class="flex items-center gap-4">
-            <div v-if="myRank" class="bg-court-700/70 rounded-xl px-4 py-2 text-center min-w-[64px]">
+          <div class="flex items-center gap-3">
+            <div v-if="myRank" class="bg-court-700/70 rounded-xl px-4 py-2 text-center min-w-[60px]">
               <div class="text-2xl font-black text-white">#{{ myRank }}</div>
               <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Rank</div>
             </div>
-            <div v-if="myScore" class="bg-court-700/70 rounded-xl px-4 py-2 text-center min-w-[64px]">
+            <div v-if="myScore" class="bg-court-700/70 rounded-xl px-4 py-2 text-center min-w-[60px]">
               <div class="text-2xl font-black text-amber-400">{{ myScore.total }}</div>
               <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Points</div>
+            </div>
+            <div v-if="myPotential != null" class="bg-court-700/40 rounded-xl px-4 py-2 text-center min-w-[60px] border border-amber-400/20">
+              <div class="text-2xl font-black text-amber-400/70">{{ myPotential }}</div>
+              <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Max</div>
             </div>
           </div>
         </div>
@@ -275,11 +313,14 @@ function resolveTeamFlag(teamId) {
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.wildcards ?? '—' }}</div>
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.knockout ? Object.values(s.breakdown.knockout).flatMap((slots) => Object.values(slots)).reduce((sum, v) => sum + v, 0) : '—' }}</div>
 
-            <!-- Total -->
-            <div
-              class="text-sm text-right font-black"
-              :class="i === 0 ? 'text-amber-400' : 'text-white'"
-            >{{ s.total }}</div>
+            <!-- Total (+ max possible) -->
+            <div class="text-right">
+              <div
+                class="text-sm font-black"
+                :class="i === 0 ? 'text-amber-400' : 'text-white'"
+              >{{ s.total }}</div>
+              <div v-if="potentialByUid[s.id] != null" class="text-[9px] font-mono text-amber-400/50 leading-tight">max {{ potentialByUid[s.id] }}</div>
+            </div>
           </div>
         </div>
       </section>
