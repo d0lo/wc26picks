@@ -48,12 +48,31 @@ export function advancingThirdPlaceLetters(groupsByLetter) {
   return new Set(rankThirdPlaceTeams(groupsByLetter).slice(0, ADVANCING_THIRD_PLACE_COUNT).map((t) => t.letter))
 }
 
-// pickedLetters: groups the user picked as "3rd place advances" (wildcards).
-// advancing: a Set of advancing letters, as returned by advancingThirdPlaceLetters.
-export function creditWildcardPicks(pickedLetters, advancing, scoring) {
+// A wildcard pick names a group whose 3rd-place team the user expects to
+// advance. It only counts when BOTH hold:
+//   1. the team the user predicted to finish 3rd in that group
+//      (pick.groups[letter][2]) is the team that actually finished 3rd, and
+//   2. that 3rd-place team is in the advancing set.
+// Getting the group right but the team wrong — e.g. the user's predicted
+// 3rd-place team finished 1st/2nd ("made it out of the group") and a
+// different team took the advancing 3rd spot — earns nothing. The picked team
+// must be correctly placed into 3rd, not merely advance by any route.
+// groupsByLetter: { [letter]: standings[] } actual standings (each entry has
+// `.team.id`), as written to groups/{letter}.entries.
+export function isWildcardCorrect(pick, groupsByLetter, advancing, letter) {
+  if (!advancing.has(letter)) return false
+  const predictedThird = pick?.groups?.[letter]?.[2]
+  const actualThird = groupsByLetter?.[letter]?.[2]?.team?.id
+  return Boolean(predictedThird) && predictedThird === actualThird
+}
+
+// Credits the configured per-pick points for each of the user's wildcard
+// picks that is correct per isWildcardCorrect.
+export function creditWildcardPicks(pick, groupsByLetter, advancing, scoring) {
+  const pickedLetters = pick?.wildcards
   if (!Array.isArray(pickedLetters) || pickedLetters.length === 0) return 0
   const perPick = Number(scoring?.wildcard ?? 0)
-  return pickedLetters.filter((letter) => advancing.has(letter)).length * perPick
+  return pickedLetters.filter((letter) => isWildcardCorrect(pick, groupsByLetter, advancing, letter)).length * perPick
 }
 
 // Sums a breakdown.groups map ({ [letter]: points }) for the leaderboard
@@ -78,7 +97,7 @@ export function scorePick(pick, groupsByLetter, advancing, scoring) {
     if (!standings?.length) continue
     groups[letter] = scoreGroupPrediction(pick?.groups?.[letter], standings, scoring).points
   }
-  const wildcards = creditWildcardPicks(pick?.wildcards, advancing, scoring)
+  const wildcards = creditWildcardPicks(pick, groupsByLetter, advancing, scoring)
   return { groups, wildcards }
 }
 
