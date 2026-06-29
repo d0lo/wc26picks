@@ -19,7 +19,8 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 //   - inner flex track bound to `trackRef` (gets `trackStyle` transform)
 //   - each round column carries `data-round-col="<index>"`
 //   - one match row carries `data-row-probe`
-export function useBracketFocus(rounds, roundSize) {
+export function useBracketFocus(rounds, roundSize, options = {}) {
+  const { wholePageSwipe = false } = options
   const scrollRef = ref(null)
   const trackRef = ref(null)
   const index = ref(0)
@@ -110,38 +111,86 @@ export function useBracketFocus(rounds, roundSize) {
   let mql
   function syncViewport() {
     isMobile.value = !!mql?.matches
+    // Whole-page swipe binds to window only on mobile; re-evaluate the binding
+    // target whenever the viewport crosses the breakpoint so desktop never has
+    // document-level listeners hijacking pointer events.
+    rebindGesture()
     measure()
   }
 
-  function attach(el) {
-    if (!el) return
-    el.addEventListener('pointerdown', onPointerDown, { passive: true })
-    el.addEventListener('pointermove', onPointerMove, { passive: true })
-    el.addEventListener('pointerup', endDrag, { passive: true })
-    el.addEventListener('pointercancel', endDrag, { passive: true })
+  function addGestureListeners(target) {
+    if (!target) return
+    target.addEventListener('pointerdown', onPointerDown, { passive: true })
+    target.addEventListener('pointermove', onPointerMove, { passive: true })
+    target.addEventListener('pointerup', endDrag, { passive: true })
+    target.addEventListener('pointercancel', endDrag, { passive: true })
   }
-  function detach(el) {
-    if (!el) return
-    el.removeEventListener('pointerdown', onPointerDown)
-    el.removeEventListener('pointermove', onPointerMove)
-    el.removeEventListener('pointerup', endDrag)
-    el.removeEventListener('pointercancel', endDrag)
+  function removeGestureListeners(target) {
+    if (!target) return
+    target.removeEventListener('pointerdown', onPointerDown)
+    target.removeEventListener('pointermove', onPointerMove)
+    target.removeEventListener('pointerup', endDrag)
+    target.removeEventListener('pointercancel', endDrag)
+  }
+
+  // The element/target the gesture listeners are currently bound to, so we can
+  // detach exactly what we attached (avoids duplicate or leaked listeners).
+  let boundTarget = null
+
+  // Pick the gesture target: when `wholePageSwipe` is on AND we're on mobile,
+  // listen at the document (window) level so a swipe can START anywhere on the
+  // page and still page the rounds. Otherwise stay element-scoped on scrollRef
+  // (default — used on the leaderboard/live so it can't hijack page gestures).
+  function desiredTarget() {
+    if (wholePageSwipe && isMobile.value) return window
+    return scrollRef.value
+  }
+  function rebindGesture() {
+    const next = desiredTarget()
+    if (next === boundTarget) return
+    removeGestureListeners(boundTarget)
+    boundTarget = next
+    addGestureListeners(boundTarget)
   }
 
   // Bind to scrollRef whenever the element appears/changes — not just at mount.
   // The bracket lives behind a loading spinner (v-if), so at onMounted the
   // element often doesn't exist yet; binding in onMounted would silently no-op
   // and the pager would never work until a cached reload.
-  watch(scrollRef, async (el, prev) => {
-    detach(prev)
-    attach(el)
-    if (!el) return
+  watch(scrollRef, async () => {
+    // rebindGesture() reads scrollRef.value, so this picks up the new element
+    // (in element-scoped mode) or no-ops (in window mode — target unchanged).
+    rebindGesture()
+    if (!scrollRef.value) return
     // Defer a tick so column/track layout is settled before measuring offsets,
     // and re-sync the viewport (isMobile + height + measure) in case the
     // element appeared after onMounted or across a breakpoint change.
     await nextTick()
     syncViewport()
   }, { immediate: true })
+
+  // ── Reconcile vertical scroll when the focused round changes (change 8) ─────
+  // Each round has a very different height (r32 = 16 rows, final = 1), and the
+  // container collapses to the focused round's height. Swiping from a tall round
+  // (scrolled far down) to a short one leaves window.scrollY parked below the
+  // now-shorter bracket, in blank space.
+  //
+  // We can't rely on document.scrollHeight at nextTick: the height transition is
+  // animated over 300ms, so the DOM hasn't shrunk yet. Instead we compute the
+  // bracket's final bottom directly from the *target* height we already know
+  // (heightFor(index)) plus the container's top offset in the page, and clamp
+  // scrollY so that bottom can't sit above the viewport bottom. Inert on desktop
+  // (pager pinned to Round of 32, height is auto).
+  watch(index, async () => {
+    if (!isMobile.value) return
+    await nextTick()
+    const el = scrollRef.value
+    if (!el) return
+    const topInPage = window.scrollY + el.getBoundingClientRect().top
+    const bracketBottom = topInPage + heightFor(index.value)
+    const maxScroll = Math.max(0, bracketBottom - window.innerHeight)
+    if (window.scrollY > maxScroll) window.scrollTo({ top: maxScroll, behavior: 'auto' })
+  })
 
   onMounted(() => {
     mql = window.matchMedia('(max-width: 639.98px)')
@@ -151,7 +200,8 @@ export function useBracketFocus(rounds, roundSize) {
   })
 
   onBeforeUnmount(() => {
-    detach(scrollRef.value)
+    removeGestureListeners(boundTarget)
+    boundTarget = null
     window.removeEventListener('resize', syncViewport)
     mql?.removeEventListener('change', syncViewport)
   })

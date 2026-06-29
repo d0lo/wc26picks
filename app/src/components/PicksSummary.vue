@@ -18,6 +18,11 @@ const componentProps = defineProps({
   knockout: Object,  // { r32:[16], r16:[8], qf:[4], sf:[2], final:[1] }
   props: Object,     // { goldenBoot: uuid, ... }
   uid: String,       // whose pick this is — used to fetch their scores/{uid}
+  // Section gates — default true so the viewer's OWN picks (LeaderboardView
+  // "My Picks") stay fully visible. PicksModal passes the lock-state computeds
+  // to hide another player's picks until the relevant lock has passed.
+  showGroupsProps: { type: Boolean, default: true }, // gates Group Standings, wildcards, props
+  showBracket: { type: Boolean, default: true },     // gates Knockout Bracket
 })
 
 const PLAYER_BY_ID = {}
@@ -115,8 +120,16 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
 <template>
   <div class="space-y-3">
 
+    <!-- Group & prop picks hidden until picks lock (only when gated) -->
+    <div
+      v-if="!showGroupsProps"
+      class="bg-court-800 border border-court-700 rounded-2xl p-4 text-center text-zinc-400 text-sm"
+    >
+      🔒 Group & prop picks are hidden until picks lock.
+    </div>
+
     <!-- Group Standings — single card, 2-col grid -->
-    <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
+    <div v-if="showGroupsProps" class="bg-court-800 border border-court-700 rounded-2xl p-4">
       <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-4">Group Standings</div>
       <div class="grid grid-cols-2 gap-x-5 gap-y-4">
         <div v-for="g in GROUPS" :key="g" :ref="el => { if (el) groupCardRefs[g] = el }">
@@ -150,7 +163,7 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
     </div>
 
     <!-- Best 3rd-Place Teams -->
-    <section v-if="wildcards?.length" ref="wildcardsSectionRef">
+    <section v-if="showGroupsProps && wildcards?.length" ref="wildcardsSectionRef">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Best 3rd-Place Teams</h2>
         <span class="text-[10px] font-mono tabular-nums" :class="wildcardPointsEarned === null ? 'text-zinc-500' : 'text-zinc-400'">
@@ -174,14 +187,23 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
       </div>
     </section>
 
+    <!-- Bracket hidden until the bracket locks (only when gated and there's
+         bracket data that would otherwise render) -->
+    <div
+      v-if="!showBracket && knockout"
+      class="bg-court-800 border border-court-700 rounded-2xl p-4 text-center text-zinc-400 text-sm"
+    >
+      🔒 Bracket is hidden until the bracket locks.
+    </div>
+
     <!-- Knockout Bracket -->
-    <section v-if="knockout">
+    <section v-if="showBracket && knockout">
       <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Knockout Bracket</h2>
       <KnockoutBracket :matches="matches" :events="liveEvents" :picks="knockout" :breakdown="knockoutBreakdown" compact />
     </section>
 
     <!-- Props — individual cards, grouped by category -->
-    <template v-if="props">
+    <template v-if="showGroupsProps && props">
       <section v-for="cat in propsByCategory" :key="cat.key">
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">{{ cat.label }}</h2>
         <div class="space-y-2">

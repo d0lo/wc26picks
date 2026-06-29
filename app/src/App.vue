@@ -7,6 +7,7 @@ import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
 import { configQueryOptions, pickQueryOptions, userQueryOptions, matchesQueryOptions, queryKeys } from './queries.js'
 import { isBracketPickComplete } from './bracket.js'
+import { TEAM_BY_ID } from './data.js'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
 import ProfileModal from './components/ProfileModal.vue'
@@ -100,6 +101,12 @@ const debugInfo = computed(() => {
   }
 })
 const knockoutComplete = computed(() => !!pickQuery.data.value?.knockout && isBracketPickComplete(pickQuery.data.value.knockout))
+
+// Champion's flag emoji for the header, once a champion has been picked.
+const championFlag = computed(() => {
+  const champId = pickQuery.data.value?.knockout?.final?.[0]
+  return TEAM_BY_ID[champId]?.flag ?? null
+})
 const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickQuery.isFetched.value && !knockoutComplete.value)
 
 provide('user', user)
@@ -308,7 +315,7 @@ function onNameSaved() {
       <!-- Persistent header + knockout banner, pinned together so the banner
            stays stuck right under the header as the page scrolls. -->
       <div v-if="showChrome" class="sticky top-0 z-50">
-        <AppHeader :user="user" @profile="openProfile(false)" />
+        <AppHeader :user="user" :champion-flag="championFlag" @profile="openProfile(false)" />
 
         <!-- Knockout-picks reminder banner — visible for the whole window
              between group-stage completion and Round of 32 kickoff, for
