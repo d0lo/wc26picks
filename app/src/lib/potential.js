@@ -65,18 +65,40 @@ const GROUP_TEAMS = 4
 const GROUP_GAMES_EACH = 3
 const GROUP_MATCHES = 6
 
+// Whether the schedule has reached the knockout stage. Every group match is
+// played before the first knockout match, so this proves the entire group stage
+// is over — the one signal a straggler group's stale standings can't defeat.
+// Detected from the scoreboard the leaderboard already subscribes to: an event
+// tagged with a knockout round, or a slate of events none of which is a group
+// match (knockout events carry no "Group X"). Falls back to any recorded
+// knockout match. Empty/rest-day slates don't trigger it, so mid-group-stage
+// the per-group checks still apply.
+export function knockoutStageReached(scoreboardEvents, matches) {
+  const evs = scoreboardEvents ?? []
+  if (evs.some((e) => e.round)) return true
+  if (evs.length > 0 && !evs.some((e) => e.group)) return true
+  return (matches ?? []).some((m) => m.round && ROUNDS.includes(m.round))
+}
+
 // Group letters whose round-robin has finished, derived client-side as a
 // fallback for a lagging/unwritten groups/{letter}.complete flag. Without this
 // the ceiling treats a finished-but-unflagged group as still open: each pick's
 // actual group score is swapped back out for the universal group max, so every
 // pick's ceiling collapses to the same constant — exactly the "everyone has the
-// same max" symptom. Two independent signals, either is sufficient:
+// same max" symptom. Signals, any of which is sufficient:
+//   0. the schedule has reached the knockout stage → every group is final
+//      (knockoutStageReached), which is what rescues a straggler group whose
+//      final matchday wasn't recorded, so its own standings still read 2 games;
 //   1. 6 finished group matches recorded for the letter (our own match records);
 //   2. the group's standings show every team has played all 3 of its games.
 // Signal 2 matters because group-stage match docs written before groupLetter
 // was tracked carry no letter (see scripts/backfill-match-group-letters.mjs),
 // which makes signal 1 silently find nothing once the group stage is over.
-export function finalizedGroupLetters(matches, groupsByLetter) {
+export function finalizedGroupLetters(matches, groupsByLetter, scoreboardEvents) {
+  // Once the knockout stage is reached the whole group stage is final, even if
+  // an individual group's standings doc is a matchday stale.
+  if (knockoutStageReached(scoreboardEvents, matches)) return new Set(GROUPS)
+
   const set = new Set()
 
   const counts = {}

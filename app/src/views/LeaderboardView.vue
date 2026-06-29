@@ -35,13 +35,24 @@ const submitters = computed(() => picksListQuery.data.value ?? [])
 const { scoring } = useScoring()
 const groupsQuery = useQuery(groupsQueryOptions())
 const matchesQuery = useQuery(matchesQueryOptions())
+// liveData/scoreboard listener is shared with LiveView via queries.js so the
+// two views don't each open their own onSnapshot on the same document. Declared
+// here (ahead of its live-scores watcher below) so the potential math can read
+// the schedule: once the scoreboard has advanced to the knockout stage, the
+// group stage is provably over.
+const scoreboardQuery = useQuery(scoreboardQueryOptions())
 
 const decidedSlots = computed(() => decidedKnockoutSlots(matchesQuery.data.value ?? []))
 const eliminatedTeams = computed(() => knockoutEliminatedTeams(matchesQuery.data.value ?? []))
-// Group letters whose round-robin is finished per our own match records — the
-// fallback that locks a finished group's score into each pick's `total` even
-// when the persisted groups/{letter}.complete flag hasn't been written yet.
-const finalizedGroups = computed(() => finalizedGroupLetters(matchesQuery.data.value ?? [], groupsQuery.data.value ?? {}))
+// Group letters whose round-robin is finished. Derived from match records and
+// standings, but short-circuited to all 12 once the schedule reaches the
+// knockout stage — that's the signal that survives a straggler group whose
+// final matchday wasn't recorded (its own standings still read as unfinished).
+const finalizedGroups = computed(() => finalizedGroupLetters(
+  matchesQuery.data.value ?? [],
+  groupsQuery.data.value ?? {},
+  scoreboardQuery.data.value?.events ?? [],
+))
 const wildcardsFinal = computed(() => isWildcardSetFinal(groupsQuery.data.value ?? {}, finalizedGroups.value))
 const pickByUid = computed(() => Object.fromEntries((picksListQuery.data.value ?? []).map(p => [p.id, p])))
 const scoreByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, s])))
@@ -108,9 +119,6 @@ function stopLiveScores() {
   scoresUnsub = null
 }
 
-// liveData/scoreboard listener is shared with LiveView via queries.js so the
-// two views don't each open their own onSnapshot on the same document.
-const scoreboardQuery = useQuery(scoreboardQueryOptions())
 watch(() => scoreboardQuery.data.value?.state, (state) => {
   if (state === 'polling') startLiveScores()
   else stopLiveScores()
