@@ -282,6 +282,21 @@ function arraysEqual(a, b) {
   return a.length === b.length && a.every((v, i) => v === b[i])
 }
 
+// Winners of every finished knockout match, shaped { round: { slotIdx: winnerId } }
+// for scoreKnockout. Shared by the config-change and pick-change full rescores,
+// both of which re-derive a pick's whole knockout breakdown from scratch.
+function collectKnockoutWinners(matchesDocs) {
+  const koWinners = {}
+  for (const d of matchesDocs) {
+    const m = d.data()
+    if (m.round && m.slot && ROUNDS.includes(m.round) && m.status?.state === 'post') {
+      const w = determineKnockoutWinner(m.competitors)
+      if (w) (koWinners[m.round] ??= {})[String(m.slot - 1)] = w
+    }
+  }
+  return koWinners
+}
+
 function deepEqual(a, b) {
   if (a === b) return true
   if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false
@@ -317,15 +332,8 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
   const scoring = after.scoring ?? {}
 
   // Winners of every finished knockout match, so a knockout point-value change
-  // rescores the bracket too (not just groups/wildcards). { round: { slotIdx: winnerId } }.
-  const koWinners = {}
-  for (const d of matchesSnap.docs) {
-    const m = d.data()
-    if (m.round && m.slot && ROUNDS.includes(m.round) && m.status?.state === 'post') {
-      const w = determineKnockoutWinner(m.competitors)
-      if (w) (koWinners[m.round] ??= {})[String(m.slot - 1)] = w
-    }
-  }
+  // rescores the bracket too (not just groups/wildcards).
+  const koWinners = collectKnockoutWinners(matchesSnap.docs)
 
   await Promise.all(
     picksSnap.docs.map((picksDoc) => {
@@ -335,4 +343,44 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
       return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ groups, wildcards, props: existing.props ?? 0, knockout }))
     })
   )
+})
+
+// Fires on every picks/{uid} write. A user editing their own picks — group
+// order, wildcard set, or knockout bracket — must have their score recomputed
+// right away. Every other trigger above only rescores in response to *results*
+// (a match finishing, standings shifting, point values being retuned); none of
+// them react to the picks themselves changing. Without this, a bracket edited
+// after its matches had already finished would keep the score it earned under
+// the *old* picks indefinitely. Recomputes the same full breakdown a config
+// change does (scorePick + scoreKnockout) — just scoped to this one pick rather
+// than all of them. Reads results/config and writes only scores/{uid}, so it
+// can never re-trigger itself.
+export const onPicksWrite = onDocumentWritten('picks/{uid}', async (event) => {
+  const before = event.data?.before?.data()
+  const after = event.data?.after?.data()
+  if (!after) return // pick deleted — leave the existing score doc untouched
+
+  // Only the scoring-relevant fields matter; a touch to an unrelated field
+  // (e.g. submittedAt) shouldn't force a full rescore.
+  if (
+    before &&
+    deepEqual(after.groups, before.groups) &&
+    deepEqual(after.wildcards, before.wildcards) &&
+    deepEqual(after.knockout, before.knockout)
+  ) return
+
+  const [groupsSnap, wildcardsSnap, matchesSnap, configSnap] = await Promise.all([
+    db.collection('groups').get(),
+    db.doc('liveData/wildcards').get(),
+    db.collection('matches').get(),
+    db.doc('config/public').get(),
+  ])
+  const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
+  const advancing = new Set(wildcardsSnap.data()?.advancingLetters ?? [])
+  const scoring = configSnap.data()?.scoring ?? {}
+  const koWinners = collectKnockoutWinners(matchesSnap.docs)
+
+  const { groups, wildcards } = scorePick(after, groupsByLetter, advancing, scoring)
+  const knockout = scoreKnockout(after.knockout, koWinners, scoring)
+  await applyBreakdownPatch(db, event.params.uid, (existing) => ({ groups, wildcards, props: existing.props ?? 0, knockout }))
 })

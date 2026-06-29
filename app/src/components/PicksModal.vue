@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { pickQueryOptions } from '../queries.js'
 import { TEAM_BY_ID } from '../data.js'
@@ -11,6 +11,12 @@ const props = defineProps({
   name: String,
 })
 const emit = defineEmits(['close'])
+
+// Lock-state computeds provided at the app root (App.vue). Another player's
+// group/prop picks stay hidden until the group-stage lock passes, and their
+// bracket until the bracket lock passes.
+const picksLocked = inject('picksLocked')
+const knockoutLocked = inject('knockoutLocked')
 
 const pickQuery = useQuery(computed(() => pickQueryOptions(props.uid)))
 const data = computed(() => pickQuery.data.value ?? null)
@@ -198,7 +204,7 @@ function requestClose() {
       </div>
 
       <GroupOverlayPanel
-        v-if="data"
+        v-if="data && picksLocked"
         :groups="data.groups"
         :wildcards="data.wildcards"
         :resolve-flag="resolveTeamFlag"
@@ -233,6 +239,8 @@ function requestClose() {
           :wildcards="data.wildcards"
           :knockout="data.knockout"
           :props="data.props"
+          :show-groups-props="picksLocked"
+          :show-bracket="knockoutLocked"
         />
       </div>
 
