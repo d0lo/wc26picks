@@ -54,7 +54,9 @@ export function mergeFetchedKickoffs(kickoffs, events) {
     const id = String(e.id)
     const prev = byId.get(id)
     if (prev) prev.state = moreProgressed(prev.state, e.status?.state)
-    else byId.set(id, { eventId: id, date: e.date, state: e.status?.state ?? 'pre' })
+    else if (e.date) byId.set(id, { eventId: id, date: e.date, state: e.status?.state ?? 'pre' })
+    // A dateless event can't drive a timed wake (new Date(undefined) → NaN);
+    // if it's live, the "polling" state already keeps the chain fetching.
   }
   return [...byId.values()]
 }

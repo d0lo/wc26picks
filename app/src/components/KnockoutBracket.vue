@@ -215,7 +215,7 @@ function rowClass(slotInfo, teamId) {
                 :class="slotState(slotInfo) === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
               >{{ slotClock(slotInfo) ?? '' }}</span>
               <span v-if="pointsFor(slotInfo) !== null" class="text-[9px] font-mono tabular-nums text-zinc-400">
-                {{ pointsFor(slotInfo) }}/{{ ROUND_POINTS[slotInfo.round] ?? '–' }} pts
+                {{ pointsFor(slotInfo) }}/{{ knockoutPoints[slotInfo.round] ?? '–' }} pts
               </span>
             </div>
           </div>

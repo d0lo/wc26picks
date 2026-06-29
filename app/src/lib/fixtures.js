@@ -151,7 +151,7 @@ export function buildFixtures(matches = [], scoreboardEvents = [], scheduleEvent
     // from completed feeder results, fill them in so the row isn't "TBD vs TBD"
     // once the matchup is actually known.
     const stat = staticById.get(sk.id)
-    if (stat && !hasTeams(sk) && hasTeams(stat)) sk.competitors = stat.competitors
+    if (stat && !hasTeams(sk) && hasTeams(stat)) sk.competitors = [...stat.competitors]
     skById.set(sk.id, sk)
   }
   for (const [id, s] of staticById) if (!skById.has(id)) skById.set(id, s)

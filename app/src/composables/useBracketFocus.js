@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 
 // Mobile-only "ESPN-style" bracket pager.
 //
@@ -132,10 +132,15 @@ export function useBracketFocus(rounds, roundSize) {
   // The bracket lives behind a loading spinner (v-if), so at onMounted the
   // element often doesn't exist yet; binding in onMounted would silently no-op
   // and the pager would never work until a cached reload.
-  watch(scrollRef, (el, prev) => {
+  watch(scrollRef, async (el, prev) => {
     detach(prev)
     attach(el)
-    if (el) measure()
+    if (!el) return
+    // Defer a tick so column/track layout is settled before measuring offsets,
+    // and re-sync the viewport (isMobile + height + measure) in case the
+    // element appeared after onMounted or across a breakpoint change.
+    await nextTick()
+    syncViewport()
   }, { immediate: true })
 
   onMounted(() => {
