@@ -7,7 +7,7 @@ import { db } from '../firebase.js'
 import { TEAM_BY_ID } from '../data.js'
 import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, groupsQueryOptions, matchesQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
 import { useScoring } from '../composables/useScoring.js'
-import { maxPossibleTotal, decidedKnockoutSlots, knockoutEliminatedTeams, isWildcardSetFinal } from '../lib/potential.js'
+import { maxPossibleTotal, decidedKnockoutSlots, knockoutEliminatedTeams, isWildcardSetFinal, finalizedGroupLetters } from '../lib/potential.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
@@ -38,7 +38,12 @@ const matchesQuery = useQuery(matchesQueryOptions())
 
 const decidedSlots = computed(() => decidedKnockoutSlots(matchesQuery.data.value ?? []))
 const eliminatedTeams = computed(() => knockoutEliminatedTeams(matchesQuery.data.value ?? []))
-const wildcardsFinal = computed(() => isWildcardSetFinal(groupsQuery.data.value ?? {}))
+// Group letters whose round-robin is finished. Once the whole group stage is
+// over (same signal App.vue gates the knockout window on), all 12 are final —
+// which survives a straggler group whose standings doc lags its already-"post"
+// matches; before that, each individually-finished group locks on its own.
+const finalizedGroups = computed(() => finalizedGroupLetters(matchesQuery.data.value ?? [], groupsQuery.data.value ?? {}))
+const wildcardsFinal = computed(() => isWildcardSetFinal(groupsQuery.data.value ?? {}, finalizedGroups.value))
 const pickByUid = computed(() => Object.fromEntries((picksListQuery.data.value ?? []).map(p => [p.id, p])))
 const scoreByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, s])))
 
@@ -51,6 +56,7 @@ function potentialFor(uid) {
     breakdown: s.breakdown ?? {},
     scoring: scoring.value,
     groupsByLetter: groupsQuery.data.value ?? {},
+    finalizedGroups: finalizedGroups.value,
     decidedSlots: decidedSlots.value,
     eliminatedTeams: eliminatedTeams.value,
     wildcardsFinal: wildcardsFinal.value,
