@@ -37,6 +37,10 @@ const liveByKey = computed(() => {
 const DISPLAY_ROUNDS = [...ROUNDS, 'third']
 const { scrollRef, trackRef, focusedIdx, containerHeight, trackStyle } = useBracketFocus(DISPLAY_ROUNDS, ROUND_SIZE)
 
+// The bracket (knockout) rounds — used to tell a knockout match apart from a
+// group-stage fixture in the shared `matches` collection.
+const KNOCKOUT_ROUNDS = new Set([...ROUNDS, 'third'])
+
 function teamLabel(teamId) {
   return teamId ? TEAM_BY_ID[teamId] ?? { name: teamId, flag: '🏳️' } : null
 }
@@ -103,12 +107,16 @@ const bracket = computed(() => {
   return result
 })
 
-// Teams officially out of the tournament — they lost a real knockout match.
+// Teams officially out of the tournament — they lost a real KNOCKOUT match.
 // This is the live-results source of truth for striking a team out wherever it
-// appears in the bracket, independent of anyone's picks.
+// appears in the bracket, independent of anyone's picks. Group-stage matches
+// are excluded: losing a group game doesn't eliminate a team (it can still
+// advance as a runner-up or best third), so only losses in a bracket round
+// count — `matches` holds group fixtures too, keyed without a knockout round.
 const eliminatedTeamIds = computed(() => {
   const set = new Set()
   for (const m of props.matches ?? []) {
+    if (!KNOCKOUT_ROUNDS.has(m.round)) continue
     const loser = matchLoser(m)
     if (loser) set.add(loser)
   }
