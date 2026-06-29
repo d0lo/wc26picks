@@ -86,9 +86,19 @@ function groupPointsEarned(letter) {
   return scoreQuery.data.value?.breakdown?.groups?.[letter] ?? null
 }
 
+// A wildcard pick is only correct when the team the user predicted to finish
+// 3rd in that group is the team that actually finished 3rd AND that 3rd-place
+// team is in the advancing set. A predicted team that advanced as 1st/2nd
+// (i.e. "made it out of the group") while a different team took the advancing
+// 3rd spot is incorrect — the team must be correctly placed into 3rd. Mirrors
+// isWildcardCorrect in firebase/functions/lib/scoring.js.
 function wildcardStatus(letter) {
   if (wildcardsQuery.data.value == null) return 'pending'
-  return advancingLetters.value.has(letter) ? 'correct' : 'incorrect'
+  if (!advancingLetters.value.has(letter)) return 'incorrect'
+  const order = actualOrder(letter)
+  if (!order) return 'pending'
+  const predictedThird = componentProps.groups?.[letter]?.[2]
+  return predictedThird && order[2] === predictedThird ? 'correct' : 'incorrect'
 }
 
 function wildcardBorderClass(letter) {
