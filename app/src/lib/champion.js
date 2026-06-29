@@ -31,8 +31,9 @@ function championTopScorer(championId, matches) {
 }
 
 // The champion's view of a single fixture: which side they are, the opponent,
-// and (once final) the W/L/D outcome. fx is a lib/fixtures.js fixture.
-export function championSide(fx, championId) {
+// and (once final) the W/L/D outcome. fx is a lib/fixtures.js fixture. Internal
+// to this module — tests exercise it through championStatus().
+function championSide(fx, championId) {
   if (!fx) return null
   const champ = fx.teams.find((t) => t.teamId === championId) ?? null
   const opp = fx.teams.find((t) => t.teamId !== championId) ?? null

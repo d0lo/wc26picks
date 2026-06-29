@@ -10,7 +10,7 @@
 //     Cloud Function — teams/date/venue, no scores.
 //   - static knockout schedule + bracket derivation: a client-side FALLBACK for
 //     future knockout games when the schedule doc isn't available yet.
-import { TEAM_BY_ID } from '../data.js'
+import { TEAM_BY_ID, teamView as baseTeamView } from '../data.js'
 import {
   ROUND_LABELS, R32_SLOTS, PREV_ROUND, deriveRoundMatchups,
   EVENT_SLOT_MAP, MATCH_SCHEDULE, SLOT_MATCH_NUM, matchWinner, matchLoser,
@@ -22,14 +22,13 @@ for (const [id, { round, slot }] of Object.entries(EVENT_SLOT_MAP)) {
   SLOT_EVENT[`${round}_${slot}`] = id
 }
 
+// The shared teamView (data.js) gives { teamId, name, flag } with the neutral
+// '🏳️'/'TBD' fallbacks; this richer variant layers on an unresolved-slot
+// fallback name and the per-fixture score. base.name is already 'TBD' when the
+// team is unknown, so it doubles as the final fallback after fallbackName.
 function teamView(teamId, fallbackName, score) {
-  const known = teamId ? TEAM_BY_ID[teamId] : null
-  return {
-    teamId: teamId ?? null,
-    flag: known?.flag ?? '🏳️',
-    name: known?.name ?? fallbackName ?? 'TBD',
-    score,
-  }
+  const base = baseTeamView(teamId)
+  return { ...base, name: TEAM_BY_ID[teamId]?.name ?? fallbackName ?? base.name, score }
 }
 
 function labelFor({ round, group }) {
