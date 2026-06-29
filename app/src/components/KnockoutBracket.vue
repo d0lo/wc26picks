@@ -63,32 +63,32 @@ function pickFor(round, slot) {
   return props.picks?.[round]?.[slot - 1] ?? null
 }
 
-// The team that advances out of a slot for the purpose of deriving the next
-// round's matchups: the real match winner once known, otherwise — when a
-// user's picks are supplied — the team they picked to win that slot. This is
-// what lets a graded bracket show the user's projected teams in later rounds
-// instead of "TBD" before those matches are played (the stadium view passes
-// no picks, so it still falls through to TBD until results come in).
+// The team a slot projects forward to the next round. When a user's picks are
+// supplied this is THEIR pick for the slot — the bracket is their *predicted*
+// bracket, with live reality layered on top via strikethrough (see rowClass),
+// NOT by swapping the real winner in for their pick. That's what keeps an
+// eliminated pick (say Argentina) visible — and struck out — in every later
+// round they predicted it to reach, instead of vanishing the moment a real
+// result comes in. The stadium view passes no picks, so it falls back to the
+// real winner and fills in as matches are decided (TBD until then).
 function advancingTeam(slotInfo) {
-  if (slotInfo.winner) return slotInfo.winner
-  return props.picks ? pickFor(slotInfo.round, slotInfo.slot) : null
+  if (props.picks) return pickFor(slotInfo.round, slotInfo.slot) ?? slotInfo.winner
+  return slotInfo.winner
 }
 
-// The team that drops out of a slot — the real loser once known, otherwise
-// the non-picked team of a projected matchup. Used to feed the 3rd-place
-// match (semifinal losers).
+// The team that doesn't advance from a slot (feeds the 3rd-place match from the
+// semis). Mirrors advancingTeam: with picks it's the non-advancing team of the
+// projected matchup; without, the real loser.
 function eliminatedTeam(slotInfo) {
-  if (slotInfo.loser) return slotInfo.loser
-  if (!props.picks) return null
-  const pick = pickFor(slotInfo.round, slotInfo.slot)
-  if (!pick) return null
-  return slotInfo.teams?.find((t) => t && t !== pick) ?? null
+  if (!props.picks) return slotInfo.loser
+  const adv = advancingTeam(slotInfo)
+  return slotInfo.teams?.find((t) => t && t !== adv) ?? null
 }
 
-// Each round's matchups are derived from the previous round's advancing
-// teams (real winners where known, the user's picks otherwise) rather than
-// waiting on that round's own ESPN event to go live — exactly mirroring how
-// PicksView's picker derives the user's own projected bracket.
+// Each round's matchups are derived from the previous round's advancing teams
+// (the user's picks where supplied, real winners otherwise) rather than waiting
+// on that round's own ESPN event to go live — exactly mirroring how PicksView's
+// picker derives the user's own projected bracket.
 const bracket = computed(() => {
   const result = { r32: R32_SLOTS.map((teams, i) => makeSlot('r32', i + 1, teams)) }
   for (const round of ['r16', 'qf', 'sf']) {
@@ -103,9 +103,9 @@ const bracket = computed(() => {
   return result
 })
 
-// Teams knocked out of the tournament — they lost an actual knockout match.
-// A team here that the user picked to advance is, by definition, a wrong pick
-// wherever it still appears in their projected bracket.
+// Teams officially out of the tournament — they lost a real knockout match.
+// This is the live-results source of truth for striking a team out wherever it
+// appears in the bracket, independent of anyone's picks.
 const eliminatedTeamIds = computed(() => {
   const set = new Set()
   for (const m of props.matches ?? []) {
@@ -129,24 +129,24 @@ function pointsFor(slotInfo) {
 
 function rowClass(slotInfo, teamId) {
   const isWinner = slotInfo.winner && teamId === slotInfo.winner
-  const isLoser = slotInfo.winner && teamId !== slotInfo.winner
   const isPick = props.picks && pickFor(slotInfo.round, slotInfo.slot) === teamId
   const isEliminated = teamId && eliminatedTeamIds.value.has(teamId)
   // The champion (final round) is shown in amber/yellow for consistency with the
   // picker, instead of the emerald used for every other correct knockout pick.
   const isFinal = slotInfo.round === 'final'
+  // Strikethrough follows LIVE REAL results, not pick correctness: a team that's
+  // officially out of the tournament (lost a real knockout match) is struck
+  // through red EVERYWHERE it still appears, whether or not the user picked it.
+  // The one exception is a slot the team actually WON — there it really did
+  // advance, so it keeps its winner styling (it's eliminated from a *later*
+  // round, not this one).
+  if (isEliminated && !isWinner) {
+    return isPick ? 'text-red-400 font-bold line-through' : 'text-red-400/70 line-through'
+  }
   if (isPick) {
     if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
-    // Wrong pick — red + strikethrough, no separate ✗ — but ONLY once the team
-    // has officially been eliminated (lost an actual knockout match). A team
-    // that's still alive yet "picked against" in a later round must not be
-    // struck: `isLoser` (this slot has some other winner) isn't enough, because
-    // the projection can show a still-alive picked team in a slot whose real
-    // match was between different teams.
-    if (isEliminated) return 'text-red-400 font-bold line-through'
     return 'text-white font-bold'
   }
-  if (isLoser) return 'text-zinc-500 opacity-50'
   if (isWinner) return 'text-zinc-300'
   return 'text-zinc-300'
 }
