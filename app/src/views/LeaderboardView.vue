@@ -7,7 +7,7 @@ import { db } from '../firebase.js'
 import { TEAM_BY_ID } from '../data.js'
 import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, groupsQueryOptions, matchesQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
 import { useScoring } from '../composables/useScoring.js'
-import { maxPossibleTotal, decidedKnockoutSlots, isWildcardSetFinal } from '../lib/potential.js'
+import { maxPossibleTotal, decidedKnockoutSlots, knockoutEliminatedTeams, isWildcardSetFinal } from '../lib/potential.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
@@ -36,6 +36,7 @@ const groupsQuery = useQuery(groupsQueryOptions())
 const matchesQuery = useQuery(matchesQueryOptions())
 
 const decidedSlots = computed(() => decidedKnockoutSlots(matchesQuery.data.value ?? []))
+const eliminatedTeams = computed(() => knockoutEliminatedTeams(matchesQuery.data.value ?? []))
 const wildcardsFinal = computed(() => isWildcardSetFinal(groupsQuery.data.value ?? {}))
 const pickByUid = computed(() => Object.fromEntries((picksListQuery.data.value ?? []).map(p => [p.id, p])))
 const scoreByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, s])))
@@ -50,6 +51,7 @@ function potentialFor(uid) {
     scoring: scoring.value,
     groupsByLetter: groupsQuery.data.value ?? {},
     decidedSlots: decidedSlots.value,
+    eliminatedTeams: eliminatedTeams.value,
     wildcardsFinal: wildcardsFinal.value,
   })
 }
