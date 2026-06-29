@@ -59,28 +59,61 @@ function slotScore(slotInfo, teamId) { return mergedScore(slotInfo.match, slotIn
 const configQuery = useQuery(configQueryOptions())
 const knockoutPoints = computed(() => ({ ...ROUND_POINTS, ...(configQuery.data.value?.scoring?.knockout ?? {}) }))
 
-// Each round's matchups are derived from the previous round's actual
-// winners (bracket.js's deriveRoundMatchups) rather than waiting on that
-// round's own ESPN event to go live — a later round's real team names are
-// knowable as soon as its two feeder matches finish, exactly mirroring how
+function pickFor(round, slot) {
+  return props.picks?.[round]?.[slot - 1] ?? null
+}
+
+// The team that advances out of a slot for the purpose of deriving the next
+// round's matchups: the real match winner once known, otherwise — when a
+// user's picks are supplied — the team they picked to win that slot. This is
+// what lets a graded bracket show the user's projected teams in later rounds
+// instead of "TBD" before those matches are played (the stadium view passes
+// no picks, so it still falls through to TBD until results come in).
+function advancingTeam(slotInfo) {
+  if (slotInfo.winner) return slotInfo.winner
+  return props.picks ? pickFor(slotInfo.round, slotInfo.slot) : null
+}
+
+// The team that drops out of a slot — the real loser once known, otherwise
+// the non-picked team of a projected matchup. Used to feed the 3rd-place
+// match (semifinal losers).
+function eliminatedTeam(slotInfo) {
+  if (slotInfo.loser) return slotInfo.loser
+  if (!props.picks) return null
+  const pick = pickFor(slotInfo.round, slotInfo.slot)
+  if (!pick) return null
+  return slotInfo.teams?.find((t) => t && t !== pick) ?? null
+}
+
+// Each round's matchups are derived from the previous round's advancing
+// teams (real winners where known, the user's picks otherwise) rather than
+// waiting on that round's own ESPN event to go live — exactly mirroring how
 // PicksView's picker derives the user's own projected bracket.
 const bracket = computed(() => {
   const result = { r32: R32_SLOTS.map((teams, i) => makeSlot('r32', i + 1, teams)) }
   for (const round of ['r16', 'qf', 'sf']) {
     const prevRound = PREV_ROUND[round]
-    const prevWinners = result[prevRound].map((s) => s.winner)
+    const prevWinners = result[prevRound].map((s) => advancingTeam(s))
     result[round] = deriveRoundMatchups(round, prevWinners).map((teams, i) => makeSlot(round, i + 1, teams))
   }
-  const sfWinners = result.sf.map((s) => s.winner)
-  const sfLosers = result.sf.map((s) => s.loser)
+  const sfWinners = result.sf.map((s) => advancingTeam(s))
+  const sfLosers = result.sf.map((s) => eliminatedTeam(s))
   result.final = [makeSlot('final', 1, sfWinners)]
   result.third = [makeSlot('third', 1, sfLosers)]
   return result
 })
 
-function pickFor(round, slot) {
-  return props.picks?.[round]?.[slot - 1] ?? null
-}
+// Teams knocked out of the tournament — they lost an actual knockout match.
+// A team here that the user picked to advance is, by definition, a wrong pick
+// wherever it still appears in their projected bracket.
+const eliminatedTeamIds = computed(() => {
+  const set = new Set()
+  for (const m of props.matches ?? []) {
+    const loser = matchLoser(m)
+    if (loser) set.add(loser)
+  }
+  return set
+})
 
 function pickStatus(slotInfo) {
   if (!props.picks) return null
@@ -98,12 +131,15 @@ function rowClass(slotInfo, teamId) {
   const isWinner = slotInfo.winner && teamId === slotInfo.winner
   const isLoser = slotInfo.winner && teamId !== slotInfo.winner
   const isPick = props.picks && pickFor(slotInfo.round, slotInfo.slot) === teamId
+  const isEliminated = teamId && eliminatedTeamIds.value.has(teamId)
   // The champion (final round) is shown in amber/yellow for consistency with the
   // picker, instead of the emerald used for every other correct knockout pick.
   const isFinal = slotInfo.round === 'final'
   if (isPick) {
     if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
-    if (isLoser) return 'text-red-400/70'
+    // Wrong pick — the team lost this slot, or has been knocked out elsewhere
+    // (so it can't win this one either): red + strikethrough, no separate ✗.
+    if (isLoser || isEliminated) return 'text-red-400 font-bold line-through'
     return 'text-white font-bold'
   }
   if (isLoser) return 'text-zinc-500 opacity-50'
@@ -152,7 +188,6 @@ function rowClass(slotInfo, teamId) {
                   :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
                 >{{ slotScore(slotInfo, teamId) ?? '' }}</span>
                 <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-[10px] shrink-0" :class="slotInfo.round === 'final' ? 'text-amber-400' : 'text-emerald-400'">✓</span>
-                <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
               </div>
 
               <div v-if="slotClock(slotInfo) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
@@ -209,7 +244,6 @@ function rowClass(slotInfo, teamId) {
                 :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
               >{{ slotScore(slotInfo, teamId) ?? '' }}</span>
               <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-emerald-400 text-[10px] shrink-0">✓</span>
-              <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
             </div>
 
             <div v-if="slotClock(slotInfo) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
