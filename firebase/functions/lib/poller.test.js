@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { moreProgressed, todaysKickoffs, shouldFetch, WAKE_WINDOW_MS } from './poller.js'
+import { moreProgressed, todaysKickoffs, shouldFetch, mergeFetchedKickoffs, WAKE_WINDOW_MS } from './poller.js'
 
 test('moreProgressed never regresses a known state', () => {
   assert.equal(moreProgressed('pre', 'in'), 'in')
@@ -42,6 +42,21 @@ test('shouldFetch ignores a game far past kickoff (assumed finished)', () => {
   const stale = [{ id: '9', date: '2026-06-28T01:00:00Z', status: { state: 'pre' } }]
   const now = Date.parse('2026-06-28T01:00:00Z') + WAKE_WINDOW_MS + 1
   assert.equal(shouldFetch(data, '20260628', now, todaysKickoffs(stale, data, '20260628')), false)
+})
+
+test('mergeFetchedKickoffs adds fetched events not in the schedule-derived ledger', () => {
+  const kickoffs = [{ eventId: '1', date: '2026-06-28T16:00:00Z', state: 'post' }]
+  // Event '2' is live in ESPN but absent from the ledger (schedule missing it).
+  const events = [{ id: '2', date: '2026-06-28T19:00:00Z', status: { state: 'in' } }]
+  const merged = mergeFetchedKickoffs(kickoffs, events)
+  assert.equal(merged.length, 2)
+  assert.equal(merged.find((k) => k.eventId === '2').state, 'in')
+})
+
+test('mergeFetchedKickoffs keeps a tracked game ESPN dropped, advancing state only forward', () => {
+  const kickoffs = [{ eventId: '1', date: '2026-06-28T16:00:00Z', state: 'post' }]
+  const merged = mergeFetchedKickoffs(kickoffs, []) // ESPN dropped event 1
+  assert.equal(merged.find((k) => k.eventId === '1').state, 'post') // sticky
 })
 
 test('shouldFetch always wakes on a new day and while polling', () => {

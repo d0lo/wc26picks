@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 
 // Mobile-only "ESPN-style" bracket pager.
 //
@@ -113,25 +113,40 @@ export function useBracketFocus(rounds, roundSize) {
     measure()
   }
 
-  onMounted(async () => {
-    await nextTick()
+  function attach(el) {
+    if (!el) return
+    el.addEventListener('pointerdown', onPointerDown, { passive: true })
+    el.addEventListener('pointermove', onPointerMove, { passive: true })
+    el.addEventListener('pointerup', endDrag, { passive: true })
+    el.addEventListener('pointercancel', endDrag, { passive: true })
+  }
+  function detach(el) {
+    if (!el) return
+    el.removeEventListener('pointerdown', onPointerDown)
+    el.removeEventListener('pointermove', onPointerMove)
+    el.removeEventListener('pointerup', endDrag)
+    el.removeEventListener('pointercancel', endDrag)
+  }
+
+  // Bind to scrollRef whenever the element appears/changes — not just at mount.
+  // The bracket lives behind a loading spinner (v-if), so at onMounted the
+  // element often doesn't exist yet; binding in onMounted would silently no-op
+  // and the pager would never work until a cached reload.
+  watch(scrollRef, (el, prev) => {
+    detach(prev)
+    attach(el)
+    if (el) measure()
+  }, { immediate: true })
+
+  onMounted(() => {
     mql = window.matchMedia('(max-width: 639.98px)')
     mql.addEventListener('change', syncViewport)
     syncViewport()
-    const el = scrollRef.value
-    el?.addEventListener('pointerdown', onPointerDown, { passive: true })
-    el?.addEventListener('pointermove', onPointerMove, { passive: true })
-    el?.addEventListener('pointerup', endDrag, { passive: true })
-    el?.addEventListener('pointercancel', endDrag, { passive: true })
     window.addEventListener('resize', syncViewport)
   })
 
   onBeforeUnmount(() => {
-    const el = scrollRef.value
-    el?.removeEventListener('pointerdown', onPointerDown)
-    el?.removeEventListener('pointermove', onPointerMove)
-    el?.removeEventListener('pointerup', endDrag)
-    el?.removeEventListener('pointercancel', endDrag)
+    detach(scrollRef.value)
     window.removeEventListener('resize', syncViewport)
     mql?.removeEventListener('change', syncViewport)
   })

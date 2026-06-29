@@ -12,10 +12,12 @@ import {
   scorePick,
   determineKnockoutWinner,
   scoreKnockoutSlot,
+  scoreKnockout,
 } from './lib/scoring.js'
+import { ROUNDS } from './lib/bracket.js'
 import { isGroupComplete } from './lib/tournament.js'
 import { applyBreakdownPatch } from './lib/firestoreScoring.js'
-import { utcDateString, todaysKickoffs, shouldFetch, moreProgressed } from './lib/poller.js'
+import { utcDateString, todaysKickoffs, shouldFetch, mergeFetchedKickoffs } from './lib/poller.js'
 
 initializeApp()
 const db = getFirestore()
@@ -39,12 +41,10 @@ export const espnPoller = onSchedule({ schedule: '* * * * *', timeZone: 'UTC' },
 
   const raw = await fetchScoreboard()
   const events = (raw.events || []).map(normalizeEvent)
-  const fetchedState = new Map(events.map((e) => [String(e.id), e.status.state]))
-  // Sticky merge: games no longer in ESPN's scoreboard keep their tracked state.
-  const mergedKickoffs = kickoffs.map((k) => ({
-    ...k,
-    state: moreProgressed(k.state, fetchedState.get(String(k.eventId)) ?? k.state),
-  }))
+  // Fold fetched events into the schedule-derived ledger (and keep games ESPN
+  // has since dropped, with their last-known state) so the poller self-heals
+  // even if the schedule doc never listed a match.
+  const mergedKickoffs = mergeFetchedKickoffs(kickoffs, events)
   const state = events.some((e) => e.status.state === 'in') ? 'polling' : 'idle'
 
   await scoreboardRef.set(
@@ -212,7 +212,9 @@ export const onKnockoutMatchComplete = onDocumentWritten('matches/{eventId}', as
 
   const round = after.round
   const slot = after.slot
-  if (!round || !slot) return // group-stage match, handled by onMatchComplete
+  // Only the pickable rounds are scored; the 3rd-place match (round 'third')
+  // is never picked, so it gets no breakdown entry.
+  if (!round || !slot || !ROUNDS.includes(round)) return
 
   const winnerTeamId = determineKnockoutWinner(after.competitors)
   if (!winnerTeamId) {
@@ -220,13 +222,14 @@ export const onKnockoutMatchComplete = onDocumentWritten('matches/{eventId}', as
     return
   }
 
-  const picksSnap = await db.collection('picks').get()
+  const [picksSnap, configSnap] = await Promise.all([db.collection('picks').get(), db.doc('config/public').get()])
+  const scoring = configSnap.data()?.scoring ?? {}
   const slotIndex = String(slot - 1)
 
   await Promise.all(
     picksSnap.docs.map((picksDoc) => {
       const pickedTeamId = picksDoc.data().knockout?.[round]?.[slot - 1]
-      const points = scoreKnockoutSlot(pickedTeamId, winnerTeamId, round)
+      const points = scoreKnockoutSlot(pickedTeamId, winnerTeamId, round, scoring)
       return applyBreakdownPatch(db, picksDoc.id, (existing) => ({
         ...existing,
         knockout: { ...existing.knockout, [round]: { ...existing.knockout?.[round], [slotIndex]: points } },
@@ -293,7 +296,12 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
   const after = event.data?.after?.data()
   if (!after || deepEqual(after.scoring, before?.scoring)) return
 
-  const [groupsSnap, picksSnap, wildcardsSnap] = await Promise.all([db.collection('groups').get(), db.collection('picks').get(), db.doc('liveData/wildcards').get()])
+  const [groupsSnap, picksSnap, wildcardsSnap, matchesSnap] = await Promise.all([
+    db.collection('groups').get(),
+    db.collection('picks').get(),
+    db.doc('liveData/wildcards').get(),
+    db.collection('matches').get(),
+  ])
   const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
   // Reuses onGroupsWrite's already-computed advancing set instead of
   // re-ranking all 12 groups again here — one computation owner for the
@@ -301,11 +309,23 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
   const advancing = new Set(wildcardsSnap.data()?.advancingLetters ?? [])
   const scoring = after.scoring ?? {}
 
+  // Winners of every finished knockout match, so a knockout point-value change
+  // rescores the bracket too (not just groups/wildcards). { round: { slotIdx: winnerId } }.
+  const koWinners = {}
+  for (const d of matchesSnap.docs) {
+    const m = d.data()
+    if (m.round && m.slot && ROUNDS.includes(m.round) && m.status?.state === 'post') {
+      const w = determineKnockoutWinner(m.competitors)
+      if (w) (koWinners[m.round] ??= {})[String(m.slot - 1)] = w
+    }
+  }
+
   await Promise.all(
     picksSnap.docs.map((picksDoc) => {
       const pick = picksDoc.data()
       const { groups, wildcards } = scorePick(pick, groupsByLetter, advancing, scoring)
-      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ groups, wildcards, props: existing.props ?? 0, knockout: existing.knockout }))
+      const knockout = scoreKnockout(pick.knockout, koWinners, scoring)
+      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ groups, wildcards, props: existing.props ?? 0, knockout }))
     })
   )
 })

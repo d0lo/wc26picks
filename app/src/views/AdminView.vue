@@ -7,6 +7,7 @@ import { doc, updateDoc, Timestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { configQueryOptions, queryKeys } from '../queries.js'
 import { PROP_CATEGORIES } from '../data.js'
+import { ROUNDS, ROUND_LABELS, ROUND_POINTS } from '../bracket.js'
 
 const router = useRouter()
 const queryClient = useQueryClient()
@@ -24,7 +25,7 @@ function toLocalInputValue(timestamp) {
 
 const lockTimeInput = reactive({ value: '' })
 const knockoutLockInput = reactive({ value: '' })
-const scoringForm = reactive({ groupExact: { 1: 0, 2: 0, 3: 0, 4: 0 }, perfectGroupBonus: 0, wildcard: 0 })
+const scoringForm = reactive({ groupExact: { 1: 0, 2: 0, 3: 0, 4: 0 }, perfectGroupBonus: 0, wildcard: 0, knockout: { r32: 0, r16: 0, qf: 0, sf: 0, final: 0 } })
 const propsForm = reactive({ items: [] })
 
 const saveStatus = reactive({ lock: '', knockoutLock: '', scoring: '', props: '' })
@@ -67,6 +68,7 @@ function loadFromConfig(data) {
   scoringForm.groupExact = { 1: s.groupExact?.[1] ?? 0, 2: s.groupExact?.[2] ?? 0, 3: s.groupExact?.[3] ?? 0, 4: s.groupExact?.[4] ?? 0 }
   scoringForm.perfectGroupBonus = s.perfectGroupBonus ?? 0
   scoringForm.wildcard = s.wildcard ?? 0
+  scoringForm.knockout = Object.fromEntries(ROUNDS.map((r) => [r, s.knockout?.[r] ?? ROUND_POINTS[r] ?? 0]))
   propsForm.items = (s.props ?? []).map(p => ({ ...p }))
   rebuildCategoryLists()
   savedSnapshot.lock = snapshotLock()
@@ -275,6 +277,7 @@ async function saveScoring() {
       },
       'scoring.perfectGroupBonus': Number(scoringForm.perfectGroupBonus),
       'scoring.wildcard': Number(scoringForm.wildcard),
+      'scoring.knockout': Object.fromEntries(ROUNDS.map((r) => [r, Number(scoringForm.knockout[r])])),
     })
     invalidateConfig()
     savedSnapshot.scoring = snapshotScoring()
@@ -431,6 +434,18 @@ async function saveProps() {
             <span class="block text-[10px] text-zinc-400 mb-1">Wildcard (per pick)</span>
             <input
               v-model.number="scoringForm.wildcard"
+              type="number"
+              inputmode="numeric"
+              class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-1.5 text-sm text-white"
+            />
+          </label>
+        </div>
+        <span class="block text-[10px] text-zinc-400 mb-1">Knockout (per correct winner)</span>
+        <div class="grid grid-cols-5 gap-2 mb-3">
+          <label v-for="r in ROUNDS" :key="r" class="block">
+            <span class="block text-[9px] text-zinc-500 mb-1 uppercase">{{ ROUND_LABELS[r].replace('Round of ', 'R') }}</span>
+            <input
+              v-model.number="scoringForm.knockout[r]"
               type="number"
               inputmode="numeric"
               class="w-full bg-court-900 border border-court-700 rounded-lg px-2 py-1.5 text-sm text-white"

@@ -42,6 +42,23 @@ export function todaysKickoffs(scheduleEvents, priorData, today) {
   return [...byId.values()]
 }
 
+// Fold the freshly-fetched scoreboard events into the kickoff ledger so the
+// poller stays self-sufficient even when liveData/schedule is missing a match
+// (or hasn't been written yet): a fetched event not already tracked is added,
+// and a known one advances to its newest state (post stays sticky). Without
+// this the ledger would be purely schedule-derived and the poller could sleep
+// through a live match the schedule doc never listed.
+export function mergeFetchedKickoffs(kickoffs, events) {
+  const byId = new Map(kickoffs.map((k) => [k.eventId, { ...k }]))
+  for (const e of events ?? []) {
+    const id = String(e.id)
+    const prev = byId.get(id)
+    if (prev) prev.state = moreProgressed(prev.state, e.status?.state)
+    else byId.set(id, { eventId: id, date: e.date, state: e.status?.state ?? 'pre' })
+  }
+  return [...byId.values()]
+}
+
 export function shouldFetch(priorData, today, now, kickoffs) {
   if (priorData?.state === 'polling') return true     // a chain is live — keep polling
   if (priorData?.scheduleDate !== today) return true  // new day — learn its slate

@@ -13,7 +13,7 @@
 import { TEAM_BY_ID } from '../data.js'
 import {
   ROUND_LABELS, R32_SLOTS, PREV_ROUND, deriveRoundMatchups,
-  EVENT_SLOT_MAP, MATCH_SCHEDULE, SLOT_MATCH_NUM,
+  EVENT_SLOT_MAP, MATCH_SCHEDULE, SLOT_MATCH_NUM, matchWinner, matchLoser,
 } from '../bracket.js'
 
 // 'round_slot' → ESPN event id (inverse of EVENT_SLOT_MAP).
@@ -46,18 +46,6 @@ export function etDayKey(iso) {
   return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 }
 
-function winnerOf(doc) {
-  if (!doc || doc.status?.state !== 'post') return null
-  const flagged = doc.competitors?.find((c) => c.winner)
-  if (flagged) return flagged.teamId
-  const [a, b] = doc.competitors ?? []
-  if (!a || !b || a.score == null || b.score == null || a.score === b.score) return null
-  return Number(a.score) > Number(b.score) ? a.teamId : b.teamId
-}
-function loserOf(doc) {
-  const w = winnerOf(doc)
-  return w ? (doc.competitors?.find((c) => c.teamId !== w)?.teamId ?? null) : null
-}
 
 // ── Skeleton builders (one per source) ──────────────────────────────────────
 // A skeleton is { id, label, dateISO, venue, state, competitors: [{teamId, name}] }.
@@ -90,13 +78,13 @@ function staticKnockoutSkeletons(matches) {
   const docByKey = new Map()
   for (const m of matches) if (m.round && m.slot) docByKey.set(`${m.round}_${m.slot}`, m)
 
-  const decided = { r32: R32_SLOTS.map((teams, i) => ({ teams, winner: winnerOf(docByKey.get(`r32_${i + 1}`)) })) }
+  const decided = { r32: R32_SLOTS.map((teams, i) => ({ teams, winner: matchWinner(docByKey.get(`r32_${i + 1}`)) })) }
   for (const round of ['r16', 'qf', 'sf']) {
     const prev = decided[PREV_ROUND[round]].map((s) => s.winner)
-    decided[round] = deriveRoundMatchups(round, prev).map((teams, i) => ({ teams, winner: winnerOf(docByKey.get(`${round}_${i + 1}`)) }))
+    decided[round] = deriveRoundMatchups(round, prev).map((teams, i) => ({ teams, winner: matchWinner(docByKey.get(`${round}_${i + 1}`)) }))
   }
   decided.final = [{ teams: decided.sf.map((s) => s.winner) }]
-  decided.third = [{ teams: decided.sf.map((_, i) => loserOf(docByKey.get(`sf_${i + 1}`))) }]
+  decided.third = [{ teams: decided.sf.map((_, i) => matchLoser(docByKey.get(`sf_${i + 1}`))) }]
 
   const out = []
   for (const round of ['r32', 'r16', 'qf', 'sf', 'third', 'final']) {

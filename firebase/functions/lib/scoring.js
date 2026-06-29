@@ -95,12 +95,29 @@ export function determineKnockoutWinner(competitors) {
   return Number(a.score) > Number(b.score) ? a.teamId : b.teamId
 }
 
-// Points for one knockout-round pick: the round's fixed point value if the
-// pick matches the match winner, else 0. Round point values are fixed
-// structural constants (see ROUND_POINTS in bracket.js), not config-driven.
-export function scoreKnockoutSlot(pickedTeamId, winnerTeamId, round) {
+// Points for one knockout-round pick: the round's point value if the pick
+// matches the match winner, else 0. Point values are config-driven
+// (config/public.scoring.knockout), falling back to the ROUND_POINTS defaults
+// when a round isn't set in config — same pattern as the group/wildcard values.
+export function scoreKnockoutSlot(pickedTeamId, winnerTeamId, round, scoring) {
   if (!pickedTeamId || !winnerTeamId || pickedTeamId !== winnerTeamId) return 0
-  return Number(ROUND_POINTS[round] ?? 0)
+  return Number(scoring?.knockout?.[round] ?? ROUND_POINTS[round] ?? 0)
+}
+
+// Full knockout breakdown for one pick: { [round]: { [slotIndex]: points } }.
+// koWinners is { [round]: { [slotIndex]: winnerTeamId } } across finished
+// knockout matches. Mirrors scorePick (groups): re-derives every scored slot
+// from scratch, needed when point values change since a stale slot's score was
+// computed under the old values and isn't otherwise revisited.
+export function scoreKnockout(pickKnockout, koWinners, scoring) {
+  const out = {}
+  for (const [round, slots] of Object.entries(koWinners ?? {})) {
+    for (const [slotIndex, winnerTeamId] of Object.entries(slots ?? {})) {
+      const picked = pickKnockout?.[round]?.[Number(slotIndex)]
+      ;(out[round] ??= {})[slotIndex] = scoreKnockoutSlot(picked, winnerTeamId, round, scoring)
+    }
+  }
+  return out
 }
 
 // Sums a breakdown.knockout map ({ [round]: { [slotIndex]: points } }) for

@@ -9,6 +9,7 @@ import {
   sumGroupPoints,
   determineKnockoutWinner,
   scoreKnockoutSlot,
+  scoreKnockout,
   sumKnockoutPoints,
 } from './scoring.js'
 
@@ -135,10 +136,25 @@ test('determineKnockoutWinner returns null when undecided', () => {
 })
 
 test('scoreKnockoutSlot awards the round point value on a correct pick, zero otherwise', () => {
-  assert.equal(scoreKnockoutSlot('a', 'a', 'r32'), 1)
+  assert.equal(scoreKnockoutSlot('a', 'a', 'r32'), 1)       // defaults when no config
   assert.equal(scoreKnockoutSlot('a', 'a', 'final'), 16)
   assert.equal(scoreKnockoutSlot('a', 'b', 'r32'), 0)
   assert.equal(scoreKnockoutSlot(null, 'a', 'r32'), 0)
+})
+
+test('scoreKnockoutSlot uses config knockout values when provided', () => {
+  const scoring = { knockout: { r32: 5, final: 50 } }
+  assert.equal(scoreKnockoutSlot('a', 'a', 'r32', scoring), 5)
+  assert.equal(scoreKnockoutSlot('a', 'a', 'final', scoring), 50)
+  // a round missing from config falls back to the default
+  assert.equal(scoreKnockoutSlot('a', 'a', 'qf', scoring), 4)
+})
+
+test('scoreKnockout builds the full breakdown from winners + a pick', () => {
+  const pick = { r32: ['a', 'x'], r16: ['a'] }
+  const koWinners = { r32: { 0: 'a', 1: 'b' }, r16: { 0: 'a' } }
+  const out = scoreKnockout(pick, koWinners, { knockout: { r32: 1, r16: 2 } })
+  assert.deepEqual(out, { r32: { 0: 1, 1: 0 }, r16: { 0: 2 } })
 })
 
 test('sumKnockoutPoints returns null when nothing has been scored yet', () => {

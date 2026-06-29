@@ -29,6 +29,8 @@ const scoring = {
   perfectGroupBonus: 1,
   // Points per correctly predicted 3rd-place team that advances (wildcard pick)
   wildcard: 2,
+  // Points per correctly predicted knockout-round winner, by round.
+  knockout: { r32: 1, r16: 2, qf: 4, sf: 8, final: 16 },
   // Full prop catalog — key, display content, selector constraints, and points.
   // `id` is the stable identity used to key answers in picks/{uid}.props — it
   // must never change once picks have been submitted against it (relabeling

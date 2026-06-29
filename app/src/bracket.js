@@ -185,6 +185,25 @@ export function deriveRoundMatchups(round, prevWinners) {
   return pairs.map(([a, b]) => [prevWinners?.[a - 1] ?? null, prevWinners?.[b - 1] ?? null])
 }
 
+// Winner/loser of a finished knockout match doc (matches/{eventId} or a
+// scoreboard event). Shared by the picker, the read-only bracket, and the
+// stadium fixtures so this rule lives in one place. ESPN's `winner` flag is
+// authoritative (covers penalty shootouts); score comparison is the fallback.
+export function matchWinner(match) {
+  if (!match || match.status?.state !== 'post') return null
+  const flagged = match.competitors?.find((c) => c.winner)
+  if (flagged) return flagged.teamId
+  const [a, b] = match.competitors ?? []
+  if (!a || !b || a.score == null || b.score == null || a.score === b.score) return null
+  return Number(a.score) > Number(b.score) ? a.teamId : b.teamId
+}
+
+export function matchLoser(match) {
+  const w = matchWinner(match)
+  if (!w) return null
+  return match.competitors?.find((c) => c.teamId !== w)?.teamId ?? null
+}
+
 // True once every slot in `picks[round]` has a non-null team UUID picked.
 export function isRoundPickComplete(round, picks) {
   const slots = picks?.[round]

@@ -4,8 +4,9 @@ import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { TEAM_BY_ID, FIFA_RANKING } from '../data.js'
-import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, ADJACENCY, R32_SLOTS, MATCH_SCHEDULE, EVENT_SLOT_MAP, SLOT_MATCH_NUM, deriveRoundMatchups, isBracketPickComplete } from '../bracket.js'
-import { pickQueryOptions, matchesQueryOptions, scoreboardQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
+import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, ADJACENCY, R32_SLOTS, MATCH_SCHEDULE, EVENT_SLOT_MAP, SLOT_MATCH_NUM, deriveRoundMatchups, isBracketPickComplete, matchWinner } from '../bracket.js'
+import { pickQueryOptions, matchesQueryOptions, scoreboardQueryOptions, configQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
+import { mergedState, mergedClock, mergedScore } from '../lib/liveMatch.js'
 import { useBracketFocus } from '../composables/useBracketFocus.js'
 
 const user = inject('user')
@@ -20,6 +21,11 @@ const queryClient = useQueryClient()
 const scoreboardQuery = useQuery(scoreboardQueryOptions())
 onMounted(() => startScoreboardListener(queryClient))
 onUnmounted(() => stopScoreboardListener())
+
+// Per-round knockout point values are config-driven (config/public.scoring.
+// knockout), falling back to the ROUND_POINTS defaults until/unless retuned.
+const configQuery = useQuery(configQueryOptions())
+const knockoutPoints = computed(() => ({ ...ROUND_POINTS, ...(configQuery.data.value?.scoring?.knockout ?? {}) }))
 
 // ESPN-style pager (mobile only): swipe moves exactly one round; the snapped
 // round fans in (dense) while rounds to its right fan out over its height.
@@ -69,8 +75,17 @@ watch(pickQuery.isFetched, (fetched) => {
   // Overlay any locally-saved in-progress draft (unsaved edits) on top of the
   // saved picks — but not once the bracket is locked, where the official saved
   // state should show.
+  // Overlay a locally-saved in-progress draft only when the saved bracket is
+  // still incomplete and editable. If the saved bracket is already complete
+  // (e.g. finished+saved on another device), a stale draft must NOT override
+  // it — drop it instead, so cross-device saves can't be clobbered.
+  const dbComplete = isBracketPickComplete(pickQuery.data.value?.knockout)
   const draft = loadDraft()
-  if (draft && hasAnyPick(draft) && !knockoutLocked.value) applyKnockout(draft)
+  if (dbComplete) {
+    clearDraft()
+  } else if (draft && hasAnyPick(draft) && !knockoutLocked.value) {
+    applyKnockout(draft)
+  }
 }, { immediate: true })
 
 // Each round's matchups are derived live from the previous round's picks
@@ -174,15 +189,6 @@ function fmtLockTime(ts) {
   return `on ${date} at ${time}`
 }
 
-function winnerOf(match) {
-  if (!match || match.status?.state !== 'post') return null
-  const flagged = match.competitors?.find((c) => c.winner)
-  if (flagged) return flagged.teamId
-  const [a, b] = match.competitors ?? []
-  if (!a || !b || a.score == null || b.score == null || a.score === b.score) return null
-  return Number(a.score) > Number(b.score) ? a.teamId : b.teamId
-}
-
 // Today's live scoreboard event for a slot, mapped via the static event-id
 // table. Present (and live) only for matches happening today.
 const liveBySlot = computed(() => {
@@ -197,30 +203,11 @@ function liveEvent(round, slotIdx) {
   return liveBySlot.value.get(`${round}_${slotIdx + 1}`) ?? null
 }
 
-// State/clock/score merged from the live scoreboard (fresh, mid-match) and the
-// matches/{eventId} doc (authoritative final + winner flag). The live event
-// wins while a game is in progress; the doc carries the finished result.
-function slotState(round, slotIdx) {
-  if (liveEvent(round, slotIdx)?.status?.state === 'in') return 'in'
-  return matchForSlot(round, slotIdx)?.status?.state ?? liveEvent(round, slotIdx)?.status?.state ?? null
-}
-function slotClock(round, slotIdx) {
-  const st = slotState(round, slotIdx)
-  if (st === 'in') {
-    return liveEvent(round, slotIdx)?.status?.displayClock
-      || matchForSlot(round, slotIdx)?.status?.displayClock || 'Live'
-  }
-  if (st === 'post') return 'Final'
-  return null
-}
-function slotScore(round, slotIdx, teamId) {
-  const ev = liveEvent(round, slotIdx)
-  if (ev && ev.status?.state !== 'pre') {
-    const s = ev.competitors?.find((c) => c.teamId === teamId)?.score
-    if (s != null && s !== '') return s
-  }
-  return matchForSlot(round, slotIdx)?.competitors?.find((c) => c.teamId === teamId)?.score ?? null
-}
+// State/clock/score merged from the live scoreboard (mid-match) and the
+// matches/{eventId} doc (authoritative final) — see lib/liveMatch.js.
+function slotState(round, slotIdx) { return mergedState(matchForSlot(round, slotIdx), liveEvent(round, slotIdx)) }
+function slotClock(round, slotIdx) { return mergedClock(matchForSlot(round, slotIdx), liveEvent(round, slotIdx)) }
+function slotScore(round, slotIdx, teamId) { return mergedScore(matchForSlot(round, slotIdx), liveEvent(round, slotIdx), teamId) }
 
 // Kickoff date/time for a slot — prefers the live ESPN doc (real, possibly
 // rescheduled) and falls back to the fixed FIFA schedule so every card shows
@@ -293,7 +280,7 @@ async function submitKnockout() {
             <div class="shrink-0 w-[82vw] max-w-[360px] sm:w-[176px] flex flex-col" :data-round-col="rIdx">
               <div class="h-6 flex items-baseline justify-between px-0.5">
                 <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400 uppercase">{{ ROUND_LABELS[round] }}</span>
-                <span class="text-[9px] text-zinc-500 font-mono">{{ ROUND_POINTS[round] }}pt</span>
+                <span class="text-[9px] text-zinc-500 font-mono">{{ knockoutPoints[round] }}pt</span>
               </div>
 
               <div
@@ -322,7 +309,7 @@ async function submitKnockout() {
                     <span
                       v-if="teamId && slotState(round, slotIdx) && slotState(round, slotIdx) !== 'pre'"
                       class="text-[10px] font-mono tabular-nums shrink-0"
-                      :class="teamId === winnerOf(matchForSlot(round, slotIdx)) ? 'text-white font-bold' : 'text-zinc-400'"
+                      :class="teamId === matchWinner(matchForSlot(round, slotIdx)) ? 'text-white font-bold' : 'text-zinc-400'"
                     >{{ slotScore(round, slotIdx, teamId) ?? '' }}</span>
                     <div
                       v-if="teamId && knockout[round][slotIdx] === teamId"

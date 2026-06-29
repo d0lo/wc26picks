@@ -1,7 +1,10 @@
 <script setup>
 import { computed } from 'vue'
-import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, R32_SLOTS, EVENT_SLOT_MAP, deriveRoundMatchups } from '../bracket.js'
+import { useQuery } from '@tanstack/vue-query'
+import { ROUNDS, ROUND_LABELS, ROUND_SIZE, ROUND_POINTS, PREV_ROUND, R32_SLOTS, EVENT_SLOT_MAP, deriveRoundMatchups, matchWinner, matchLoser } from '../bracket.js'
 import { TEAM_BY_ID } from '../data.js'
+import { mergedState, mergedClock, mergedScore } from '../lib/liveMatch.js'
+import { configQueryOptions } from '../queries.js'
 import { useBracketFocus } from '../composables/useBracketFocus.js'
 
 // Read-only knockout bracket display — shared by the live stadium page
@@ -40,46 +43,21 @@ function teamLabel(teamId) {
 
 const matchByKey = computed(() => new Map(props.matches.map((m) => [`${m.round}_${m.slot}`, m])))
 
-function decideMatch(match) {
-  if (!match || match.status?.state !== 'post') return { winner: null, loser: null }
-  const competitors = match.competitors ?? []
-  const flagged = competitors.find((c) => c.winner)
-  if (flagged) {
-    const other = competitors.find((c) => c.teamId !== flagged.teamId)
-    return { winner: flagged.teamId, loser: other?.teamId ?? null }
-  }
-  const [a, b] = competitors
-  if (!a || !b || a.score == null || b.score == null || a.score === b.score) return { winner: null, loser: null }
-  const winner = Number(a.score) > Number(b.score) ? a.teamId : b.teamId
-  return { winner, loser: winner === a.teamId ? b.teamId : a.teamId }
-}
-
 function makeSlot(round, slot, teams) {
   const match = matchByKey.value.get(`${round}_${slot}`)
-  const { winner, loser } = decideMatch(match)
-  return { round, slot, teams, match, winner, loser, live: liveByKey.value.get(`${round}_${slot}`) ?? null }
+  return { round, slot, teams, match, winner: matchWinner(match), loser: matchLoser(match), live: liveByKey.value.get(`${round}_${slot}`) ?? null }
 }
 
-// State/score/clock merged from the live scoreboard (fresh, mid-match) and the
-// matches/{eventId} doc (authoritative final). Live wins while in progress.
-function slotState(slotInfo) {
-  if (slotInfo.live?.status?.state === 'in') return 'in'
-  return slotInfo.match?.status?.state ?? slotInfo.live?.status?.state ?? null
-}
-function slotClock(slotInfo) {
-  const st = slotState(slotInfo)
-  if (st === 'in') return slotInfo.live?.status?.displayClock || slotInfo.match?.status?.displayClock || 'Live'
-  if (st === 'post') return 'Final'
-  return null
-}
-function slotScore(slotInfo, teamId) {
-  const ev = slotInfo.live
-  if (ev && ev.status?.state !== 'pre') {
-    const s = ev.competitors?.find((c) => c.teamId === teamId)?.score
-    if (s != null && s !== '') return s
-  }
-  return slotInfo.match?.competitors?.find((c) => c.teamId === teamId)?.score ?? null
-}
+// State/score/clock merged from the live scoreboard (mid-match) and the
+// matches/{eventId} doc (authoritative final) — see lib/liveMatch.js.
+function slotState(slotInfo) { return mergedState(slotInfo.match, slotInfo.live) }
+function slotClock(slotInfo) { return mergedClock(slotInfo.match, slotInfo.live) }
+function slotScore(slotInfo, teamId) { return mergedScore(slotInfo.match, slotInfo.live, teamId) }
+
+// Per-round knockout point values are config-driven (config/public.scoring.
+// knockout), falling back to ROUND_POINTS defaults.
+const configQuery = useQuery(configQueryOptions())
+const knockoutPoints = computed(() => ({ ...ROUND_POINTS, ...(configQuery.data.value?.scoring?.knockout ?? {}) }))
 
 // Each round's matchups are derived from the previous round's actual
 // winners (bracket.js's deriveRoundMatchups) rather than waiting on that
@@ -180,7 +158,7 @@ function rowClass(slotInfo, teamId) {
                   :class="slotState(slotInfo) === 'in' ? 'text-emerald-400' : 'text-zinc-500'"
                 >{{ slotClock(slotInfo) ?? '' }}</span>
                 <span v-if="pointsFor(slotInfo) !== null" class="text-[9px] font-mono tabular-nums text-zinc-400">
-                  {{ pointsFor(slotInfo) }}/{{ ROUND_POINTS[slotInfo.round] ?? '–' }} pts
+                  {{ pointsFor(slotInfo) }}/{{ knockoutPoints[slotInfo.round] ?? '–' }} pts
                 </span>
               </div>
             </div>
