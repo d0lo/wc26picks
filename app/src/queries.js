@@ -14,10 +14,16 @@ export const queryKeys = {
   usersList: ['users', 'list'],
   usersByIds: (sortedUids) => ['users', 'byIds', sortedUids],
   scoreboard: ['liveData', 'scoreboard'],
+  schedule: ['liveData', 'schedule'],
+  groups: ['groups'],
+  wildcards: ['liveData', 'wildcards'],
+  matches: ['matches'],
+  score: (uid) => ['score', uid],
 }
 
 // config/public shape:
-//   picksLockAt: Timestamp
+//   picksLockAt: Timestamp       // group-stage picks lock (set-picks-lock.mjs)
+//   knockoutLockAt: Timestamp    // knockout bracket lock (set-knockout-lock.mjs)
 //   scoring: {
 //     groupExact: { 1: number, 2: number, 3: number, 4: number }  // pts per exact predicted position
 //     perfectGroupBonus: number                                   // bonus when all 4 positions are exact
@@ -192,5 +198,82 @@ export function stopScoreboardListener() {
   if (scoreboardRefCount === 0) {
     scoreboardUnsub?.()
     scoreboardUnsub = null
+  }
+}
+
+// liveData/schedule — the full-tournament fixture index (skeleton only) written
+// daily by the scheduleSync Cloud Function. Used by the stadium date selector
+// to show every match day, incl. future games. Changes ~once a day, so a plain
+// cached fetch is enough (no realtime listener). null until the function runs.
+export function scheduleQueryOptions() {
+  return {
+    queryKey: queryKeys.schedule,
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, 'liveData/schedule'))
+      return snap.exists() ? snap.data() : null
+    },
+    staleTime: FIVE_MINUTES,
+  }
+}
+
+// All 12 groups' actual standings, keyed by letter — written by the
+// onScoreboardWrite/processMatchUpdate trigger as each group-stage match
+// completes. A letter is absent from the result until its group's first
+// match finishes (see groups/{letter} in firebase/functions/index.js).
+export function groupsQueryOptions() {
+  return {
+    queryKey: queryKeys.groups,
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, 'groups'))
+      return Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]))
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  }
+}
+
+// liveData/wildcards.advancingLetters — the current "best 3rd-place" ranking,
+// recomputed by onGroupsWrite after every group-stage match. null until the
+// first group-stage match completes.
+export function wildcardsQueryOptions() {
+  return {
+    queryKey: queryKeys.wildcards,
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, 'liveData/wildcards'))
+      return snap.exists() ? snap.data() : null
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  }
+}
+
+// Every matches/{eventId} doc — used to derive best-effort "current state"
+// prop leaderboards (see lib/propLeaders.js) from scoringPlays/competitors
+// already replicated client-side, without a dedicated Cloud Function.
+export function matchesQueryOptions() {
+  return {
+    queryKey: queryKeys.matches,
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, 'matches'))
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  }
+}
+
+// One user's scores/{uid} doc — breakdown.groups/wildcards/props, used to
+// show points-earned/possible alongside their picks. null until their first
+// group-stage match completes (see onMatchComplete).
+export function scoreQueryOptions(uid) {
+  return {
+    queryKey: queryKeys.score(uid),
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, 'scores', uid))
+      return snap.exists() ? snap.data() : null
+    },
+    enabled: !!uid,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   }
 }

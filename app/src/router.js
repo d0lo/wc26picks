@@ -5,6 +5,7 @@ import { userQueryOptions } from './queries.js'
 import LoginView from './views/LoginView.vue'
 import SetUsernameView from './views/SetUsernameView.vue'
 import PicksView from './views/PicksView.vue'
+import BracketView from './views/BracketView.vue'
 import LeaderboardView from './views/LeaderboardView.vue'
 import LiveView from './views/LiveView.vue'
 import AdminView from './views/AdminView.vue'
@@ -21,6 +22,7 @@ const router = createRouter({
     { path: '/login', component: LoginView },
     { path: '/username', component: SetUsernameView },
     { path: '/picks', component: PicksView },
+    { path: '/bracket', component: BracketView },
     { path: '/leaderboard', component: LeaderboardView },
     { path: '/live', component: LiveView },
     { path: '/admin', component: AdminView },

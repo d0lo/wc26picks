@@ -1,5 +1,6 @@
 // Pure scoring logic for the auto-scoring engine — no Firestore/ESPN
 // dependencies, so it can be unit tested in isolation from the trigger.
+import { ROUND_POINTS } from './bracket.js'
 
 // Scores one group's predicted team order against that group's actual
 // standings (sorted by points desc, as written to groups/{letter}.entries).
@@ -79,4 +80,58 @@ export function scorePick(pick, groupsByLetter, advancing, scoring) {
   }
   const wildcards = creditWildcardPicks(pick?.wildcards, advancing, scoring)
   return { groups, wildcards }
+}
+
+// Decides the winner of a finished knockout match. ESPN's `winner` flag is
+// the authoritative signal (it accounts for penalty shootouts, where the
+// score alone ends level) — score comparison is only a fallback for the
+// rare case that flag is missing.
+export function determineKnockoutWinner(competitors) {
+  const winner = competitors?.find((c) => c.winner)
+  if (winner) return winner.teamId
+  if (!Array.isArray(competitors) || competitors.length !== 2) return null
+  const [a, b] = competitors
+  if (a.score == null || b.score == null || a.score === b.score) return null
+  return Number(a.score) > Number(b.score) ? a.teamId : b.teamId
+}
+
+// Points for one knockout-round pick: the round's point value if the pick
+// matches the match winner, else 0. Point values are config-driven
+// (config/public.scoring.knockout), falling back to the ROUND_POINTS defaults
+// when a round isn't set in config — same pattern as the group/wildcard values.
+export function scoreKnockoutSlot(pickedTeamId, winnerTeamId, round, scoring) {
+  if (!pickedTeamId || !winnerTeamId || pickedTeamId !== winnerTeamId) return 0
+  return Number(scoring?.knockout?.[round] ?? ROUND_POINTS[round] ?? 0)
+}
+
+// Full knockout breakdown for one pick: { [round]: { [slotIndex]: points } }.
+// koWinners is { [round]: { [slotIndex]: winnerTeamId } } across finished
+// knockout matches. Mirrors scorePick (groups): re-derives every scored slot
+// from scratch, needed when point values change since a stale slot's score was
+// computed under the old values and isn't otherwise revisited.
+export function scoreKnockout(pickKnockout, koWinners, scoring) {
+  const out = {}
+  for (const [round, slots] of Object.entries(koWinners ?? {})) {
+    for (const [slotIndex, winnerTeamId] of Object.entries(slots ?? {})) {
+      const picked = pickKnockout?.[round]?.[Number(slotIndex)]
+      ;(out[round] ??= {})[slotIndex] = scoreKnockoutSlot(picked, winnerTeamId, round, scoring)
+    }
+  }
+  return out
+}
+
+// Sums a breakdown.knockout map ({ [round]: { [slotIndex]: points } }) for
+// the leaderboard total. Returns null (not 0) when nothing's been scored
+// yet, mirroring sumGroupPoints' not-started/scored-at-zero distinction.
+export function sumKnockoutPoints(knockout) {
+  if (!knockout || Object.keys(knockout).length === 0) return null
+  let total = 0
+  let any = false
+  for (const slots of Object.values(knockout)) {
+    for (const pts of Object.values(slots ?? {})) {
+      total += pts
+      any = true
+    }
+  }
+  return any ? total : null
 }

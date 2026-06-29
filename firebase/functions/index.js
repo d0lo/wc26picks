@@ -3,47 +3,48 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import logger from 'firebase-functions/logger'
-import { fetchScoreboard, fetchSummary } from './lib/espn.js'
+import { fetchScoreboard, fetchScoreboardForDate, fetchSummary } from './lib/espn.js'
 import { normalizeEvent, normalizeMatch, parseGroupLetter } from './lib/normalize.js'
-import { scoreGroupPrediction, advancingThirdPlaceLetters, creditWildcardPicks, scorePick } from './lib/scoring.js'
+import {
+  scoreGroupPrediction,
+  advancingThirdPlaceLetters,
+  creditWildcardPicks,
+  scorePick,
+  determineKnockoutWinner,
+  scoreKnockoutSlot,
+  scoreKnockout,
+} from './lib/scoring.js'
+import { ROUNDS } from './lib/bracket.js'
 import { isGroupComplete } from './lib/tournament.js'
 import { applyBreakdownPatch } from './lib/firestoreScoring.js'
+import { utcDateString, todaysKickoffs, shouldFetch, mergeFetchedKickoffs } from './lib/poller.js'
 
 initializeApp()
 const db = getFirestore()
 
-function utcDateString(date) {
-  return date.toISOString().slice(0, 10).replace(/-/g, '')
-}
-
-// Decides whether this tick is worth an ESPN call. Three cases:
-//   - a match is already live ("polling" state) — always fetch, the single
-//     active chain's regular tick covers every match for the day at once,
-//     including any other match that kicks off while this one is still live.
-//   - we haven't learned today's schedule yet — fetch once to pick it up
-//     (also catches a match already "in" if this is a cold start mid-day).
-//   - a cached kickoff time has passed and that match isn't "post" yet —
-//     fetch to see if it actually started (handles real-world kickoff delay
-//     by simply checking again next minute until it flips to "in"/"post").
-function shouldFetch(data, today, now) {
-  if (data?.state === 'polling') return true
-  if (data?.scheduleDate !== today) return true
-  return (data?.kickoffs ?? []).some((k) => k.state !== 'post' && now >= new Date(k.date).getTime())
-}
-
-// Runs every minute, all day. Almost every tick is a single cheap Firestore
-// read that short-circuits with no ESPN call — the goal is exactly one
-// active "polling" chain covering all of today's matches at once, woken by
-// the nearest kickoff time and put back to sleep the instant nothing is live.
+// Runs every minute, all day. Almost every tick is a couple of cheap Firestore
+// reads that short-circuit with no ESPN call — the goal is exactly one active
+// "polling" chain covering all of today's matches at once, woken by each
+// kickoff time and put back to sleep the instant nothing is live. Today's
+// kickoff list comes from liveData/schedule (the full fixture index) so the
+// poller wakes for every scheduled game, including ones that kick off after an
+// earlier batch has already finished (e.g. R32 right after the group finale).
 export const espnPoller = onSchedule({ schedule: '* * * * *', timeZone: 'UTC' }, async () => {
   const scoreboardRef = db.doc('liveData/scoreboard')
   const today = utcDateString(new Date())
+  const now = Date.now()
   const data = (await scoreboardRef.get()).data()
+  const schedule = (await db.doc('liveData/schedule').get()).data()
+  const kickoffs = todaysKickoffs(schedule?.events, data, today)
 
-  if (!shouldFetch(data, today, Date.now())) return
+  if (!shouldFetch(data, today, now, kickoffs)) return
 
   const raw = await fetchScoreboard()
   const events = (raw.events || []).map(normalizeEvent)
+  // Fold fetched events into the schedule-derived ledger (and keep games ESPN
+  // has since dropped, with their last-known state) so the poller self-heals
+  // even if the schedule doc never listed a match.
+  const mergedKickoffs = mergeFetchedKickoffs(kickoffs, events)
   const state = events.some((e) => e.status.state === 'in') ? 'polling' : 'idle'
 
   await scoreboardRef.set(
@@ -52,12 +53,52 @@ export const espnPoller = onSchedule({ schedule: '* * * * *', timeZone: 'UTC' },
       scheduleDate: today,
       events,
       hasMatches: events.length > 0,
-      kickoffs: events.map((e) => ({ eventId: e.id, date: e.date, state: e.status.state })),
+      kickoffs: mergedKickoffs,
       state,
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
   )
+})
+
+// Full-tournament fixture index for the stadium schedule's date selector.
+// Runs once a day: walks every day of the tournament, fetches that day's
+// scoreboard, and writes one liveData/schedule doc of all fixtures (skeleton
+// only — id/date/teams/venue/round/group/state, no live scores). Live scores
+// and completed-match detail stay where they already live (liveData/scoreboard
+// for today's in-progress games, matches/{eventId} for finished ones); this
+// function never re-fetches a game's detail and does no per-match polling.
+const SCHEDULE_START = '2026-06-11'   // tournament opening match
+const SCHEDULE_END = '2026-07-19'     // final
+
+function* scheduleDates(startISO, endISO) {
+  const day = new Date(`${startISO}T00:00:00Z`)
+  const end = new Date(`${endISO}T00:00:00Z`)
+  while (day <= end) {
+    yield utcDateString(day)
+    day.setUTCDate(day.getUTCDate() + 1)
+  }
+}
+
+export const scheduleSync = onSchedule({ schedule: '0 7 * * *', timeZone: 'UTC' }, async () => {
+  const byId = new Map()
+  for (const ymd of scheduleDates(SCHEDULE_START, SCHEDULE_END)) {
+    let raw
+    try {
+      raw = await fetchScoreboardForDate(ymd)
+    } catch (err) {
+      logger.warn(`schedule fetch failed for ${ymd}: ${err.message}`)
+      continue
+    }
+    for (const ev of raw.events || []) byId.set(String(ev.id), normalizeEvent(ev))
+  }
+  const events = [...byId.values()].sort((a, b) => new Date(a.date) - new Date(b.date))
+  await db.doc('liveData/schedule').set({
+    updatedAt: FieldValue.serverTimestamp(),
+    count: events.length,
+    events,
+  })
+  logger.info(`schedule synced: ${events.length} fixtures`)
 })
 
 // Fires on every liveData/scoreboard write. For each match that just
@@ -81,10 +122,10 @@ export const onScoreboardWrite = onDocumentWritten('liveData/scoreboard', async 
   // letter from a second, independent ESPN field inside processMatchUpdate.
   // Group assignment is fixed before the tournament starts, so this
   // earlier-computed value is exactly as correct as one re-fetched later.
-  await Promise.all(flipped.map((e) => processMatchUpdate(e.id, e.group ? parseGroupLetter(e.group) : null)))
+  await Promise.all(flipped.map((e) => processMatchUpdate(e.id, e.group ? parseGroupLetter(e.group) : null, e.round, e.slot)))
 })
 
-async function processMatchUpdate(eventId, groupLetter) {
+async function processMatchUpdate(eventId, groupLetter, round, slot) {
   try {
     const summary = await fetchSummary(eventId)
     const match = normalizeMatch(summary)
@@ -93,7 +134,11 @@ async function processMatchUpdate(eventId, groupLetter) {
     // Independent writes (no read-after-write dependency between them) — a
     // batch makes them atomic without paying for a transaction.
     const batch = db.batch()
-    batch.set(db.doc(`matches/${eventId}`), { eventId, fetchedAt: FieldValue.serverTimestamp(), groupLetter, ...match }, { merge: true })
+    batch.set(
+      db.doc(`matches/${eventId}`),
+      { eventId, fetchedAt: FieldValue.serverTimestamp(), groupLetter, round: round ?? null, slot: slot ?? null, ...match },
+      { merge: true }
+    )
     if (hasStandings) {
       batch.set(db.doc(`groups/${groupLetter}`), { letter: groupLetter, updatedAt: FieldValue.serverTimestamp(), entries: match.groupStandings }, { merge: true })
     }
@@ -157,6 +202,42 @@ export const onMatchComplete = onDocumentWritten('matches/{eventId}', async (eve
   )
 })
 
+// Fires on every matches/{eventId} write. Sole owner of breakdown.knockout —
+// mutually exclusive with onMatchComplete above: a match doc has either
+// groupLetter (group stage) or round/slot (knockout), never both, so the two
+// triggers never write the same field for the same event.
+export const onKnockoutMatchComplete = onDocumentWritten('matches/{eventId}', async (event) => {
+  const after = event.data?.after?.data()
+  if (after?.status?.state !== 'post') return
+
+  const round = after.round
+  const slot = after.slot
+  // Only the pickable rounds are scored; the 3rd-place match (round 'third')
+  // is never picked, so it gets no breakdown entry.
+  if (!round || !slot || !ROUNDS.includes(round)) return
+
+  const winnerTeamId = determineKnockoutWinner(after.competitors)
+  if (!winnerTeamId) {
+    logger.warn(`onKnockoutMatchComplete: no winner determined for event ${event.params.eventId}`)
+    return
+  }
+
+  const [picksSnap, configSnap] = await Promise.all([db.collection('picks').get(), db.doc('config/public').get()])
+  const scoring = configSnap.data()?.scoring ?? {}
+  const slotIndex = String(slot - 1)
+
+  await Promise.all(
+    picksSnap.docs.map((picksDoc) => {
+      const pickedTeamId = picksDoc.data().knockout?.[round]?.[slot - 1]
+      const points = scoreKnockoutSlot(pickedTeamId, winnerTeamId, round, scoring)
+      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({
+        ...existing,
+        knockout: { ...existing.knockout, [round]: { ...existing.knockout?.[round], [slotIndex]: points } },
+      }))
+    })
+  )
+})
+
 // Fires on every groups/{letter} write — i.e. after every group-stage match
 // completes. Sole owner of breakdown.wildcards: recomputes the "best 8
 // third-place teams" ranking fresh from all 12 groups every time (so a
@@ -215,7 +296,12 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
   const after = event.data?.after?.data()
   if (!after || deepEqual(after.scoring, before?.scoring)) return
 
-  const [groupsSnap, picksSnap, wildcardsSnap] = await Promise.all([db.collection('groups').get(), db.collection('picks').get(), db.doc('liveData/wildcards').get()])
+  const [groupsSnap, picksSnap, wildcardsSnap, matchesSnap] = await Promise.all([
+    db.collection('groups').get(),
+    db.collection('picks').get(),
+    db.doc('liveData/wildcards').get(),
+    db.collection('matches').get(),
+  ])
   const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
   // Reuses onGroupsWrite's already-computed advancing set instead of
   // re-ranking all 12 groups again here — one computation owner for the
@@ -223,11 +309,23 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
   const advancing = new Set(wildcardsSnap.data()?.advancingLetters ?? [])
   const scoring = after.scoring ?? {}
 
+  // Winners of every finished knockout match, so a knockout point-value change
+  // rescores the bracket too (not just groups/wildcards). { round: { slotIdx: winnerId } }.
+  const koWinners = {}
+  for (const d of matchesSnap.docs) {
+    const m = d.data()
+    if (m.round && m.slot && ROUNDS.includes(m.round) && m.status?.state === 'post') {
+      const w = determineKnockoutWinner(m.competitors)
+      if (w) (koWinners[m.round] ??= {})[String(m.slot - 1)] = w
+    }
+  }
+
   await Promise.all(
     picksSnap.docs.map((picksDoc) => {
       const pick = picksDoc.data()
       const { groups, wildcards } = scorePick(pick, groupsByLetter, advancing, scoring)
-      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ groups, wildcards, props: existing.props ?? 0 }))
+      const knockout = scoreKnockout(pick.knockout, koWinners, scoring)
+      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ groups, wildcards, props: existing.props ?? 0, knockout }))
     })
   )
 })

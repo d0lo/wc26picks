@@ -1,4 +1,5 @@
 import { resolveTeam } from './teams.js'
+import { EVENT_SLOT_MAP } from './bracket.js'
 
 function fallbackTeam(team) {
   return { id: String(team?.id ?? ''), name: team?.displayName ?? 'Unknown', abbreviation: team?.abbreviation ?? '', logo: team?.logo ?? null }
@@ -13,7 +14,18 @@ function normalizeCompetitor(competitor) {
     logo: competitor.team?.logo ?? resolved.logo ?? null,
     score: competitor.score ?? null,
     homeAway: competitor.homeAway,
+    // Penalty-shootout draws end level on score alone, so the winner can't
+    // always be inferred by comparing competitors' scores — ESPN's own
+    // `winner` flag is the only reliable signal once a knockout match ends.
+    winner: !!competitor.winner,
   }
+}
+
+// Knockout matches are keyed by a fixed { round, slot } from EVENT_SLOT_MAP
+// (see lib/bracket.js) rather than a group letter — null for group-stage
+// events, which use parseGroupLetter instead.
+export function knockoutRoundSlot(eventId) {
+  return EVENT_SLOT_MAP[Number(eventId)] ?? null
 }
 
 export function parseGroupLetter(altGameNote) {
@@ -26,6 +38,7 @@ export function parseGroupLetter(altGameNote) {
 export function normalizeEvent(event) {
   const comp = event.competitions[0]
   const letter = parseGroupLetter(comp.altGameNote)
+  const roundSlot = knockoutRoundSlot(event.id)
   return {
     id: event.id,
     date: event.date,
@@ -45,6 +58,8 @@ export function normalizeEvent(event) {
       country: comp.venue?.address?.country ?? null,
     },
     group: letter ? `Group ${letter}` : null,
+    round: roundSlot?.round ?? null,
+    slot: roundSlot?.slot ?? null,
   }
 }
 
