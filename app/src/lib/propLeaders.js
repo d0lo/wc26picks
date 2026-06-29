@@ -91,7 +91,7 @@ function cleanGroupTeamLeaders(matches) {
 const RESOLVERS = {
   goldenBoot: { resolve: goldenBootLeaders, ranked: true, limit: 5 },
   mostGroupGoals: { resolve: mostGroupGoalsLeaders, ranked: false },
-  hatTrickScorer: { resolve: hatTrickScorers, ranked: true, limit: 3 },
+  hatTrickScorer: { resolve: hatTrickScorers, ranked: false },
   cleanGroupTeam: { resolve: cleanGroupTeamLeaders, ranked: false },
 }
 
