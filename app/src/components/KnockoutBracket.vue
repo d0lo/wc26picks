@@ -142,20 +142,16 @@ function rowClass(slotInfo, teamId) {
   // The champion (final round) is shown in amber/yellow for consistency with the
   // picker, instead of the emerald used for every other correct knockout pick.
   const isFinal = slotInfo.round === 'final'
-  // Strikethrough follows LIVE REAL results, not pick correctness: a team that's
-  // officially out of the tournament (lost a real knockout match) is struck
-  // through red EVERYWHERE it still appears, whether or not the user picked it.
-  // The one exception is a slot the team actually WON — there it really did
-  // advance, so it keeps its winner styling (it's eliminated from a *later*
-  // round, not this one).
-  if (isEliminated && !isWinner) {
-    return isPick ? 'text-red-400 font-bold line-through' : 'text-red-400/70 line-through'
-  }
+  // Styling only ever marks up the team YOU picked to win a slot. The strike +
+  // red tracks live real results: your pick is crossed out once it's officially
+  // out (lost a real knockout match), in every later round you advanced it to —
+  // but not in a slot it actually won (it's eliminated from a *later* round, not
+  // this one). Teams you didn't pick stay plain regardless of the result.
   if (isPick) {
     if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
+    if (isEliminated) return 'text-red-400 font-bold line-through'
     return 'text-white font-bold'
   }
-  if (isWinner) return 'text-zinc-300'
   return 'text-zinc-300'
 }
 
