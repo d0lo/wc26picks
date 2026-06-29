@@ -51,14 +51,13 @@ jobs:
           git add package.json
           git commit -m "chore: bump version to v$VERSION [skip ci]"
 
-          # main can move between this job's checkout and this push (e.g. a
-          # manual rerun replaying against a main that already advanced) —
-          # rebase onto the latest and retry rather than failing outright.
-          for i in 1 2 3; do
-            git push && break
-            git fetch origin main
-            git rebase origin/main
-          done
+          # Pushing the bump back to main is best-effort. Branch protection may
+          # reject a direct push (PR-only / required status checks), and that
+          # must NOT block the deploy — the bump is already baked into the build
+          # below, so the deployed app shows the right version regardless of
+          # whether the commit lands on main. Log and continue on rejection.
+          git push origin HEAD:main \
+            || echo "::warning::version bump push rejected (branch protection) — deploying v$VERSION without committing the bump to main"
 
       - name: Build Vue app
         working-directory: app
