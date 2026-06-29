@@ -14,9 +14,12 @@ export function useScoring() {
   // entry — existing picks/{uid}.props answers keyed by that id are untouched.
   const props = computed(() => (scoring.value?.props ?? []).filter(p => !p.archived))
 
+  // Every prop is a tournament prop now, so all active props go under the
+  // single category regardless of any legacy `category` field still stored on
+  // older Firestore docs.
   const propsByCategory = computed(() =>
     orderedPropCategories()
-      .map(c => ({ ...c, props: props.value.filter(p => p.category === c.key) }))
+      .map(c => ({ ...c, props: props.value }))
       .filter(c => c.props.length)
   )
 
