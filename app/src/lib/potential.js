@@ -60,25 +60,71 @@ export function knockoutEliminatedTeams(matches) {
   return out
 }
 
+// Group letters whose full round-robin (6 matches) has finished, derived from
+// our own match records — the same authoritative signal the backend uses to set
+// groups/{letter}.complete (all 6 of the group's matches "post"), recomputed
+// here client-side. This is the fallback that keeps the ceiling honest when that
+// persisted flag lags or was never written: without it, a finished-but-unflagged
+// group is treated as still open, its actual per-pick score is swapped back out
+// for the universal group max, and every pick's ceiling collapses to the same
+// constant — which is exactly the "everyone has the same max" symptom.
+export function finalizedGroupLetters(matches) {
+  const counts = {}
+  for (const m of matches ?? []) {
+    // Group matches carry groupLetter (knockout matches carry round instead).
+    if (m.groupLetter && m.status?.state === 'post') {
+      counts[m.groupLetter] = (counts[m.groupLetter] ?? 0) + 1
+    }
+  }
+  const set = new Set()
+  for (const [letter, n] of Object.entries(counts)) {
+    if (n >= 6) set.add(letter)
+  }
+  return set
+}
+
+// Whether a single group's standings are final — the persisted complete flag,
+// or our own match-records fallback (finalizedGroupLetters) when it lags.
+function isGroupFinal(letter, groupsByLetter, finalizedGroups) {
+  return groupsByLetter?.[letter]?.complete === true || finalizedGroups?.has(letter) === true
+}
+
 // Whether the "best 3rd place" advancing set is final (group stage over) — once
 // it is, wildcard points are locked at their actual value and add no potential.
-export function isWildcardSetFinal(groupsByLetter) {
-  const letters = Object.keys(groupsByLetter ?? {})
-  return letters.length >= GROUPS.length && GROUPS.every((g) => groupsByLetter[g]?.complete === true)
+// Final only when every one of the 12 groups is itself final.
+export function isWildcardSetFinal(groupsByLetter, finalizedGroups) {
+  return GROUPS.every((g) => isGroupFinal(g, groupsByLetter, finalizedGroups))
+}
+
+// Sum of point values for every prop this pick has actually answered — the most
+// it could still earn from props. A pick is "answered" when its id is present in
+// pick.props, including an explicit null ("No Team") for allowNone props, which
+// is a real prediction that can still hit; an absent prop earns nothing.
+function answeredPropMax(pick, scoring) {
+  const catalog = scoring?.props
+  if (!Array.isArray(catalog) || !pick?.props) return 0
+  let max = 0
+  for (const prop of catalog) {
+    if (prop?.archived) continue
+    if (Object.prototype.hasOwnProperty.call(pick.props, prop.id) && pick.props[prop.id] !== undefined) {
+      max += Number(prop.points ?? 0)
+    }
+  }
+  return max
 }
 
 // The ceiling. `total`/`breakdown` are the pick's current scores/{uid} values
 // (0/{} when unscored). Returns null for a missing pick so callers can hide it.
-export function maxPossibleTotal(pick, { total = 0, breakdown = {}, scoring, groupsByLetter, decidedSlots, eliminatedTeams, wildcardsFinal } = {}) {
+export function maxPossibleTotal(pick, { total = 0, breakdown = {}, scoring, groupsByLetter, finalizedGroups, decidedSlots, eliminatedTeams, wildcardsFinal } = {}) {
   if (!pick) return null
   let potential = total
 
-  // Groups: any group not yet complete could still finish exactly as predicted,
-  // so replace its provisional/partial score with the full max. Decided groups
+  // Groups: any group not yet final could still finish exactly as predicted,
+  // so replace its provisional/partial score with the full max. Final groups
   // keep their actual score (already in `total`).
   const gMax = groupMaxPoints(scoring)
   for (const letter of Object.keys(pick.groups ?? {})) {
-    if (groupsByLetter?.[letter]?.complete) continue
+    if (isGroupFinal(letter, groupsByLetter, finalizedGroups)) continue
     potential += gMax - Number(breakdown.groups?.[letter] ?? 0)
   }
 
@@ -103,6 +149,12 @@ export function maxPossibleTotal(pick, { total = 0, breakdown = {}, scoring, gro
       potential += Number(koPts[round] ?? 0) - Number(breakdown.knockout?.[round]?.[i] ?? 0)
     }
   }
+
+  // Props: tournament-long awards (golden boot, most cards, etc.) that don't
+  // resolve until the end, so every answered prop can still hit. Add the full
+  // answered-prop max minus whatever's already scored (breakdown.props is the
+  // aggregate the backend sums into `total`; 0 until a prop engine writes it).
+  potential += answeredPropMax(pick, scoring) - Number(breakdown.props ?? 0)
 
   return potential
 }
