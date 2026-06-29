@@ -14,11 +14,20 @@ export function useScoring() {
   // entry — existing picks/{uid}.props answers keyed by that id are untouched.
   const props = computed(() => (scoring.value?.props ?? []).filter(p => !p.archived))
 
-  const propsByCategory = computed(() =>
-    orderedPropCategories()
-      .map(c => ({ ...c, props: props.value.filter(p => p.category === c.key) }))
+  // Group props by category. Every prop is a tournament prop now, but a legacy
+  // `category` value (e.g. 'group'/'knockout') may still be stored on older
+  // Firestore docs — coalesce any unknown category onto the first/default one
+  // so each prop lands in exactly one section regardless of how many categories
+  // are defined (and nothing silently drops out).
+  const propsByCategory = computed(() => {
+    const categories = orderedPropCategories()
+    const known = new Set(categories.map(c => c.key))
+    const fallback = categories[0]?.key
+    const categoryOf = p => (known.has(p.category) ? p.category : fallback)
+    return categories
+      .map(c => ({ ...c, props: props.value.filter(p => categoryOf(p) === c.key) }))
       .filter(c => c.props.length)
-  )
+  })
 
   const groupExactLabel = computed(() => {
     const g = scoring.value?.groupExact

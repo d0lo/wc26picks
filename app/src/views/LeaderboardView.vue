@@ -5,7 +5,9 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { TEAM_BY_ID } from '../data.js'
-import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
+import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, groupsQueryOptions, matchesQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
+import { useScoring } from '../composables/useScoring.js'
+import { maxPossibleTotal, decidedKnockoutSlots, knockoutEliminatedTeams, isWildcardSetFinal } from '../lib/potential.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
@@ -24,6 +26,39 @@ const picksListQuery = useQuery(picksListQueryOptions())
 const submission = computed(() => pickQuery.data.value ?? null)
 const scores = computed(() => scoresQuery.data.value ?? [])
 const submitters = computed(() => picksListQuery.data.value ?? [])
+
+// ── Potential ("max possible finish") ──────────────────────────────────
+// The ceiling each pick can still reach: decided picks stay at their actual
+// value, everything still undecided is assumed to hit. Computed client-side
+// from data already cached (picks + standings + results + config) — purely
+// display-derived, never persisted (see lib/potential.js).
+const { scoring } = useScoring()
+const groupsQuery = useQuery(groupsQueryOptions())
+const matchesQuery = useQuery(matchesQueryOptions())
+
+const decidedSlots = computed(() => decidedKnockoutSlots(matchesQuery.data.value ?? []))
+const eliminatedTeams = computed(() => knockoutEliminatedTeams(matchesQuery.data.value ?? []))
+const wildcardsFinal = computed(() => isWildcardSetFinal(groupsQuery.data.value ?? {}))
+const pickByUid = computed(() => Object.fromEntries((picksListQuery.data.value ?? []).map(p => [p.id, p])))
+const scoreByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, s])))
+
+function potentialFor(uid) {
+  const pick = pickByUid.value[uid] ?? (uid === user.value?.uid ? submission.value : null)
+  if (!pick) return null
+  const s = scoreByUid.value[uid] ?? {}
+  return maxPossibleTotal(pick, {
+    total: s.total ?? 0,
+    breakdown: s.breakdown ?? {},
+    scoring: scoring.value,
+    groupsByLetter: groupsQuery.data.value ?? {},
+    decidedSlots: decidedSlots.value,
+    eliminatedTeams: eliminatedTeams.value,
+    wildcardsFinal: wildcardsFinal.value,
+  })
+}
+
+const myPotential = computed(() => potentialFor(user.value?.uid))
+const potentialByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, potentialFor(s.id)])))
 
 // Only resolve names for uids that actually appear on this page — picks-list
 // submitters plus anyone with a score — instead of pulling the whole users
@@ -174,6 +209,7 @@ function resolveTeamFlag(teamId) {
           :points="myScore?.total ?? null"
           :rank="myRank"
           :total-players="sortedSubmitters.length"
+          :potential="myPotential"
         />
       </div>
 
@@ -262,11 +298,14 @@ function resolveTeamFlag(teamId) {
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.wildcards ?? '—' }}</div>
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.knockout ? Object.values(s.breakdown.knockout).flatMap((slots) => Object.values(slots)).reduce((sum, v) => sum + v, 0) : '—' }}</div>
 
-            <!-- Total -->
-            <div
-              class="text-sm text-right font-black"
-              :class="i === 0 ? 'text-amber-400' : 'text-white'"
-            >{{ s.total }}</div>
+            <!-- Total (+ max possible) -->
+            <div class="text-right">
+              <div
+                class="text-sm font-black"
+                :class="i === 0 ? 'text-amber-400' : 'text-white'"
+              >{{ s.total }}</div>
+              <div v-if="potentialByUid[s.id] != null" class="text-[9px] font-mono text-amber-400/50 leading-tight">max {{ potentialByUid[s.id] }}</div>
+            </div>
           </div>
         </div>
       </section>

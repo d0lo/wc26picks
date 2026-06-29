@@ -98,8 +98,11 @@ function rowClass(slotInfo, teamId) {
   const isWinner = slotInfo.winner && teamId === slotInfo.winner
   const isLoser = slotInfo.winner && teamId !== slotInfo.winner
   const isPick = props.picks && pickFor(slotInfo.round, slotInfo.slot) === teamId
+  // The champion (final round) is shown in amber/yellow for consistency with the
+  // picker, instead of the emerald used for every other correct knockout pick.
+  const isFinal = slotInfo.round === 'final'
   if (isPick) {
-    if (isWinner) return 'text-emerald-400 font-bold'
+    if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
     if (isLoser) return 'text-red-400/70'
     return 'text-white font-bold'
   }
@@ -124,7 +127,7 @@ function rowClass(slotInfo, teamId) {
     <div ref="trackRef" class="relative flex items-stretch min-w-max h-full sm:h-auto" :style="trackStyle">
       <template v-for="(round, rIdx) in ROUNDS" :key="round">
         <!-- Round column -->
-        <div class="shrink-0 flex flex-col w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="rIdx">
+        <div class="shrink-0 flex flex-col" :class="compact ? 'w-[42vw] max-w-[180px] sm:w-[150px]' : 'w-[82vw] max-w-[360px] sm:w-[176px]'" :data-round-col="rIdx">
           <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
             {{ ROUND_LABELS[round] }}
           </div>
@@ -148,7 +151,7 @@ function rowClass(slotInfo, teamId) {
                   class="text-[10px] font-mono tabular-nums shrink-0"
                   :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
                 >{{ slotScore(slotInfo, teamId) ?? '' }}</span>
-                <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-emerald-400 text-[10px] shrink-0">✓</span>
+                <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-[10px] shrink-0" :class="slotInfo.round === 'final' ? 'text-amber-400' : 'text-emerald-400'">✓</span>
                 <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
               </div>
 
@@ -182,7 +185,7 @@ function rowClass(slotInfo, teamId) {
       </template>
 
       <!-- 3rd-place match: detached column (not part of the win tree) -->
-      <div class="shrink-0 flex flex-col sm:pl-2 w-[82vw] max-w-[360px]" :class="compact ? 'sm:w-[150px]' : 'sm:w-[176px]'" :data-round-col="ROUNDS.length">
+      <div class="shrink-0 flex flex-col sm:pl-2" :class="compact ? 'w-[42vw] max-w-[180px] sm:w-[150px]' : 'w-[82vw] max-w-[360px] sm:w-[176px]'" :data-round-col="ROUNDS.length">
         <div class="h-6 flex items-center text-[9px] font-black tracking-[0.15em] text-zinc-400 uppercase px-0.5">
           {{ ROUND_LABELS.third }}
         </div>

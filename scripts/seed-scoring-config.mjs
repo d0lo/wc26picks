@@ -41,11 +41,11 @@ const scoring = {
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000003', key: 'goldenBall', label: 'Golden Ball', hint: 'Best player of the tournament', type: 'player', category: 'tournament', points: 5 },
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000004', key: 'youngPlayer', label: 'Young Player of the Tournament', hint: 'Best U-21 player', type: 'player', maxAge: 21, category: 'tournament', points: 4 },
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000005', key: 'breakoutPlayer', label: 'Breakout Player of the Tournament', hint: 'The under-the-radar player who has a standout tournament (media consensus)', type: 'player', category: 'tournament', points: 6 },
-    { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000006', key: 'mostGroupGoals', label: 'Most Goals in Group Stage', hint: 'Team that scores the most goals in the group stage', type: 'team', category: 'group', points: 3 },
+    { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000006', key: 'mostGroupGoals', label: 'Most Goals in Tournament', hint: 'Team that scores the most goals in the tournament', type: 'team', category: 'tournament', points: 3 },
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000007', key: 'hatTrickScorer', label: 'Hat Trick Scorer', hint: 'Player to score a hat trick', type: 'player', category: 'tournament', points: 6 },
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000008', key: 'mostAssists', label: 'Most Assists', hint: 'Player with the most assists', type: 'player', category: 'tournament', points: 4 },
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000009', key: 'mostYellowCards', label: 'Team with Most Yellow Cards', hint: 'Most disciplinary cards received', type: 'team', category: 'tournament', points: 3 },
-    { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000010', key: 'cleanGroupTeam', label: 'Clean Group', hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team', type: 'team', allowNone: true, category: 'group', points: 5 },
+    { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000010', key: 'cleanGroupTeam', label: 'Clean Group', hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team', type: 'team', allowNone: true, category: 'tournament', points: 5 },
   ],
 }
 

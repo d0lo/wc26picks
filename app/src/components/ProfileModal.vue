@@ -2,9 +2,9 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { signOut, deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, updateProfile } from 'firebase/auth'
 import { doc, deleteDoc, setDoc } from 'firebase/firestore'
-import { useQueryClient } from '@tanstack/vue-query'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { auth, db, googleProvider } from '../firebase.js'
-import { patchUserInCache, removeUserFromCache, removePickFromCache } from '../queries.js'
+import { patchUserInCache, removeUserFromCache, removePickFromCache, userQueryOptions } from '../queries.js'
 
 const props = defineProps({ user: Object, editName: Boolean })
 const emit = defineEmits(['close', 'name-saved'])
@@ -15,14 +15,44 @@ const error = ref('')
 const confirmingDelete = ref(false)
 const reauthPassword = ref('')
 
+// The Firebase Auth object (props.user) isn't reactively refreshed after a
+// name change, but saveName() patches the users/{uid} query cache (and the
+// App-level onSnapshot keeps it in sync), so the cache is the live source the
+// rest of the app — e.g. the leaderboard banner — already reads. Source the
+// name from it so reopening this modal reflects the latest saved name instead
+// of the stale Auth value; fall back to the Auth object before the cache loads.
+const { data: cachedProfile } = useQuery(userQueryOptions(props.user.uid))
+const displayName = computed(() => cachedProfile.value?.displayName ?? props.user.displayName ?? '')
+
 const defaultDisplayName = computed(() => {
-  const n = props.user.displayName ?? ''
+  const n = displayName.value
   const parts = n.trim().split(/\s+/)
   return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : n
 })
 
 const editingName = ref(props.editName)
 const newName = ref(props.editName ? defaultDisplayName.value : '')
+
+// Tracks how edit-name mode was entered. When the modal is opened straight
+// into edit mode (e.g. the leaderboard pencil → openProfile(true)), there's
+// no profile menu "behind" it, so Cancel should close the whole modal rather
+// than reveal a menu the user never asked for. When edit mode is entered from
+// the in-modal "Edit display name" button, Cancel returns to that menu.
+const enteredEditDirectly = ref(props.editName)
+
+function startEditingName() {
+  editingName.value = true
+  enteredEditDirectly.value = false
+  newName.value = defaultDisplayName.value
+}
+
+function cancelEditingName() {
+  if (enteredEditDirectly.value) {
+    emit('close')
+  } else {
+    editingName.value = false
+  }
+}
 
 // Locks the page itself (not just this modal) from scrolling, same as
 // PicksModal — without this, focusing the name input opens the on-screen
@@ -97,10 +127,10 @@ async function reauthAndDelete() {
       <div class="flex items-center gap-3 px-5 py-4 border-b border-court-700">
         <div class="w-9 h-9 rounded-full bg-court-700 border border-court-600 overflow-hidden shrink-0 flex items-center justify-center text-sm font-bold text-white">
           <img v-if="user.photoURL" :src="user.photoURL" class="w-full h-full object-cover" referrerpolicy="no-referrer" />
-          <span v-else>{{ user.displayName?.[0] }}</span>
+          <span v-else>{{ displayName?.[0] }}</span>
         </div>
         <div class="min-w-0">
-          <div class="text-sm font-bold text-white truncate">{{ user.displayName }}</div>
+          <div class="text-sm font-bold text-white truncate">{{ displayName }}</div>
           <div class="text-[11px] text-slate-500 truncate">{{ user.email ?? user.phoneNumber }}</div>
         </div>
         <button type="button" @click="emit('close')" class="ml-auto text-slate-600 hover:text-slate-400 transition-colors">
@@ -115,7 +145,7 @@ async function reauthAndDelete() {
         <template v-if="!confirmingDelete && !editingName">
           <button
             type="button"
-            @click="editingName = true; newName = defaultDisplayName"
+            @click="startEditingName"
             :disabled="busy"
             class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-court-700 hover:bg-court-600 text-sm text-white font-medium transition-colors disabled:opacity-50"
           >
@@ -165,7 +195,7 @@ async function reauthAndDelete() {
             :disabled="busy || !newName.trim()"
             class="w-full py-3 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white transition-colors disabled:opacity-50"
           >Save</button>
-          <button type="button" @click="editingName = false" class="w-full text-xs text-zinc-500 hover:text-zinc-400 transition-colors py-1">Cancel</button>
+          <button type="button" @click="cancelEditingName" class="w-full text-xs text-zinc-500 hover:text-zinc-400 transition-colors py-1">Cancel</button>
         </template>
 
         <!-- Re-auth for delete -->
