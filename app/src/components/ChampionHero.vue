@@ -47,6 +47,8 @@ function kickoff(iso) {
 }
 const outcomeLabel = { W: 'Won', L: 'Lost', D: 'Drew' }
 const outcomeClass = { W: 'text-emerald-400', L: 'text-red-400', D: 'text-zinc-300' }
+
+const isChamp = (t) => t?.teamId === props.championId
 </script>
 
 <template>
@@ -68,7 +70,7 @@ const outcomeClass = { W: 'text-emerald-400', L: 'text-red-400', D: 'text-zinc-3
 
   <div
     v-else
-    class="relative overflow-hidden rounded-3xl border p-6"
+    class="relative overflow-hidden rounded-3xl border p-5 sm:p-6"
     :class="status?.wonItAll
       ? 'border-amber-400/40 bg-gradient-to-br from-amber-500/10 via-court-800 to-court-900'
       : status?.eliminated
@@ -82,53 +84,51 @@ const outcomeClass = { W: 'text-emerald-400', L: 'text-red-400', D: 'text-zinc-3
     ></div>
     <div class="pointer-events-none absolute -bottom-24 -left-12 h-56 w-56 rounded-full blur-3xl bg-amber-500/10"></div>
 
-    <!-- ── Identity + standing ─────────────────────────────────────────── -->
-    <div class="relative flex items-start justify-between gap-4">
-      <div class="flex items-center gap-3 min-w-0">
-        <div class="relative shrink-0">
-          <div
-            class="absolute inset-0 rounded-2xl blur-xl"
-            :class="status?.eliminated ? 'bg-zinc-500/10' : 'bg-emerald-400/25'"
-          ></div>
-          <div
-            class="relative text-5xl leading-none select-none transition-all duration-500"
-            :class="status?.eliminated ? 'grayscale opacity-60' : ''"
-          >{{ team?.flag }}</div>
-        </div>
-        <div class="min-w-0">
-          <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-black tracking-[0.25em] uppercase"
-              :class="status?.wonItAll ? 'text-amber-300' : 'text-emerald-400/80'">Your Champion</span>
-            <span v-if="status?.wonItAll" class="text-xs">🏆</span>
-          </div>
-          <div class="text-2xl font-black text-white truncate leading-tight">{{ team?.name }}</div>
-        </div>
+    <!-- ── Identity (own row, full width — name never truncates) ────────── -->
+    <div class="relative flex items-center gap-3.5">
+      <div class="relative shrink-0">
+        <div
+          class="absolute inset-0 rounded-2xl blur-xl"
+          :class="status?.eliminated ? 'bg-zinc-500/10' : 'bg-emerald-400/25'"
+        ></div>
+        <div
+          class="relative text-[2.75rem] leading-none select-none transition-all duration-500"
+          :class="status?.eliminated ? 'grayscale opacity-60' : ''"
+        >{{ team?.flag }}</div>
       </div>
-
-      <!-- Standing -->
-      <div class="flex gap-2 shrink-0">
-        <div class="rounded-xl bg-court-900/60 border border-court-700/60 px-3 py-2 text-center min-w-[58px]">
-          <div class="text-xl font-black leading-none" :class="rank === 1 ? 'text-amber-400' : 'text-white'">
-            {{ rank != null ? `#${rank}` : '—' }}
-          </div>
-          <div class="text-[8px] text-zinc-500 uppercase tracking-[0.15em] mt-1">
-            {{ totalPlayers ? `of ${totalPlayers}` : 'Rank' }}
-          </div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5">
+          <span class="text-[10px] font-black tracking-[0.25em] uppercase"
+            :class="status?.wonItAll ? 'text-amber-300' : 'text-emerald-400/80'">Your Champion</span>
+          <span v-if="status?.wonItAll" class="text-xs">🏆</span>
         </div>
-        <div class="rounded-xl bg-court-900/60 border border-court-700/60 px-3 py-2 text-center min-w-[58px]">
-          <div class="text-xl font-black text-amber-400 leading-none tabular-nums">{{ points ?? 0 }}</div>
-          <div class="text-[8px] text-zinc-500 uppercase tracking-[0.15em] mt-1">Points</div>
-        </div>
+        <div class="text-2xl sm:text-3xl font-black text-white leading-tight">{{ team?.name }}</div>
       </div>
     </div>
 
-    <!-- ── Champion status strip ───────────────────────────────────────── -->
+    <!-- ── Standing strip (divided, full width) ────────────────────────── -->
+    <div class="relative mt-4 grid grid-cols-2 overflow-hidden rounded-2xl border border-court-700/60 bg-court-900/50">
+      <div class="px-4 py-2.5 text-center">
+        <div class="text-2xl font-black leading-none tabular-nums" :class="rank === 1 ? 'text-amber-400' : 'text-white'">
+          {{ rank != null ? `#${rank}` : '—' }}
+        </div>
+        <div class="text-[9px] text-zinc-500 uppercase tracking-[0.18em] mt-1">
+          {{ rank != null && totalPlayers ? `of ${totalPlayers}` : 'Rank' }}
+        </div>
+      </div>
+      <div class="px-4 py-2.5 text-center border-l border-court-700/60">
+        <div class="text-2xl font-black text-amber-400 leading-none tabular-nums">{{ points ?? 0 }}</div>
+        <div class="text-[9px] text-zinc-500 uppercase tracking-[0.18em] mt-1">Points</div>
+      </div>
+    </div>
+
+    <!-- ── Champion status ─────────────────────────────────────────────── -->
     <div class="relative mt-5 pt-5 border-t border-court-700/60">
 
       <!-- Won it all -->
       <div v-if="status?.wonItAll" class="flex items-center gap-3">
-        <div class="text-3xl select-none">🏆</div>
-        <div>
+        <div class="text-3xl select-none shrink-0">🏆</div>
+        <div class="min-w-0">
           <div class="text-base font-black text-amber-300">World Champions!</div>
           <div class="text-xs text-zinc-300">{{ team?.name }} went all the way. Nailed it.</div>
         </div>
@@ -136,12 +136,13 @@ const outcomeClass = { W: 'text-emerald-400', L: 'text-red-400', D: 'text-zinc-3
 
       <!-- Eliminated -->
       <div v-else-if="status?.eliminated" class="flex items-center gap-3">
-        <div class="text-3xl select-none">😢</div>
+        <div class="text-3xl select-none shrink-0">😢</div>
         <div class="min-w-0">
           <div v-if="status.defeatedBy" class="text-sm font-bold text-white leading-snug">
             Your champion was defeated by
-            <span class="text-base">{{ status.defeatedBy.flag }}</span>
-            <span class="text-red-300">{{ status.defeatedBy.name }}</span>!
+            <span class="whitespace-nowrap">
+              <span class="text-base align-middle mr-1">{{ status.defeatedBy.flag }}</span><span class="text-red-300 align-middle">{{ status.defeatedBy.name }}</span>!
+            </span>
           </div>
           <div v-else class="text-sm font-bold text-white leading-snug">
             Your champion didn't make it out of the group stage.
@@ -162,18 +163,20 @@ const outcomeClass = { W: 'text-emerald-400', L: 'text-red-400', D: 'text-zinc-3
           <span class="text-[10px] font-black tracking-[0.2em] text-red-400 uppercase">Playing Now</span>
           <span v-if="status.live.fixture.clock" class="text-[10px] font-bold text-amber-400 ml-auto">{{ status.live.fixture.clock }}</span>
         </div>
-        <div class="flex items-center justify-center gap-3 rounded-2xl bg-court-900/50 border border-court-700/60 px-4 py-3">
-          <div class="flex-1 flex items-center justify-end gap-2 min-w-0">
-            <span class="text-sm font-bold text-white truncate text-right">{{ status.live.champ?.name }}</span>
-            <span class="text-2xl leading-none shrink-0">{{ status.live.champ?.flag }}</span>
+        <div class="rounded-2xl bg-court-900/50 border border-court-700/60 overflow-hidden divide-y divide-court-700/50">
+          <div
+            v-for="(side, i) in [status.live.champ, status.live.opp]" :key="i"
+            class="flex items-center gap-2.5 px-4 py-2.5"
+            :class="isChamp(side) ? 'bg-emerald-500/5' : ''"
+          >
+            <span class="text-2xl leading-none shrink-0">{{ side?.flag }}</span>
+            <span class="flex-1 min-w-0 truncate text-sm font-bold" :class="isChamp(side) ? 'text-emerald-300' : 'text-white'">{{ side?.name }}</span>
+            <span class="shrink-0 text-xl font-black text-white tabular-nums">{{ side?.score ?? 0 }}</span>
           </div>
-          <div class="shrink-0 text-2xl font-black text-white tabular-nums px-1">
-            {{ status.live.champ?.score ?? 0 }}<span class="text-zinc-500 mx-1">–</span>{{ status.live.opp?.score ?? 0 }}
-          </div>
-          <div class="flex-1 flex items-center gap-2 min-w-0">
-            <span class="text-2xl leading-none shrink-0">{{ status.live.opp?.flag }}</span>
-            <span class="text-sm font-bold text-white truncate">{{ status.live.opp?.name }}</span>
-          </div>
+        </div>
+        <div v-if="status.live.fixture.venue" class="flex items-center justify-center gap-1 text-[11px] text-zinc-500">
+          <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span class="truncate">{{ status.live.fixture.venue }}</span>
         </div>
       </div>
 
@@ -183,45 +186,49 @@ const outcomeClass = { W: 'text-emerald-400', L: 'text-red-400', D: 'text-zinc-3
           <div class="text-[10px] font-black tracking-[0.2em] text-emerald-400/80 uppercase mb-2">
             Your Champion's Next Match
           </div>
-          <div class="flex items-center justify-center gap-3 rounded-2xl bg-court-900/50 border border-court-700/60 px-4 py-3">
-            <div class="flex-1 flex items-center justify-end gap-2 min-w-0">
-              <span class="text-sm font-bold text-white truncate text-right">{{ status.next.teams[0]?.name ?? 'TBD' }}</span>
-              <span class="text-2xl leading-none shrink-0">{{ status.next.teams[0]?.flag ?? '🏳️' }}</span>
+          <div class="relative rounded-2xl bg-court-900/50 border border-court-700/60 overflow-hidden divide-y divide-court-700/50">
+            <div
+              v-for="(t, i) in status.next.teams" :key="i"
+              class="flex items-center gap-2.5 px-4 py-2.5"
+              :class="isChamp(t) ? 'bg-emerald-500/5' : ''"
+            >
+              <span class="text-2xl leading-none shrink-0">{{ t?.flag ?? '🏳️' }}</span>
+              <span class="flex-1 min-w-0 truncate text-sm font-bold" :class="isChamp(t) ? 'text-emerald-300' : 'text-white'">{{ t?.name ?? 'TBD' }}</span>
             </div>
-            <span class="shrink-0 text-[11px] font-black text-zinc-500 uppercase px-1">vs</span>
-            <div class="flex-1 flex items-center gap-2 min-w-0">
-              <span class="text-2xl leading-none shrink-0">{{ status.next.teams[1]?.flag ?? '🏳️' }}</span>
-              <span class="text-sm font-bold text-white truncate">{{ status.next.teams[1]?.name ?? 'TBD' }}</span>
-            </div>
+            <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-court-900 border border-court-700/60 px-2 py-0.5 text-[9px] font-black text-zinc-400 uppercase tracking-wider">vs</span>
           </div>
-          <div class="text-center text-[11px] text-zinc-400 mt-2">
+          <div class="mt-2 text-center text-[11px] text-zinc-400 whitespace-nowrap overflow-hidden text-ellipsis">
             {{ status.next.label }} · {{ kickoff(status.next.dateISO) }}
+          </div>
+          <div v-if="status.next.venue" class="mt-1 flex items-center justify-center gap-1 text-[11px] text-zinc-500">
+            <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span class="truncate">{{ status.next.venue }}</span>
           </div>
         </div>
         <div v-else class="text-xs text-zinc-400">
           Still alive — awaiting their next fixture. 🔥
         </div>
 
-        <!-- Last result + top scorer -->
-        <div v-if="status?.lastResult || status?.topScorer" class="grid grid-cols-2 gap-2">
-          <div v-if="status?.lastResult" class="rounded-xl bg-court-900/40 border border-court-700/50 px-3 py-2">
+        <!-- Last result + top scorer — stack on mobile so nothing is clipped -->
+        <div v-if="status?.lastResult || status?.topScorer" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div v-if="status?.lastResult" class="rounded-xl bg-court-900/40 border border-court-700/50 px-3 py-2.5">
             <div class="text-[9px] font-black tracking-[0.15em] text-zinc-500 uppercase mb-1">Last Result</div>
-            <div class="flex items-center gap-1.5 text-xs">
-              <span v-if="status.lastResult.outcome" class="font-black" :class="outcomeClass[status.lastResult.outcome]">
+            <div class="flex items-center gap-1.5 text-xs whitespace-nowrap overflow-hidden">
+              <span v-if="status.lastResult.outcome" class="font-black shrink-0" :class="outcomeClass[status.lastResult.outcome]">
                 {{ outcomeLabel[status.lastResult.outcome] }}
               </span>
-              <span class="font-bold text-white tabular-nums">
+              <span class="font-bold text-white tabular-nums shrink-0">
                 {{ status.lastResult.champ?.score ?? 0 }}–{{ status.lastResult.opp?.score ?? 0 }}
               </span>
-              <span class="text-zinc-500">vs</span>
-              <span class="text-base leading-none">{{ status.lastResult.opp?.flag }}</span>
+              <span class="text-zinc-500 shrink-0">vs</span>
+              <span class="text-base leading-none shrink-0">{{ status.lastResult.opp?.flag }}</span>
               <span class="text-zinc-300 truncate">{{ status.lastResult.opp?.name }}</span>
             </div>
           </div>
-          <div v-if="status?.topScorer" class="rounded-xl bg-court-900/40 border border-court-700/50 px-3 py-2">
+          <div v-if="status?.topScorer" class="rounded-xl bg-court-900/40 border border-court-700/50 px-3 py-2.5">
             <div class="text-[9px] font-black tracking-[0.15em] text-zinc-500 uppercase mb-1">Top Scorer</div>
             <div class="flex items-center gap-1.5 text-xs">
-              <span class="text-amber-400">⚽</span>
+              <span class="text-amber-400 shrink-0">⚽</span>
               <span class="font-bold text-white truncate">{{ status.topScorer.name }}</span>
               <span class="text-zinc-400 ml-auto tabular-nums shrink-0">{{ status.topScorer.goals }}</span>
             </div>
