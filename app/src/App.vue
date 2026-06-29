@@ -21,6 +21,13 @@ const user = ref(null)
 const picksLockTime = ref(null)
 const knockoutLockTime = ref(null)
 const hasSubmitted = ref(false)
+// True once the signed-in user's own pick doc is being delivered in realtime
+// (onSnapshot below). The knockout prompt/banner gate on this rather than the
+// pick query's isFetched, so they only ever evaluate against authoritative
+// live data — never a stale localStorage-hydrated snapshot from before the
+// bracket was saved, which would otherwise pop the "make your picks" dialog
+// for a user whose bracket is already complete.
+const pickLive = ref(false)
 const dataReady = ref(false)
 const showProfile = ref(false)
 const editNameMode = ref(false)
@@ -107,7 +114,7 @@ const championFlag = computed(() => {
   const champId = pickQuery.data.value?.knockout?.final?.[0]
   return TEAM_BY_ID[champId]?.flag ?? null
 })
-const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickQuery.isFetched.value && !knockoutComplete.value)
+const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickLive.value && !knockoutComplete.value)
 
 provide('user', user)
 provide('picksLocked', picksLocked)
@@ -129,6 +136,10 @@ watch(needsKnockoutPicks, (needed) => {
   if (needed && !knockoutDialogShown.value) {
     showKnockoutDialog.value = true
     knockoutDialogShown.value = true
+  } else if (!needed) {
+    // Saved the bracket (here or on another device) → drop the dialog if it's
+    // still up, so a completed bracket never leaves the prompt lingering.
+    showKnockoutDialog.value = false
   }
 })
 
@@ -205,6 +216,11 @@ watch(groupStageComplete, (complete) => {
 // client-visible trigger, so a one-shot fetch would otherwise require a
 // full reload to pick up a newly granted admin.
 let profileUnsub = null
+// Realtime listener on the signed-in user's own pick doc — keeps the cached
+// pick (and the knockout-complete / hasSubmitted signals derived from it) in
+// lockstep with the DB across tabs and reloads, instead of trusting a
+// persisted, 5-min-stale query cache that can lag a just-saved bracket.
+let pickUnsub = null
 
 onMounted(async () => {
   // Config is public — fetch before auth so splash page shows lock time immediately.
@@ -230,6 +246,9 @@ onMounted(async () => {
       editNameMode.value = false
       profileUnsub?.()
       profileUnsub = null
+      pickUnsub?.()
+      pickUnsub = null
+      pickLive.value = false
       // Drop the previous user's pick/profile from cache (and from the next
       // localStorage persist) — on a shared device the next sign-in
       // shouldn't briefly paint the prior user's cached data before its own
@@ -279,6 +298,16 @@ onMounted(async () => {
         const profile = snap.exists() ? snap.data() : null
         queryClient.setQueryData(userQueryOptions(u.uid).queryKey, profile)
         isAdmin.value = !!profile?.isAdmin
+      })
+
+      // Realtime sync of the user's own pick doc — drives hasSubmitted and the
+      // knockout-complete signal off live data, never a stale cache.
+      pickUnsub?.()
+      pickUnsub = onSnapshot(doc(db, 'picks', u.uid), (snap) => {
+        const pick = snap.exists() ? snap.data() : null
+        queryClient.setQueryData(queryKeys.pick(u.uid), pick)
+        hasSubmitted.value = !!pick
+        pickLive.value = true
       })
     } else {
       hasSubmitted.value = false

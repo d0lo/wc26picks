@@ -90,22 +90,29 @@ function clearDraft() {
   if (key) { try { localStorage.removeItem(key) } catch { /* ignore */ } }
 }
 
-watch(pickQuery.isFetched, (fetched) => {
-  if (!fetched) return
-  if (pickQuery.data.value?.knockout) applyKnockout(pickQuery.data.value.knockout)
-  // Overlay any locally-saved in-progress draft (unsaved edits) on top of the
-  // saved picks — but not once the bracket is locked, where the official saved
-  // state should show.
+// Set once the user touches the bracket (or a restored draft is overlaid), so
+// a later pick-doc update can't wipe in-progress edits. Reset on save.
+const dirty = ref(false)
+
+// Apply the saved bracket — and any local in-progress draft — to the editable
+// `knockout` state. Keyed off the pick *data* (not isFetched, which latches
+// true and never re-fires) so the realtime pick listener delivering the
+// freshly-saved bracket after a reload painted a stale cache still fills the
+// bracket in. Skipped while the user has unsaved local edits.
+watch(() => pickQuery.data.value, (data) => {
+  if (!pickQuery.isFetched.value || dirty.value) return
+  if (data?.knockout) applyKnockout(data.knockout)
   // Overlay a locally-saved in-progress draft only when the saved bracket is
   // still incomplete and editable. If the saved bracket is already complete
   // (e.g. finished+saved on another device), a stale draft must NOT override
   // it — drop it instead, so cross-device saves can't be clobbered.
-  const dbComplete = isBracketPickComplete(pickQuery.data.value?.knockout)
+  const dbComplete = isBracketPickComplete(data?.knockout)
   const draft = loadDraft()
   if (dbComplete) {
     clearDraft()
   } else if (draft && hasAnyPick(draft) && !knockoutLocked.value) {
     applyKnockout(draft)
+    dirty.value = true
   }
 }, { immediate: true })
 
@@ -142,6 +149,7 @@ function pickWinner(round, slotIdx, teamId) {
   if (knockoutLocked.value) return
   knockout[round][slotIdx] = teamId
   cascadeFrom(round)
+  dirty.value = true // protect these edits from being overwritten by a pick-doc update
   saveDraft() // persist the in-progress bracket locally so it survives navigation
 }
 
@@ -294,6 +302,7 @@ async function submitKnockout() {
     await setDoc(doc(db, 'picks', user.value.uid), { knockout: knockoutField }, { merge: true })
     queryClient.setQueryData(queryKeys.pick(user.value.uid), (old) => ({ ...old, knockout: knockoutField }))
     clearDraft() // saved to DB now — drop the local draft so it can't override later
+    dirty.value = false // saved state is now authoritative; let live updates refresh it
   } catch {
     submitError.value = 'Save failed — check your connection and try again.'
   } finally {
