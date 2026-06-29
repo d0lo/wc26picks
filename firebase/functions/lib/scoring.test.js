@@ -53,7 +53,7 @@ test('rankThirdPlaceTeams sorts by points then goal differential', () => {
   assert.equal(ranked[0].letter, 'B')
 })
 
-test('creditWildcardPicks only credits picks in the advancing set', () => {
+test('creditWildcardPicks only credits picks in the advancing set with the predicted 3rd-place team', () => {
   const groupsByLetter = {}
   const letters = 'ABCDEFGHIJKL'.split('')
   letters.forEach((letter, i) => {
@@ -63,10 +63,26 @@ test('creditWildcardPicks only credits picks in the advancing set', () => {
     groupsByLetter[letter][2].points = 20 - i
   })
   const advancing = advancingThirdPlaceLetters(groupsByLetter)
+  // Pick predicts each group's actual 3rd-place team correctly.
+  const groups = Object.fromEntries(letters.map((l) => [l, [`${l}1`, `${l}2`, `${l}3`, `${l}4`]]))
 
-  assert.equal(creditWildcardPicks(['A', 'L'], advancing, SCORING), 2) // only A advances
-  assert.equal(creditWildcardPicks(['I', 'J'], advancing, SCORING), 0)
-  assert.equal(creditWildcardPicks([], advancing, SCORING), 0)
+  assert.equal(creditWildcardPicks({ groups, wildcards: ['A', 'L'] }, groupsByLetter, advancing, SCORING), 2) // only A advances
+  assert.equal(creditWildcardPicks({ groups, wildcards: ['I', 'J'] }, groupsByLetter, advancing, SCORING), 0)
+  assert.equal(creditWildcardPicks({ groups, wildcards: [] }, groupsByLetter, advancing, SCORING), 0)
+})
+
+test('creditWildcardPicks rejects a wildcard whose predicted 3rd-place team finished elsewhere', () => {
+  // Group A's actual 3rd place is 'a3' and it advances, but the user predicted
+  // 'a2' to finish 3rd (a2 actually placed 2nd — "made it out of the group").
+  // The pick names the right group but the wrong 3rd-place team: no credit.
+  const groupsByLetter = { A: standings('a1', 'a2', 'a3', 'a4') }
+  const advancing = new Set(['A'])
+  const pick = { groups: { A: ['a1', 'a3', 'a2', 'a4'] }, wildcards: ['A'] }
+  assert.equal(creditWildcardPicks(pick, groupsByLetter, advancing, SCORING), 0)
+
+  // Same group, but now the predicted 3rd team matches the actual 3rd team.
+  const correctPick = { groups: { A: ['a1', 'a2', 'a3', 'a4'] }, wildcards: ['A'] }
+  assert.equal(creditWildcardPicks(correctPick, groupsByLetter, advancing, SCORING), 2)
 })
 
 test('advancingThirdPlaceLetters returns the same set for an unchanged input (the onGroupsWrite skip case)', () => {

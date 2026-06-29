@@ -256,16 +256,23 @@ export const onGroupsWrite = onDocumentWritten('groups/{letter}', async () => {
   const advancing = advancingThirdPlaceLetters(groupsByLetter)
   const nextLetters = [...advancing].sort()
 
-  const previousLetters = previousSnap.data()?.advancingLetters ?? []
-  if (arraysEqual(previousLetters, nextLetters)) return
+  // The team currently sitting 3rd in each advancing group. A wildcard only
+  // scores when the user's predicted 3rd-place team matches this team, so a
+  // result swing that changes who holds an advancing 3rd spot must rescore
+  // even when the *set* of advancing letters is unchanged — comparing letters
+  // alone would skip that case and leave a stale wildcard score.
+  const nextThirds = Object.fromEntries(nextLetters.map((l) => [l, groupsByLetter[l]?.[2]?.team?.id ?? null]))
 
-  await wildcardsRef.set({ advancingLetters: nextLetters, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
+  const previous = previousSnap.data() ?? {}
+  if (arraysEqual(previous.advancingLetters ?? [], nextLetters) && deepEqual(previous.advancingThirds ?? {}, nextThirds)) return
+
+  await wildcardsRef.set({ advancingLetters: nextLetters, advancingThirds: nextThirds, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
 
   const [picksSnap, configSnap] = await Promise.all([db.collection('picks').get(), db.doc('config/public').get()])
   const scoring = configSnap.data()?.scoring ?? {}
   await Promise.all(
     picksSnap.docs.map((picksDoc) => {
-      const wildcardPoints = creditWildcardPicks(picksDoc.data().wildcards, advancing, scoring)
+      const wildcardPoints = creditWildcardPicks(picksDoc.data(), groupsByLetter, advancing, scoring)
       return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ ...existing, wildcards: wildcardPoints }))
     })
   )
