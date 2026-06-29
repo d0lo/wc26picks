@@ -60,15 +60,25 @@ export function knockoutEliminatedTeams(matches) {
   return out
 }
 
-// Group letters whose full round-robin (6 matches) has finished, derived from
-// our own match records — the same authoritative signal the backend uses to set
-// groups/{letter}.complete (all 6 of the group's matches "post"), recomputed
-// here client-side. This is the fallback that keeps the ceiling honest when that
-// persisted flag lags or was never written: without it, a finished-but-unflagged
-// group is treated as still open, its actual per-pick score is swapped back out
-// for the universal group max, and every pick's ceiling collapses to the same
-// constant — which is exactly the "everyone has the same max" symptom.
-export function finalizedGroupLetters(matches) {
+// A World Cup group is 4 teams each playing 3 round-robin games (6 matches).
+const GROUP_TEAMS = 4
+const GROUP_GAMES_EACH = 3
+const GROUP_MATCHES = 6
+
+// Group letters whose round-robin has finished, derived client-side as a
+// fallback for a lagging/unwritten groups/{letter}.complete flag. Without this
+// the ceiling treats a finished-but-unflagged group as still open: each pick's
+// actual group score is swapped back out for the universal group max, so every
+// pick's ceiling collapses to the same constant — exactly the "everyone has the
+// same max" symptom. Two independent signals, either is sufficient:
+//   1. 6 finished group matches recorded for the letter (our own match records);
+//   2. the group's standings show every team has played all 3 of its games.
+// Signal 2 matters because group-stage match docs written before groupLetter
+// was tracked carry no letter (see scripts/backfill-match-group-letters.mjs),
+// which makes signal 1 silently find nothing once the group stage is over.
+export function finalizedGroupLetters(matches, groupsByLetter) {
+  const set = new Set()
+
   const counts = {}
   for (const m of matches ?? []) {
     // Group matches carry groupLetter (knockout matches carry round instead).
@@ -76,10 +86,21 @@ export function finalizedGroupLetters(matches) {
       counts[m.groupLetter] = (counts[m.groupLetter] ?? 0) + 1
     }
   }
-  const set = new Set()
   for (const [letter, n] of Object.entries(counts)) {
-    if (n >= 6) set.add(letter)
+    if (n >= GROUP_MATCHES) set.add(letter)
   }
+
+  for (const [letter, group] of Object.entries(groupsByLetter ?? {})) {
+    const entries = group?.entries
+    if (
+      Array.isArray(entries) &&
+      entries.length >= GROUP_TEAMS &&
+      entries.every((e) => Number(e?.gamesPlayed ?? 0) >= GROUP_GAMES_EACH)
+    ) {
+      set.add(letter)
+    }
+  }
+
   return set
 }
 

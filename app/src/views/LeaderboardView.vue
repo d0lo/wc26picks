@@ -41,7 +41,7 @@ const eliminatedTeams = computed(() => knockoutEliminatedTeams(matchesQuery.data
 // Group letters whose round-robin is finished per our own match records — the
 // fallback that locks a finished group's score into each pick's `total` even
 // when the persisted groups/{letter}.complete flag hasn't been written yet.
-const finalizedGroups = computed(() => finalizedGroupLetters(matchesQuery.data.value ?? []))
+const finalizedGroups = computed(() => finalizedGroupLetters(matchesQuery.data.value ?? [], groupsQuery.data.value ?? {}))
 const wildcardsFinal = computed(() => isWildcardSetFinal(groupsQuery.data.value ?? {}, finalizedGroups.value))
 const pickByUid = computed(() => Object.fromEntries((picksListQuery.data.value ?? []).map(p => [p.id, p])))
 const scoreByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, s])))
