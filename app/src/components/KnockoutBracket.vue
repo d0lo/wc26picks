@@ -137,9 +137,13 @@ function rowClass(slotInfo, teamId) {
   const isFinal = slotInfo.round === 'final'
   if (isPick) {
     if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
-    // Wrong pick — the team lost this slot, or has been knocked out elsewhere
-    // (so it can't win this one either): red + strikethrough, no separate ✗.
-    if (isLoser || isEliminated) return 'text-red-400 font-bold line-through'
+    // Wrong pick — red + strikethrough, no separate ✗ — but ONLY once the team
+    // has officially been eliminated (lost an actual knockout match). A team
+    // that's still alive yet "picked against" in a later round must not be
+    // struck: `isLoser` (this slot has some other winner) isn't enough, because
+    // the projection can show a still-alive picked team in a slot whose real
+    // match was between different teams.
+    if (isEliminated) return 'text-red-400 font-bold line-through'
     return 'text-white font-bold'
   }
   if (isLoser) return 'text-zinc-500 opacity-50'
