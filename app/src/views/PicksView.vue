@@ -418,7 +418,7 @@ const POS_COLORS = [
     <!-- ── SECTION 3: Props (by category) ── -->
     <section
       v-for="cat in propsByCategory" :key="cat.key"
-      :ref="cat.key === 'group' ? 'propsSectionRef' : undefined"
+      :ref="cat.key === 'tournament' ? 'propsSectionRef' : undefined"
       class="mb-10"
     >
       <div class="flex items-baseline justify-between mb-5">
