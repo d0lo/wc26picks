@@ -24,6 +24,27 @@ const defaultDisplayName = computed(() => {
 const editingName = ref(props.editName)
 const newName = ref(props.editName ? defaultDisplayName.value : '')
 
+// Tracks how edit-name mode was entered. When the modal is opened straight
+// into edit mode (e.g. the leaderboard pencil → openProfile(true)), there's
+// no profile menu "behind" it, so Cancel should close the whole modal rather
+// than reveal a menu the user never asked for. When edit mode is entered from
+// the in-modal "Edit display name" button, Cancel returns to that menu.
+const enteredEditDirectly = ref(props.editName)
+
+function startEditingName() {
+  editingName.value = true
+  enteredEditDirectly.value = false
+  newName.value = defaultDisplayName.value
+}
+
+function cancelEditingName() {
+  if (enteredEditDirectly.value) {
+    emit('close')
+  } else {
+    editingName.value = false
+  }
+}
+
 // Locks the page itself (not just this modal) from scrolling, same as
 // PicksModal — without this, focusing the name input opens the on-screen
 // keyboard, the browser scrolls the document to keep the input visible,
@@ -115,7 +136,7 @@ async function reauthAndDelete() {
         <template v-if="!confirmingDelete && !editingName">
           <button
             type="button"
-            @click="editingName = true; newName = defaultDisplayName"
+            @click="startEditingName"
             :disabled="busy"
             class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-court-700 hover:bg-court-600 text-sm text-white font-medium transition-colors disabled:opacity-50"
           >
@@ -165,7 +186,7 @@ async function reauthAndDelete() {
             :disabled="busy || !newName.trim()"
             class="w-full py-3 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white transition-colors disabled:opacity-50"
           >Save</button>
-          <button type="button" @click="editingName = false" class="w-full text-xs text-zinc-500 hover:text-zinc-400 transition-colors py-1">Cancel</button>
+          <button type="button" @click="cancelEditingName" class="w-full text-xs text-zinc-500 hover:text-zinc-400 transition-colors py-1">Cancel</button>
         </template>
 
         <!-- Re-auth for delete -->
