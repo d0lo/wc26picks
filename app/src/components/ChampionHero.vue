@@ -6,11 +6,12 @@ import {
   groupsQueryOptions, wildcardsQueryOptions,
 } from '../queries.js'
 import { championStatus } from '../lib/champion.js'
+import ChampionMatchPanel from './ChampionMatchPanel.vue'
 
-// The home-screen "Your Champion" hero. Shows the user's standing (points +
-// place) and follows their picked champion through the tournament: who beat
-// them if they're out, or their last result / top scorer / next-or-live match
-// if they're still in it.
+// The home-screen hero. Always shows the user's standing (points + place). When
+// they've picked a champion (a completed knockout bracket), it also follows
+// that team through the tournament: who beat them if they're out, or their last
+// result / top scorer / next-or-live match if they're still in it.
 const props = defineProps({
   championId: { type: String, default: null },   // picks/{uid}.knockout.final[0]
   points: { type: Number, default: null },        // total score (null until scoring begins)
@@ -37,6 +38,8 @@ const status = computed(() => championStatus({
 }))
 
 const team = computed(() => status.value?.team ?? null)
+// No scores computed yet (pre-tournament) — rank stays null until the first match.
+const preScoring = computed(() => props.rank == null)
 
 function kickoff(iso) {
   if (!iso) return ''
@@ -47,29 +50,10 @@ function kickoff(iso) {
 }
 const outcomeLabel = { W: 'Won', L: 'Lost', D: 'Drew' }
 const outcomeClass = { W: 'text-emerald-400', L: 'text-red-400', D: 'text-zinc-300' }
-
-const isChamp = (t) => t?.teamId === props.championId
 </script>
 
 <template>
-  <!-- No champion picked yet -->
   <div
-    v-if="!championId"
-    class="relative overflow-hidden rounded-3xl border border-court-700 bg-gradient-to-br from-court-750 via-court-800 to-court-900 p-6"
-  >
-    <div class="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-emerald-500/10 blur-3xl"></div>
-    <div class="relative flex items-center gap-4">
-      <div class="text-5xl select-none">🏆</div>
-      <div>
-        <div class="text-[10px] font-black tracking-[0.25em] text-emerald-400/80 uppercase">Your Champion</div>
-        <div class="text-lg font-black text-white">Not picked yet</div>
-        <div class="text-xs text-zinc-400 mt-0.5">Finish your bracket to crown a champion.</div>
-      </div>
-    </div>
-  </div>
-
-  <div
-    v-else
     class="relative overflow-hidden rounded-3xl border p-5 sm:p-6"
     :class="status?.wonItAll
       ? 'border-amber-400/40 bg-gradient-to-br from-amber-500/10 via-court-800 to-court-900'
@@ -84,8 +68,8 @@ const isChamp = (t) => t?.teamId === props.championId
     ></div>
     <div class="pointer-events-none absolute -bottom-24 -left-12 h-56 w-56 rounded-full blur-3xl bg-amber-500/10"></div>
 
-    <!-- ── Identity (own row, full width — name never truncates) ────────── -->
-    <div class="relative flex items-center gap-3.5">
+    <!-- ── Identity (champion only) ────────────────────────────────────── -->
+    <div v-if="championId" class="relative flex items-center gap-3.5">
       <div class="relative shrink-0">
         <div
           class="absolute inset-0 rounded-2xl blur-xl"
@@ -106,8 +90,13 @@ const isChamp = (t) => t?.teamId === props.championId
       </div>
     </div>
 
-    <!-- ── Standing strip (divided, full width) ────────────────────────── -->
-    <div class="relative mt-4 grid grid-cols-2 overflow-hidden rounded-2xl border border-court-700/60 bg-court-900/50">
+    <!-- ── No champion: just the standing ──────────────────────────────── -->
+    <div v-else class="relative text-center text-[10px] font-black tracking-[0.25em] text-emerald-400/80 uppercase mb-3">
+      Your Standing
+    </div>
+
+    <!-- ── Standing strip (always) ─────────────────────────────────────── -->
+    <div class="relative grid grid-cols-2 overflow-hidden rounded-2xl border border-court-700/60 bg-court-900/50" :class="championId ? 'mt-4' : ''">
       <div class="px-4 py-2.5 text-center">
         <div class="text-2xl font-black leading-none tabular-nums" :class="rank === 1 ? 'text-amber-400' : 'text-white'">
           {{ rank != null ? `#${rank}` : '—' }}
@@ -122,8 +111,13 @@ const isChamp = (t) => t?.teamId === props.championId
       </div>
     </div>
 
-    <!-- ── Champion status ─────────────────────────────────────────────── -->
-    <div class="relative mt-5 pt-5 border-t border-court-700/60">
+    <!-- Pre-tournament reassurance when there's no score context yet -->
+    <div v-if="!championId && preScoring" class="relative mt-3 text-center text-xs text-zinc-400">
+      Scoring begins once the tournament starts
+    </div>
+
+    <!-- ── Champion status (champion only) ─────────────────────────────── -->
+    <div v-if="championId" class="relative mt-5 pt-5 border-t border-court-700/60">
 
       <!-- Won it all -->
       <div v-if="status?.wonItAll" class="flex items-center gap-3">
@@ -161,23 +155,9 @@ const isChamp = (t) => t?.teamId === props.championId
             <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
           </span>
           <span class="text-[10px] font-black tracking-[0.2em] text-red-400 uppercase">Playing Now</span>
-          <span v-if="status.live.fixture.clock" class="text-[10px] font-bold text-amber-400 ml-auto">{{ status.live.fixture.clock }}</span>
+          <span v-if="status.live.clock" class="text-[10px] font-bold text-amber-400 ml-auto">{{ status.live.clock }}</span>
         </div>
-        <div class="rounded-2xl bg-court-900/50 border border-court-700/60 overflow-hidden divide-y divide-court-700/50">
-          <div
-            v-for="(side, i) in [status.live.champ, status.live.opp]" :key="i"
-            class="flex items-center gap-2.5 px-4 py-2.5"
-            :class="isChamp(side) ? 'bg-emerald-500/5' : ''"
-          >
-            <span class="text-2xl leading-none shrink-0">{{ side?.flag }}</span>
-            <span class="flex-1 min-w-0 truncate text-sm font-bold" :class="isChamp(side) ? 'text-emerald-300' : 'text-white'">{{ side?.name }}</span>
-            <span class="shrink-0 text-xl font-black text-white tabular-nums">{{ side?.score ?? 0 }}</span>
-          </div>
-        </div>
-        <div v-if="status.live.fixture.venue" class="flex items-center justify-center gap-1 text-[11px] text-zinc-500">
-          <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-          <span class="truncate">{{ status.live.fixture.venue }}</span>
-        </div>
+        <ChampionMatchPanel :fixture="status.live" :champion-id="championId" show-score />
       </div>
 
       <!-- Still in it: next match (+ last result / top scorer) -->
@@ -186,24 +166,11 @@ const isChamp = (t) => t?.teamId === props.championId
           <div class="text-[10px] font-black tracking-[0.2em] text-emerald-400/80 uppercase mb-2">
             Your Champion's Next Match
           </div>
-          <div class="relative rounded-2xl bg-court-900/50 border border-court-700/60 overflow-hidden divide-y divide-court-700/50">
-            <div
-              v-for="(t, i) in status.next.teams" :key="i"
-              class="flex items-center gap-2.5 px-4 py-2.5"
-              :class="isChamp(t) ? 'bg-emerald-500/5' : ''"
-            >
-              <span class="text-2xl leading-none shrink-0">{{ t?.flag ?? '🏳️' }}</span>
-              <span class="flex-1 min-w-0 truncate text-sm font-bold" :class="isChamp(t) ? 'text-emerald-300' : 'text-white'">{{ t?.name ?? 'TBD' }}</span>
-            </div>
-            <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-court-900 border border-court-700/60 px-2 py-0.5 text-[9px] font-black text-zinc-400 uppercase tracking-wider">vs</span>
-          </div>
-          <div class="mt-2 text-center text-[11px] text-zinc-400 whitespace-nowrap overflow-hidden text-ellipsis">
-            {{ status.next.label }} · {{ kickoff(status.next.dateISO) }}
-          </div>
-          <div v-if="status.next.venue" class="mt-1 flex items-center justify-center gap-1 text-[11px] text-zinc-500">
-            <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            <span class="truncate">{{ status.next.venue }}</span>
-          </div>
+          <ChampionMatchPanel
+            :fixture="status.next"
+            :champion-id="championId"
+            :subtitle="`${status.next.label} · ${kickoff(status.next.dateISO)}`"
+          />
         </div>
         <div v-else class="text-xs text-zinc-400">
           Still alive — awaiting their next fixture. 🔥

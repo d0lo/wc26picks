@@ -7,9 +7,10 @@
 // It answers, for the champion team: are they still alive, who knocked them
 // out, what was their last result, what's their next (or live) match, and who
 // is their top scorer so far.
-import { TEAM_BY_ID, GROUP_TEAMS, TEAM_ID } from '../data.js'
+import { GROUP_TEAMS, TEAM_ID, GROUPS, teamView } from '../data.js'
 import { matchWinner, matchLoser, ROUND_LABELS } from '../bracket.js'
 import { buildFixtures } from './fixtures.js'
+import { resolvePropLeaders } from './propLeaders.js'
 
 // teamId → group letter, for group-stage non-advancement detection.
 const GROUP_OF_TEAM = {}
@@ -17,27 +18,16 @@ for (const [letter, names] of Object.entries(GROUP_TEAMS)) {
   for (const name of names) GROUP_OF_TEAM[TEAM_ID[name]] = letter
 }
 
-export function teamView(teamId) {
-  const t = teamId ? TEAM_BY_ID[teamId] : null
-  return { teamId: teamId ?? null, name: t?.name ?? 'TBD', flag: t?.flag ?? '🏳️' }
-}
-
-// Top scorer on the champion's own team, by ESPN scoringPlays display name.
-// scoringPlays.scorer is a plain display name (not a roster UUID — see
-// lib/propLeaders.js), so this is a best-effort tally across every match doc.
+// Top scorer on the champion's own team. Reuses the same goal tally the prop
+// leaderboard uses (lib/propLeaders.js goldenBoot) so the hero and the Golden
+// Boot board can never disagree on a player's count; we just pick the
+// highest-scoring entry attributed to the champion's teamId. scoringPlays.scorer
+// is a plain ESPN display name (not a roster UUID), so this stays best-effort —
+// the same own-goal/duplicate-name caveat that applies to the prop board.
 function championTopScorer(championId, matches) {
-  const tally = {}
-  for (const m of matches) {
-    for (const play of m.scoringPlays ?? []) {
-      if (play.teamId !== championId || !play.scorer) continue
-      tally[play.scorer] = (tally[play.scorer] ?? 0) + 1
-    }
-  }
-  let best = null
-  for (const [name, goals] of Object.entries(tally)) {
-    if (!best || goals > best.goals) best = { name, goals }
-  }
-  return best
+  const { leaders } = resolvePropLeaders('goldenBoot', matches)
+  const top = leaders.find((l) => l.teamId === championId)
+  return top ? { name: top.scorer, goals: top.goals } : null
 }
 
 // The champion's view of a single fixture: which side they are, the opponent,
@@ -83,13 +73,17 @@ export function championStatus({
   // ── Elimination ──────────────────────────────────────────────────────────
   // Authoritative winner/loser comes from the matches/{eventId} docs (handles
   // penalty shootouts via ESPN's winner flag — see bracket.js matchWinner).
+  // The 3rd-place match (round 'third') is excluded: it's not part of the
+  // championship path, so losing it is never what knocked a team out — the
+  // semifinal already did. Including it would misattribute the elimination
+  // (and, since match docs aren't ordered, do so non-deterministically).
   let eliminated = false
   let defeatedBy = null
   let eliminatedRound = null
   let wonItAll = false
 
   for (const m of matches) {
-    if (!m.round || m.status?.state !== 'post') continue
+    if (!m.round || m.round === 'third' || m.status?.state !== 'post') continue
     if (!m.competitors?.some((c) => c.teamId === championId)) continue
     if (matchLoser(m) === championId) {
       eliminated = true
@@ -99,16 +93,22 @@ export function championStatus({
     if (m.round === 'final' && matchWinner(m) === championId) wonItAll = true
   }
 
-  // Group-stage non-advancement: only once the group is fully complete (a
-  // structural signal owned by Feature 2's onMatchComplete) and the champion
-  // finished outside the qualifying places (top 2, or 3rd if advancing).
+  // Group-stage non-advancement, gated on the backend-owned
+  // groups/{letter}.complete flag (Feature 2's onMatchComplete) rather than
+  // reimplementing standings math:
+  //   - 4th place (idx 3) is out the moment that group finishes.
+  //   - 3rd place (idx 2) advancing depends on the cross-group best-thirds
+  //     ranking, which is only final once EVERY group is complete — until then
+  //     advancingLetters is a partial running ranking, so a 3rd-place team must
+  //     not be declared out early (it can flip back in once later groups play).
   if (!eliminated && !wonItAll) {
     const letter = GROUP_OF_TEAM[championId]
     const g = letter ? groups[letter] : null
     if (g?.complete && Array.isArray(g.entries)) {
       const idx = g.entries.findIndex((e) => e.team?.id === championId)
-      const advanced = idx === 0 || idx === 1 || (idx === 2 && advancingLetters.includes(letter))
-      if (idx !== -1 && !advanced) {
+      const groupStageComplete = GROUPS.every((l) => groups[l]?.complete)
+      const out = idx === 3 || (idx === 2 && groupStageComplete && !advancingLetters.includes(letter))
+      if (out) {
         eliminated = true
         defeatedBy = null
         eliminatedRound = `Group ${letter}`
@@ -122,7 +122,7 @@ export function championStatus({
     defeatedBy,
     eliminatedRound,
     wonItAll,
-    live: live ? championSide(live, championId) : null,
+    live,
     lastResult: lastResult ? championSide(lastResult, championId) : null,
     next,
     topScorer: championTopScorer(championId, matches),
