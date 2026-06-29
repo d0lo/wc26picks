@@ -3,19 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Kept writable for now — main's current app code still reads/writes
-    // this collection. Switch to read-only once the /picks migration on
-    // claude/admin-config-editor-tab-m9ot20 merges and main moves off it.
-    match /submissions/{userId} {
-      allow create, update: if request.auth != null && request.auth.uid == userId;
-      allow read: if request.auth != null;
-      allow delete: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // New collection used by the in-progress /picks + /users migration.
-    // Deployed ahead of that branch's merge so its PR preview can be
-    // tested against live rules without breaking /submissions for
-    // current users.
     match /picks/{userId} {
       allow read: if request.auth != null;
       allow create, update, delete: if request.auth != null && request.auth.uid == userId;
@@ -42,6 +29,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /submissions/{userId} {
+      allow read: if request.auth != null;
+      allow write: if false; // read-only backup after migration
+    }
+
     match /config/{docId} {
       allow read: if true;
       allow write: if request.auth != null
@@ -50,12 +42,12 @@ service cloud.firestore {
 
     match /outcomes/official {
       allow read: if request.auth != null;
-      allow write: if false; // admin writes via Firebase Console or trusted server
+      allow write: if false;
     }
 
     match /scores/{userId} {
       allow read: if request.auth != null;
-      allow write: if false; // computed server-side or by admin
+      allow write: if false;
     }
 
     match /liveData/{document=**} {

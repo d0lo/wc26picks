@@ -1,21 +1,24 @@
 <script setup>
-import { reactive, ref, computed, inject, onMounted, watch, nextTick } from 'vue'
+import { reactive, ref, computed, inject, watch } from 'vue'
+import draggable from 'vuedraggable'
 import { useRouter } from 'vue-router'
-const appVersion = __APP_VERSION__
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { GROUP_TEAMS, GROUPS, PROPS, TEAM_FLAG, FIFA_RANKING } from '../data.js'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { GROUP_TEAMS, GROUPS, TEAM_FLAG, FIFA_RANKING, TEAM_ID, TEAM_BY_ID } from '../data.js'
+import { ROSTERS } from '../rosters.js'
+import { pickQueryOptions, queryKeys } from '../queries.js'
+import { useScoring } from '../composables/useScoring.js'
 import CountrySelect from '../components/CountrySelect.vue'
 import PlayerSelect from '../components/PlayerSelect.vue'
-import ProfileModal from '../components/ProfileModal.vue'
-import PicksHeader from '../components/PicksHeader.vue'
-
-const showProfile = ref(false)
+import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
+import PropPointsBadge from '../components/PropPointsBadge.vue'
 
 const router = useRouter()
 const user = inject('user')
 const picksLocked = inject('picksLocked')
 const picksLockTime = inject('picksLockTime')
+const queryClient = useQueryClient()
 
 function fmtLockTime(ts) {
   if (!ts) return null
@@ -35,18 +38,34 @@ function fifaOrder(group) {
 
 const order = reactive(Object.fromEntries(GROUPS.map(g => [g, fifaOrder(g)])))
 const wildcards = ref([])
-const propAnswers = reactive(Object.fromEntries(PROPS.map(p => [p.key, ''])))
+const propAnswers = reactive({})
 const submitting = ref(false)
 const submitError = ref('')
 const isUpdate = ref(false)
 const savedSnapshot = ref(null)
 const loaded = ref(false)
 
+// ── Scoring config (admin-editable prop catalog + point values) ────────
+// Declared before makeSnapshot/pickQuery below — both reference allProps,
+// and pickQuery's immediate watch can run synchronously during setup() if
+// TanStack Query's persisted cache already has data, which would hit a
+// TDZ ReferenceError on allProps if useScoring() were declared later.
+const { scoring, props: allProps, propsByCategory, groupExactLabel, isLoading: scoringLoading } = useScoring()
+
+// Prop ids arrive async from Firestore — seed an answer slot for each as
+// the catalog loads, without clobbering answers already merged in from a
+// saved pick (see the pickQuery watch below).
+watch(allProps, (list) => {
+  for (const p of list) {
+    if (!(p.id in propAnswers)) propAnswers[p.id] = ''
+  }
+}, { immediate: true })
+
 function makeSnapshot() {
   return JSON.stringify({
     groups: Object.fromEntries(GROUPS.map(g => [g, [...order[g]]])),
     wildcards: [...wildcards.value].sort(),
-    props: Object.fromEntries(PROPS.map(p => [p.key, propAnswers[p.key]])),
+    props: Object.fromEntries(allProps.value.map(p => [p.id, propAnswers[p.id]])),
   })
 }
 
@@ -55,21 +74,19 @@ function picksChanged() {
   return makeSnapshot() !== savedSnapshot.value
 }
 
-// ── Pre-populate from existing submission ──────────────────────────────
-onMounted(async () => {
-  let snap
-  try {
-    snap = await getDoc(doc(db, 'submissions', user.value.uid))
-  } catch {
-    loaded.value = true
-    return
-  }
-  if (snap.exists()) {
+// ── Pre-populate from existing pick ───────────────────────────────────
+const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
+
+watch(pickQuery.isFetched, (fetched) => {
+  if (!fetched) return
+  const data = pickQuery.data.value
+  if (data) {
     isUpdate.value = true
-    const data = snap.data()
     if (data.groups) {
-      for (const [g, arr] of Object.entries(data.groups)) {
-        if (arr && arr.length === 4 && order[g]) order[g] = [...arr]
+      for (const [g, teamIds] of Object.entries(data.groups)) {
+        // teamIds are UUIDs — map back to team names for the drag-drop UI
+        const names = teamIds.map(id => TEAM_BY_ID[id]?.name).filter(Boolean)
+        if (names.length === 4 && order[g]) order[g] = names
       }
     }
     if (data.wildcards) wildcards.value = [...data.wildcards]
@@ -77,94 +94,7 @@ onMounted(async () => {
     savedSnapshot.value = makeSnapshot()
   }
   loaded.value = true
-})
-
-// ── Drag and drop ──────────────────────────────────────────────────────
-const drag = reactive({ group: null, item: null })
-let _dragSaved = null // order snapshot before drag; cleared on valid drop
-
-function onDragStart(e, group, team) {
-  drag.group = group
-  drag.item = team
-  _dragSaved = { group, order: [...order[group]] }
-  e.dataTransfer.effectAllowed = 'move'
-}
-
-function onDragOver(e, group, idx) {
-  e.preventDefault()
-  if (drag.group !== group || !drag.item) return
-  const arr = order[group]
-  const from = arr.indexOf(drag.item)
-  if (from === idx) return
-  arr.splice(from, 1)
-  arr.splice(idx, 0, drag.item)
-}
-
-function onDrop(e) {
-  e.preventDefault()
-  _dragSaved = null // valid drop within group — keep new order
-}
-
-function onDragEnd() {
-  if (_dragSaved) {
-    // Dropped outside the group card — restore original order
-    order[_dragSaved.group].splice(0, Infinity, ..._dragSaved.order)
-  }
-  drag.group = null
-  drag.item = null
-  _dragSaved = null
-}
-
-// ── Touch drag (mobile) ────────────────────────────────────────────────
-const touch = reactive({ group: null, item: null })
-let _touchSaved = null // order snapshot before touch drag
-
-function onTouchStart(e, group, team) {
-  touch.group = group
-  touch.item = team
-  drag.group = group
-  drag.item = team
-  _touchSaved = { group, order: [...order[group]] }
-}
-
-function onTouchMove(e) {
-  if (!touch.item) return
-  e.preventDefault()
-  const t = e.touches[0]
-  // Temporarily hide the dragged element so elementFromPoint finds the target beneath
-  const dragged = e.currentTarget
-  dragged.style.visibility = 'hidden'
-  const el = document.elementFromPoint(t.clientX, t.clientY)
-  dragged.style.visibility = ''
-  if (!el) return
-  const row = el.closest('[data-drag-row]')
-  if (!row) return
-  const targetGroup = row.dataset.dragGroup
-  const targetIdx = Number(row.dataset.dragIdx)
-  if (targetGroup !== touch.group) return
-  const arr = order[touch.group]
-  const from = arr.indexOf(touch.item)
-  if (from === targetIdx) return
-  arr.splice(from, 1)
-  arr.splice(targetIdx, 0, touch.item)
-}
-
-function onTouchEnd(e) {
-  if (_touchSaved && touch.group) {
-    const t = e.changedTouches[0]
-    const el = document.elementFromPoint(t.clientX, t.clientY)
-    const groupEl = el?.closest('[data-group]')
-    if (groupEl?.dataset.group !== touch.group) {
-      // Finger lifted outside the group card — restore original order
-      order[_touchSaved.group].splice(0, Infinity, ..._touchSaved.order)
-    }
-  }
-  touch.group = null
-  touch.item = null
-  drag.group = null
-  drag.item = null
-  _touchSaved = null
-}
+}, { immediate: true })
 
 function resetGroup(group) {
   order[group] = fifaOrder(group)
@@ -185,10 +115,13 @@ function wcDisabled(group) {
   return wildcards.value.length >= 8 && !wildcards.value.includes(group)
 }
 
+const ready = computed(() => loaded.value && !scoringLoading.value)
+const configMissing = computed(() => ready.value && allProps.value.length === 0)
+
 // ── Progress ───────────────────────────────────────────────────────────
-const doneProps = computed(() => PROPS.filter(p => propAnswers[p.key] !== '').length)
+const doneProps = computed(() => allProps.value.filter(p => propAnswers[p.id] !== '').length)
 const canSubmit = computed(
-  () => !picksLocked.value && wildcards.value.length === 8 && doneProps.value === PROPS.length
+  () => !picksLocked.value && allProps.value.length > 0 && wildcards.value.length === 8 && doneProps.value === allProps.value.length
 )
 
 // ── Submit ─────────────────────────────────────────────────────────────
@@ -198,18 +131,28 @@ async function submit() {
   submitError.value = ''
   try {
     const changed = picksChanged()
-    await setDoc(doc(db, 'submissions', user.value.uid), {
-      name: user.value.displayName,
+    // Known client-side — patch the cache with these directly below.
+    // submittedAt is server-generated, so it's excluded from that patch.
+    const knownFields = {
       uid: user.value.uid,
-      photoURL: user.value.photoURL ?? null,
-      ...(changed ? { submittedAt: serverTimestamp() } : {}),
-      groups: Object.fromEntries(GROUPS.map(g => [g, [...order[g]]])),
+      // Store team UUIDs, not names
+      groups: Object.fromEntries(GROUPS.map(g => [g, order[g].map(name => TEAM_ID[name])])),
       wildcards: wildcards.value,
+      // Keyed by prop.id (stable), not prop.key — see seed-scoring-config.mjs.
+      // Answers already store UUIDs (from CountrySelect/PlayerSelect); cleanGroupTeam null-safe
       props: Object.fromEntries(
-        PROPS.map(p => [p.key, p.type === 'number' ? Number(propAnswers[p.key]) : propAnswers[p.key]])
+        allProps.value.map(p => [p.id, propAnswers[p.id] === '' ? null : propAnswers[p.id]])
       ),
+    }
+    await setDoc(doc(db, 'picks', user.value.uid), {
+      ...knownFields,
+      ...(changed ? { submittedAt: serverTimestamp() } : {}),
     }, { merge: true })
-    router.push('/dashboard')
+    queryClient.setQueryData(queryKeys.pick(user.value.uid), (old) => ({ ...old, ...knownFields }))
+    // picksList sorts by submittedAt, which we don't know the real value of
+    // client-side — only refetch it when submittedAt actually changed.
+    if (changed) queryClient.invalidateQueries({ queryKey: queryKeys.picksList })
+    router.push('/leaderboard')
   } catch {
     submitError.value = 'Save failed — check your connection and try again.'
     submitting.value = false
@@ -217,120 +160,29 @@ async function submit() {
 }
 
 // ── Sticky group preview ───────────────────────────────────────────────
+// Mobile sticky overlay (grid/ticker) is rendered + tracked by
+// GroupOverlayPanel; the desktop side-rail panels below just mirror its
+// pinnedGroups, exposed via template ref, to avoid a second scroll tracker.
 const groupCardRefs = reactive({})
-const overlayRef = ref(null)
-const overlayCollapsed = ref(false)
-const overlayContentVisible = ref(false) // true = ticker visible, false = grid visible
-const overlayGridRef = ref(null)
-const overlayTickerRef = ref(null)
-
-function animateOverlayHeight(el, from, to, clearAfter, onDone) {
-  el.style.height = from + 'px'
-  el.offsetHeight
-  el.style.transition = 'height 280ms cubic-bezier(0.4, 0, 0.2, 1)'
-  el.style.height = to + 'px'
-  el.addEventListener('transitionend', () => {
-    el.style.transition = ''
-    if (clearAfter) el.style.height = ''
-    onDone?.()
-  }, { once: true })
-}
-
-function setOverlayCollapsed(val) {
-  if (overlayCollapsed.value === val) return
-  const el = overlayRef.value
-  if (!el) return
-
-  if (val) {
-    // COLLAPSE: animate height down, keep it pinned, then fade swap to ticker
-    const from = el.offsetHeight
-    const to = 36
-    overlayCollapsed.value = true
-    animateOverlayHeight(el, from, to, false, () => {
-      overlayContentVisible.value = true
-    })
-  } else {
-    // EXPAND: fade swap to grid, animate height up, then clear inline height
-    overlayContentVisible.value = false
-    nextTick(() => {
-      const from = parseFloat(el.style.height) || el.offsetHeight
-      overlayCollapsed.value = false
-      nextTick(() => {
-        const to = overlayGridRef.value?.offsetHeight ?? from
-        animateOverlayHeight(el, from, to, true, null)
-      })
-    })
-  }
-}
-const pinnedGroups = ref([])
+const wildcardsSectionRef = ref(null)
+const propsSectionRef = ref(null)
+const overlayPanelRef = ref(null)
+const pinnedGroups = computed(() => overlayPanelRef.value?.pinnedGroups ?? [])
 const leftPinnedGroups = computed(() => pinnedGroups.value.slice(0, 6))
 const rightPinnedGroups = computed(() => pinnedGroups.value.slice(6))
-const propsSectionRef = ref(null)
-const wildcardsSectionRef = ref(null)
-let firstWildcardRef = null
-const picksHeaderRef = ref(null)
-let lastExpandedOverlayHeight = 0
-let cachedRowHeight = 0
 
-function getHeaderBottom() {
-  const el = picksHeaderRef.value?.headerEl
-  if (el) return el.getBoundingClientRect().bottom
-  return 60
+function getGroupCardRefs() {
+  return groupCardRefs
 }
-
-function updatePinned() {
-  const headerBottom = getHeaderBottom()
-  const count = pinnedGroups.value.length
-
-  // Update cached row height when we have enough rows to measure reliably
-  if (!overlayCollapsed.value && overlayRef.value && count > 0) {
-    cachedRowHeight = overlayRef.value.getBoundingClientRect().height / count
-  }
-
-  const rowHeight = cachedRowHeight || 52
-  // Threshold = where the overlay bottom will be once the next group joins
-  const threshold = headerBottom + (count + 1) * rowHeight
-
-  pinnedGroups.value = GROUPS.filter(g => {
-    const el = groupCardRefs[g]
-    if (!el) return false
-    const r = el.getBoundingClientRect()
-    return (r.top + r.bottom) / 2 < threshold
-  })
-
-  if (!overlayRef.value) return
-  const overlayRect = overlayRef.value.getBoundingClientRect()
-
-  // Cache height while expanded so we can use it after collapsing
-  if (!overlayCollapsed.value) {
-    lastExpandedOverlayHeight = overlayRect.height
-  }
-
-  if (!overlayCollapsed.value && firstWildcardRef) {
-    const r = firstWildcardRef.getBoundingClientRect()
-    if ((r.top + r.bottom) / 2 < overlayRect.bottom) {
-      setOverlayCollapsed(true)
-    }
-  }
-
-  // Uncollapse when scrolling back up: wildcards top must clear the expanded overlay bottom
-  if (overlayCollapsed.value && wildcardsSectionRef.value && lastExpandedOverlayHeight) {
-    const expandedBottom = overlayRect.top + lastExpandedOverlayHeight
-    if (wildcardsSectionRef.value.getBoundingClientRect().top > expandedBottom) {
-      setOverlayCollapsed(false)
-    }
-  }
+function getWildcardsSectionEl() {
+  return wildcardsSectionRef.value
 }
-
-onMounted(() => {
-  updatePinned()
-  window.addEventListener('scroll', updatePinned, { passive: true })
-  window.addEventListener('resize', updatePinned, { passive: true })
-  return () => {
-    window.removeEventListener('scroll', updatePinned)
-    window.removeEventListener('resize', updatePinned)
-  }
-})
+function getHeaderEl() {
+  return document.querySelector('header')
+}
+function resolveTeamFlag(team) {
+  return TEAM_FLAG[team] ?? '🏳️'
+}
 
 // ── Position styles ────────────────────────────────────────────────────
 const POS_COLORS = [
@@ -342,181 +194,19 @@ const POS_COLORS = [
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4" style="padding-top: calc(4rem + env(safe-area-inset-top)); padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom)))">
-
-    <ProfileModal v-if="showProfile" :user="user" @close="showProfile = false" />
-
-    <!-- ══════════════════════════════════════════════════
-         LOCKED SUMMARY VIEW
-    ══════════════════════════════════════════════════ -->
-    <template v-if="picksLocked && !isUpdate">
-      <PicksHeader :user="user" :locked="true" @profile="showProfile = true" />
-      <div class="flex flex-col items-center justify-center text-center pt-24 pb-16 px-6">
-        <div class="text-4xl mb-5">🔒</div>
-        <h2 class="text-lg font-black tracking-wide text-white mb-2">Submissions are locked!</h2>
-        <p class="text-sm text-zinc-400 mb-8">Come back for the knockout round.</p>
-        <button disabled class="flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-sm tracking-[0.08em] uppercase bg-court-700 text-zinc-400 cursor-not-allowed">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M8 6l4-4 4 4"/><path d="M12 2v13"/><path d="M20 21H4"/><path d="M16 13l4 4-4 4"/>
-          </svg>
-          View Leaderboard
-        </button>
-      </div>
-    </template>
-
-    <template v-else-if="picksLocked">
-      <PicksHeader :user="user" :locked="true" @profile="showProfile = true" />
-
-      <!-- Group standings summary -->
-      <section class="mt-8 mb-10">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-5">Group Standings</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div
-            v-for="group in GROUPS" :key="group"
-            class="rounded-2xl border p-4 bg-court-800 border-court-700"
-          >
-            <div class="text-[10px] font-black tracking-[0.2em] text-emerald-400 mb-3">GROUP {{ group }}</div>
-            <div class="space-y-1.5">
-              <div v-for="(team, idx) in order[group]" :key="team" class="flex items-center gap-2">
-                <div
-                  class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
-                  :class="POS_COLORS[idx]"
-                >{{ idx + 1 }}</div>
-                <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
-                <span class="text-xs font-medium text-white flex-1 truncate">{{ team }}</span>
-                <span
-                  v-if="idx === 2 && wildcards.includes(group)"
-                  class="text-[9px] font-black tracking-wider text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-full px-1.5 py-0.5 shrink-0"
-                >WC</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Wildcards summary -->
-      <section class="mb-10">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-1">Best 3rd-Place Teams</h2>
-        <p class="text-[11px] text-zinc-400 mb-5">Your 8 wildcard picks</p>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <div
-            v-for="group in wildcards" :key="group"
-            class="flex items-center gap-2 bg-emerald-500/10 border border-emerald-400/20 rounded-xl px-3 py-2.5"
-          >
-            <span class="text-lg leading-none">{{ TEAM_FLAG[thirdOf(group)] ?? '🏳️' }}</span>
-            <div>
-              <div class="text-[9px] font-black tracking-wider text-emerald-400">Group {{ group }}</div>
-              <div class="text-xs font-semibold text-white truncate">{{ thirdOf(group) }}<span class="text-zinc-400 font-normal"> · #{{ FIFA_RANKING[thirdOf(group)] ?? '–' }}</span></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Props summary -->
-      <section class="mb-10">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-5">Group Stage Props</h2>
-        <div class="space-y-2">
-          <div
-            v-for="prop in PROPS" :key="prop.key"
-            class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
-          >
-            <div class="min-w-0">
-              <div class="text-[11px] text-zinc-400 mb-0.5">{{ prop.label }}</div>
-              <div class="text-sm font-bold text-white truncate">
-                {{ propAnswers[prop.key] === '__none__' ? '🚫 No Team' : (propAnswers[prop.key] || '—') }}
-              </div>
-            </div>
-            <div class="shrink-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
-              {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
-            </div>
-          </div>
-        </div>
-      </section>
-    </template>
-
-    <!-- ══════════════════════════════════════════════════
-         EDIT VIEW (picks not yet locked)
-    ══════════════════════════════════════════════════ -->
-    <template v-else>
-
-    <PicksHeader ref="picksHeaderRef" :user="user" :locked="false" @profile="showProfile = true" />
-
-    <button
-      v-if="isUpdate"
-      @click="emit('cancel')"
-      class="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-medium transition-colors mt-3 mb-1"
-    >
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M19 12H5"/><path d="M12 5l-7 7 7 7"/>
-      </svg>
-      Back to Home
-    </button>
+  <div>
 
     <!-- ── Mobile: sticky top rows ── -->
-    <div
-      ref="overlayRef"
-      v-if="pinnedGroups.length"
-      class="min-[964px]:hidden fixed left-0 right-0 z-[60] px-4 bg-court-950/97 backdrop-blur-md border-b border-court-700/60 overflow-hidden"
-      :style="{ top: 'calc(4rem + env(safe-area-inset-top))' }"
-    >
-      <!-- layer wrapper: grid sits in flow to drive height; ticker overlays on top -->
-      <div class="relative">
-        <!-- expanded: centered grid — always in flow for height measurement -->
-        <div ref="overlayGridRef">
-          <div class="grid grid-cols-2 gap-x-6 w-fit mx-auto transition-opacity duration-200"
-               :class="overlayContentVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'">
-            <TransitionGroup name="pin" tag="div" class="contents">
-              <div
-                v-for="group in pinnedGroups" :key="group"
-                class="flex items-center gap-2 py-1.5 px-1 border-t border-court-700/30"
-              >
-                <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500 w-4 shrink-0">{{ group }}</span>
-                <div class="flex gap-1 items-center">
-                  <span
-                    v-for="(team, i) in order[group]" :key="team"
-                    class="relative group/flag cursor-default hover:z-[200]"
-                  >
-                    <span
-                      class="text-xl leading-none transition-opacity"
-                      :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
-                    >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
-                    <span class="pointer-events-none absolute bottom-full left-1/2 -tranzinc-x-1/2 mb-1.5 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold bg-white text-black shadow-lg opacity-0 group-hover/flag:opacity-100 transition-opacity z-[200]">
-                      {{ team }}<span class="text-zinc-400 font-normal"> · #{{ FIFA_RANKING[team] ?? '–' }}</span>
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </TransitionGroup>
-          </div>
-        </div>
-
-        <!-- collapsed: horizontal ticker — absolutely overlaid, fades in after height collapse -->
-        <div
-          ref="overlayTickerRef"
-          class="absolute top-0 overflow-hidden transition-opacity duration-200 flex items-center"
-          style="height: 36px; left: -1rem; right: -1rem;"
-          :class="overlayContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'"
-        >
-          <div
-            class="shelf-ticker flex gap-5 w-max"
-            :style="{ animationDuration: `${pinnedGroups.length * 2.5}s` }"
-          >
-            <template v-for="pass in 2" :key="pass">
-              <div v-for="group in pinnedGroups" :key="`${pass}-${group}`" class="flex items-center gap-1.5 shrink-0">
-                <span class="text-[11px] font-black tracking-[0.18em] text-emerald-500">{{ group }}</span>
-                <div class="flex gap-0.5 items-center">
-                  <span
-                    v-for="(team, i) in order[group]" :key="team"
-                    class="text-lg leading-none transition-opacity"
-                    :class="i >= 2 && !(wildcards.includes(group) && i === 2) ? 'opacity-30' : ''"
-                  >{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
-                </div>
-              </div>
-            </template>
-          </div>
-        </div>
-      </div>
-    </div>
+    <GroupOverlayPanel
+      ref="overlayPanelRef"
+      :groups="order"
+      :wildcards="wildcards"
+      :resolve-flag="resolveTeamFlag"
+      :get-group-card-refs="getGroupCardRefs"
+      :get-wildcards-section-el="getWildcardsSectionEl"
+      :get-anchor-el="getHeaderEl"
+      :columns="1"
+    />
 
     <!-- ── Desktop: fixed left panel ── -->
       <!-- wide: single left panel, 2 cols -->
@@ -585,12 +275,19 @@ const POS_COLORS = [
         </div>
       </template>
 
+    <!-- ── Content ── -->
+    <div class="max-w-2xl mx-auto px-4 pt-4 pb-10">
+
     <!-- ── SECTION 1: Group Standings ── -->
-    <div v-if="!loaded" class="flex justify-center py-20">
+    <div v-if="!ready" class="flex justify-center py-20">
       <div class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
     </div>
 
-    <template v-if="loaded">
+    <p v-else-if="configMissing" class="text-center text-sm text-red-400 py-20">
+      Couldn't load prop picks — scoring config is unavailable. Try refreshing.
+    </p>
+
+    <template v-if="ready && !configMissing">
 
     <section class="mt-4 mb-10">
       <div class="flex items-start justify-between mb-5">
@@ -599,8 +296,8 @@ const POS_COLORS = [
           <p class="text-[11px] text-zinc-400 mt-1">Drag teams to set your predicted finish order.</p>
         </div>
         <div class="text-right shrink-0">
-          <div class="text-[10px] text-zinc-400 font-mono tabular-nums">3 · 3 · 1 · 1 pts</div>
-          <div class="text-[10px] text-zinc-500">Perfect Group: +1 pt</div>
+          <div class="text-[10px] text-zinc-400 font-mono tabular-nums">{{ groupExactLabel }}</div>
+          <div class="text-[10px] text-zinc-500">Perfect Group: +{{ scoring?.perfectGroupBonus ?? '–' }} pt</div>
         </div>
       </div>
 
@@ -623,52 +320,51 @@ const POS_COLORS = [
           </div>
 
           <!-- Draggable team rows -->
-          <TransitionGroup tag="div" :name="drag.group === group ? '' : 'drag-list'" class="space-y-1">
-            <div
-              v-for="(team, idx) in order[group]" :key="team"
-              :draggable="!picksLocked"
-              data-drag-row
-              :data-drag-group="group"
-              :data-drag-idx="idx"
-              @dragstart="!picksLocked && onDragStart($event, group, team)"
-              @dragover="!picksLocked && onDragOver($event, group, idx)"
-              @drop="!picksLocked && onDrop($event)"
-              @dragend="!picksLocked && onDragEnd()"
-              @touchstart.passive="!picksLocked && onTouchStart($event, group, team)"
-              @touchmove="!picksLocked && onTouchMove($event)"
-              @touchend="!picksLocked && onTouchEnd($event)"
-              class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border"
-              :class="[
-                picksLocked ? 'cursor-default bg-court-750 border-transparent opacity-60' :
-                  drag.group === group && drag.item === team
-                    ? 'opacity-30 bg-court-750 border-transparent cursor-grab active:cursor-grabbing'
-                    : 'bg-court-750 border-transparent hover:border-court-600 cursor-grab active:cursor-grabbing'
-              ]"
-            >
-              <!-- Position badge -->
+          <draggable
+            v-model="order[group]"
+            :item-key="(team) => team"
+            tag="div"
+            class="space-y-1"
+            :disabled="picksLocked"
+            :animation="200"
+            :delay="100"
+            :delay-on-touch-only="true"
+            ghost-class="drag-ghost"
+            chosen-class="drag-chosen"
+            drag-class="drag-dragging"
+          >
+            <template #item="{ element: team, index: idx }">
               <div
-                class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
-                :class="POS_COLORS[idx]"
-              >{{ idx + 1 }}</div>
+                class="flex items-center gap-2 px-2 py-1.5 rounded-xl select-none border"
+                :class="picksLocked
+                  ? 'cursor-default bg-court-750 border-transparent opacity-60'
+                  : 'bg-court-750 border-transparent hover:border-court-600 cursor-grab active:cursor-grabbing'"
+              >
+                <!-- Position badge -->
+                <div
+                  class="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0"
+                  :class="POS_COLORS[idx]"
+                >{{ idx + 1 }}</div>
 
-              <!-- Flag -->
-              <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
+                <!-- Flag -->
+                <span class="text-base leading-none shrink-0">{{ TEAM_FLAG[team] ?? '🏳️' }}</span>
 
-              <!-- Team name -->
-              <span class="text-xs font-medium text-white flex-1 truncate">{{ team }}</span>
+                <!-- Team name + FIFA rank -->
+                <span class="flex-1 min-w-0 flex items-center gap-1.5">
+                  <span class="text-xs font-medium text-white truncate">{{ team }}</span>
+                  <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
+                </span>
 
-              <!-- FIFA rank -->
-              <span class="text-[10px] text-zinc-400 font-mono shrink-0">#{{ FIFA_RANKING[team] ?? '–' }}</span>
-
-              <!-- Drag handle -->
-              <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
-                <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
-                <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
-                <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
-                <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
-              </svg>
-            </div>
-          </TransitionGroup>
+                <!-- Drag handle -->
+                <svg class="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/>
+                  <circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/>
+                  <circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/>
+                  <circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/>
+                </svg>
+              </div>
+            </template>
+          </draggable>
         </div>
       </div>
     </section>
@@ -677,7 +373,7 @@ const POS_COLORS = [
     <section ref="wildcardsSectionRef" class="mb-10">
       <div class="flex items-baseline justify-between mb-1">
         <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Best 3rd-Place Teams</h2>
-        <span class="text-[10px] text-zinc-400 font-mono">2 pts each</span>
+        <span class="text-[10px] text-zinc-400 font-mono">{{ scoring?.wildcard ?? '–' }} pts each</span>
       </div>
       <p class="text-[11px] text-zinc-400 mb-5">
         Pick 8 groups whose 3rd-place team advances.
@@ -689,29 +385,21 @@ const POS_COLORS = [
 
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <button
-          v-for="(group, idx) in GROUPS" :key="group"
-          :ref="idx === 0 ? (el) => { firstWildcardRef = el } : undefined"
+          v-for="group in GROUPS" :key="group"
           type="button"
           @click="!picksLocked && toggleWildcard(group)"
           :disabled="picksLocked || wcDisabled(group)"
-          class="relative text-left p-3 rounded-xl border transition-all duration-150"
+          class="relative text-left p-3 rounded-xl border transition-all duration-150 bg-court-800 border-court-700"
           :class="[
-            wildcards.includes(group)
-              ? 'bg-emerald-500/10 border-emerald-400/30 shadow-[0_0_16px_-4px_rgba(56,189,248,0.2)]'
-              : wcDisabled(group)
-                ? 'bg-court-800 border-court-700 opacity-30 cursor-not-allowed'
-                : 'bg-court-800 border-court-700 hover:border-zinc-600 cursor-pointer active:scale-[0.98]',
+            wcDisabled(group)
+              ? 'opacity-30 cursor-not-allowed'
+              : 'hover:border-zinc-600 cursor-pointer active:scale-[0.98]',
           ]"
         >
-          <div
-            class="text-[10px] font-black tracking-[0.2em] mb-0.5"
-            :class="wildcards.includes(group) ? 'text-emerald-400' : 'text-zinc-400'"
-          >GROUP {{ group }}</div>
+          <div class="text-[10px] font-black tracking-[0.2em] mb-0.5 text-emerald-400">GROUP {{ group }}</div>
           <div class="flex items-center gap-1.5">
             <span class="text-sm leading-none">{{ TEAM_FLAG[thirdOf(group)] ?? '🏳️' }}</span>
-            <div
-              class="text-xs font-semibold truncate"
-              :class="wildcards.includes(group) ? 'text-white' : 'text-zinc-300'"
+            <div class="text-xs font-semibold truncate text-white"
             >{{ thirdOf(group) }}<span class="text-zinc-400 font-normal"> · #{{ FIFA_RANKING[thirdOf(group)] ?? '–' }}</span></div>
           </div>
 
@@ -727,15 +415,22 @@ const POS_COLORS = [
       </div>
     </section>
 
-    <!-- ── SECTION 3: Group Stage Props ── -->
-    <section ref="propsSectionRef" class="mb-10">
+    <!-- ── SECTION 3: Props (by category) ── -->
+    <section
+      v-for="cat in propsByCategory" :key="cat.key"
+      :ref="cat.key === 'group' ? 'propsSectionRef' : undefined"
+      class="mb-10"
+    >
       <div class="flex items-baseline justify-between mb-5">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">Group Stage Props</h2>
-        <span class="text-[10px] text-zinc-400 font-mono">3–10 pts</span>
+        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">{{ cat.label }}</h2>
+        <span class="text-[10px] text-zinc-400 font-mono">
+          <template v-if="cat.props.some(p => p.points != null)">{{ Math.min(...cat.props.filter(p => p.points != null).map(p => p.points)) }}–{{ Math.max(...cat.props.filter(p => p.points != null).map(p => p.points)) }} pts</template>
+          <template v-else>– pts</template>
+        </span>
       </div>
       <div class="space-y-2">
         <div
-          v-for="prop in PROPS" :key="prop.key"
+          v-for="prop in cat.props" :key="prop.id"
           class="bg-court-800 border border-court-700 rounded-2xl p-4"
         >
           <div class="relative mb-3">
@@ -743,28 +438,27 @@ const POS_COLORS = [
               <div class="text-xs font-bold text-white">{{ prop.label }}</div>
               <div class="text-[11px] text-zinc-400 mt-0.5">{{ prop.hint }}</div>
             </div>
-            <div class="absolute top-0 right-0 text-[10px] font-black text-amber-400/60 bg-amber-400/5 border border-amber-400/10 rounded-full px-2 py-0.5 font-mono leading-5">
-              {{ prop.points }}pt{{ prop.points !== 1 ? 's' : '' }}
-            </div>
+            <PropPointsBadge :points="prop.points" class="absolute top-0 right-0" />
           </div>
 
           <CountrySelect
             v-if="prop.type === 'team'"
-            v-model="propAnswers[prop.key]"
+            v-model="propAnswers[prop.id]"
             :disabled="picksLocked"
-            :allowNone="prop.key === 'Clean Sheet Group'"
+            :allowNone="!!prop.allowNone"
           />
           <PlayerSelect
             v-else-if="prop.type === 'player'"
-            v-model="propAnswers[prop.key]"
+            v-model="propAnswers[prop.id]"
             :positionFilter="prop.positionFilter ?? null"
             :maxAge="prop.maxAge ?? null"
             :disabled="picksLocked"
           />
           <input
             v-else
-            v-model="propAnswers[prop.key]"
+            v-model="propAnswers[prop.id]"
             type="number"
+            inputmode="numeric"
             min="0"
             placeholder="e.g. 24"
             :disabled="picksLocked"
@@ -806,8 +500,8 @@ const POS_COLORS = [
         </button>
         <p v-if="!canSubmit && !submitting" class="text-center text-[11px] text-zinc-400 mt-1.5">
           <span v-if="wildcards.length < 8">{{ 8 - wildcards.length }} wildcard{{ 8 - wildcards.length !== 1 ? 's' : '' }} remaining</span>
-          <span v-if="wildcards.length < 8 && doneProps < PROPS.length"> · </span>
-          <span v-if="doneProps < PROPS.length">{{ PROPS.length - doneProps }} prop{{ PROPS.length - doneProps !== 1 ? 's' : '' }} remaining</span>
+          <span v-if="wildcards.length < 8 && doneProps < allProps.length"> · </span>
+          <span v-if="doneProps < allProps.length">{{ allProps.length - doneProps }} prop{{ allProps.length - doneProps !== 1 ? 's' : '' }} remaining</span>
         </p>
         <p v-if="picksLockTime && !picksLocked" class="text-center text-[11px] text-zinc-400 mt-1.5">
           Picks lock {{ fmtLockTime(picksLockTime) }}
@@ -817,18 +511,21 @@ const POS_COLORS = [
 
     </template><!-- end loaded -->
 
-    </template><!-- end v-else edit view -->
-
-    <div v-if="loaded" class="text-center py-4">
-      <span class="text-[10px] text-zinc-700 font-mono">v{{ appVersion }}</span>
-    </div>
-
+    </div><!-- end content wrapper -->
   </div>
 </template>
 
 <style scoped>
-.drag-list-move {
-  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+.drag-ghost {
+  opacity: 0.3;
+}
+.drag-chosen {
+  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.5);
+  cursor: grabbing !important;
+}
+.drag-dragging {
+  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.5);
+  transform: scale(1.03);
 }
 .pin-enter-active { transition: all 0.15s ease-out; }
 .pin-leave-active { transition: all 0.1s ease-in; }

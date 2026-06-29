@@ -1,11 +1,14 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { signOut, deleteUser, reauthenticateWithPopup, reauthenticateWithCredential, EmailAuthProvider, updateProfile } from 'firebase/auth'
-import { doc, deleteDoc, updateDoc } from 'firebase/firestore'
+import { doc, deleteDoc, setDoc } from 'firebase/firestore'
+import { useQueryClient } from '@tanstack/vue-query'
 import { auth, db, googleProvider } from '../firebase.js'
+import { patchUserInCache, removeUserFromCache, removePickFromCache } from '../queries.js'
 
 const props = defineProps({ user: Object, editName: Boolean })
 const emit = defineEmits(['close', 'name-saved'])
+const queryClient = useQueryClient()
 
 const busy = ref(false)
 const error = ref('')
@@ -21,6 +24,21 @@ const defaultDisplayName = computed(() => {
 const editingName = ref(props.editName)
 const newName = ref(props.editName ? defaultDisplayName.value : '')
 
+// Locks the page itself (not just this modal) from scrolling, same as
+// PicksModal — without this, focusing the name input opens the on-screen
+// keyboard, the browser scrolls the document to keep the input visible,
+// and that scroll offset survives after the modal closes (it's only the
+// keyboard that goes away), leaving the rest of the page — including the
+// sticky tab bar — visually stuck shifted up.
+function lockBodyScroll() {
+  document.documentElement.style.overflow = 'hidden'
+}
+function unlockBodyScroll() {
+  document.documentElement.style.overflow = ''
+}
+onMounted(lockBodyScroll)
+onUnmounted(unlockBodyScroll)
+
 async function saveName() {
   const name = newName.value.trim()
   if (!name) return
@@ -28,9 +46,10 @@ async function saveName() {
   error.value = ''
   try {
     await updateProfile(props.user, { displayName: name })
-    // Keep submission doc in sync so leaderboard reflects the new name
-    const subRef = doc(db, 'submissions', props.user.uid)
-    await updateDoc(subRef, { name }).catch(() => {})
+    await setDoc(doc(db, 'users', props.user.uid), { displayName: name }, { merge: true })
+    // The new name is already known — patch every cache entry that holds it
+    // directly instead of invalidating and waiting on a refetch.
+    patchUserInCache(queryClient, props.user.uid, (u) => ({ ...u, displayName: name }))
     emit('name-saved')
     emit('close')
   } catch {
@@ -56,10 +75,14 @@ async function reauthAndDelete() {
       const cred = EmailAuthProvider.credential(props.user.email, reauthPassword.value)
       await reauthenticateWithCredential(props.user, cred)
     }
-    await deleteDoc(doc(db, 'submissions', props.user.uid))
+    // Best-effort cleanup — don't let a Firestore failure block account deletion
+    await deleteDoc(doc(db, 'picks', props.user.uid)).catch(() => {})
+    await deleteDoc(doc(db, 'users', props.user.uid)).catch(() => {})
+    removePickFromCache(queryClient, props.user.uid)
+    removeUserFromCache(queryClient, props.user.uid)
     await deleteUser(props.user)
   } catch {
-    error.value = 'Re-authentication failed. Please try again.'
+    error.value = 'Could not delete account. Please try again.'
     busy.value = false
   }
 }

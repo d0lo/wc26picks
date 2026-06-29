@@ -68,6 +68,63 @@ export const TEAM_FLAG = {
   Uzbekistan:         '🇺🇿',
 }
 
+// Stable UUIDs for all 48 teams — committed to source, never regenerated
+export const TEAM_ID = {
+  Algeria:              'a6d30860-04c6-5fac-aa75-2834082dc9b3',
+  Argentina:            '08642760-194d-5d1b-a074-811c298d6822',
+  Australia:            '880e95ce-8947-5198-b3de-84631abbe3cb',
+  Austria:              'a115a8a6-917c-515c-a150-c4f32a8f0d64',
+  Belgium:              '88b74173-8fb4-51bb-ba20-6b5c50b48b53',
+  'Bosnia-Herzegovina': 'a11c97bc-6795-51b2-b4b8-2d92badc03bf',
+  Brazil:               '319d6076-6a6a-5de2-a3a0-c004534ab271',
+  Canada:               'ea507eb3-7ffc-5b89-b218-bdf77bdd5e3c',
+  'Cape Verde':         '4317f28f-c456-5b80-854d-a7689f61996b',
+  Colombia:             '8e00af10-e1f2-5f2f-afec-ad9705d38dc1',
+  Croatia:              '798acc19-b47f-5cb6-a6d1-012c452c0327',
+  Curacao:              'd0bcf6d9-06cf-59b3-9d5b-8f46cd696f49',
+  Czechia:              '032714b4-4798-5a8e-a788-8d4304cbfbb7',
+  'DR Congo':           '56043e4c-8bbf-5ba3-9d1f-625b1ff387c0',
+  Ecuador:              '4b9e6a2c-652a-56c5-860f-b43f62532a0f',
+  Egypt:                '60a0170d-d508-5f72-8d71-556a5417a9f9',
+  England:              'ad64f1bc-05fd-579a-bf7e-beca095ff819',
+  France:               'ef3a7683-fdc9-55a7-8f5a-1f398ba8b19b',
+  Germany:              '2bc26ff0-285f-51c7-ac24-a244cac0487d',
+  Ghana:                '1548ac7b-f676-5ba7-9722-e8cb63599f86',
+  Haiti:                '8f3daaf9-4f5d-5bb6-a332-d25c2bee421b',
+  Iran:                 '6817012b-39d2-519c-af6a-c5772cefe1fd',
+  Iraq:                 'fa3b238a-6876-56a5-b7f6-d36c73d919ea',
+  'Ivory Coast':        'ee803858-f87b-56bc-afc2-7bc22d73f88f',
+  Japan:                '9c073283-4bbc-575b-b242-66457f265171',
+  Jordan:               '367bc7eb-8aef-598b-ba4a-d86809d5ab03',
+  Mexico:               'be3833eb-87cb-5da0-8e4c-443001ea513e',
+  Morocco:              '811717a9-ae7c-5bb7-859b-7bd0d31b73c1',
+  Netherlands:          '2c0a9766-b0f5-5b58-9d69-8ed41d0afdc6',
+  'New Zealand':        'ca4717d1-f71e-5902-91d9-e2cc51bd9f99',
+  Norway:               '6cdeac8c-2994-55e1-9556-f1a2446719bf',
+  Panama:               'ca564f3d-f522-5d9b-a286-b92ae78f98a5',
+  Paraguay:             '8e4c3b45-cafc-5069-bdc0-562e13759c81',
+  Portugal:             'ffb9f9ca-2c16-531f-bd23-3bba0e2ae1d6',
+  Qatar:                '7dcba994-66e9-50b2-939c-394f577b93fc',
+  'Saudi Arabia':       'b0170cd1-53d8-5374-b11f-464f804a88f2',
+  Scotland:             'fc837bbc-99ee-5853-8cb5-97751f5a7223',
+  Senegal:              '28f75665-e569-5933-8d38-60deaef402be',
+  'South Africa':       'a001c536-5f32-5d3a-9524-2625768e2db6',
+  'South Korea':        'dea6a721-9dbc-5383-b29b-c9b59647eec8',
+  Spain:                '004750b3-7e2c-5a82-9617-04005d6c0455',
+  Sweden:               'c7638393-de0e-5c81-aef6-d1cc2a235bc9',
+  Switzerland:          '234a158e-477a-5c2c-a04c-041cc7d1f1cf',
+  Tunisia:              '2e18893b-2d82-560b-89f0-8672054977a7',
+  Turkiye:              'b5b07097-83df-510b-b1c7-e76d46ed1796',
+  USA:                  '192ff8ed-ee5e-5883-972c-a73457bb6561',
+  Uruguay:              'b831775d-3b5d-5909-929b-eec85efa4d8e',
+  Uzbekistan:           '5a434128-eeee-5884-b8c3-a8f4be5598d3',
+}
+
+// Reverse map: teamId → { name, flag } — for display after reading UUIDs from Firestore
+export const TEAM_BY_ID = Object.fromEntries(
+  Object.entries(TEAM_ID).map(([name, id]) => [id, { name, flag: TEAM_FLAG[name] ?? '🏳️' }])
+)
+
 // FIFA World Rankings as of April 1, 2026
 export const FIFA_RANKING = {
   France:               1,
@@ -120,15 +177,25 @@ export const FIFA_RANKING = {
   Curacao:              82,
 }
 
-export const PROPS = [
-  { key: 'Golden Boot',          label: 'Golden Boot',                        type: 'player', points: 5, hint: 'Tournament top scorer' },
-  { key: 'Golden Glove',         label: 'Golden Glove',                       type: 'player', points: 4, hint: 'Best goalkeeper', positionFilter: 'G' },
-  { key: 'Golden Ball',          label: 'Golden Ball',                        type: 'player', points: 5, hint: 'Best player of the tournament' },
-  { key: 'Young Player',         label: 'Young Player of the Tournament',     type: 'player', points: 4, hint: 'Best U-21 player', maxAge: 21 },
-  { key: 'Breakout Player',      label: 'Breakout Player of the Tournament',  type: 'player', points: 6, hint: 'The under-the-radar player who has a standout tournament (media consensus)' },
-  { key: 'Most Group Goals',     label: 'Most Goals in Group Stage',          type: 'team',   points: 3, hint: 'Team that scores the most goals in the group stage' },
-  { key: 'Hat Trick Scorer',     label: 'Hat Trick Scorer',                   type: 'player', points: 6, hint: 'First player to score a hat trick' },
-  { key: 'Most Assists',         label: 'Most Assists',                       type: 'player', points: 4, hint: 'Player with the most assists' },
-  { key: 'Most Yellow Cards',    label: 'Team with Most Yellow Cards',        type: 'team',   points: 3, hint: 'Most disciplinary cards received' },
-  { key: 'Clean Sheet Group',    label: 'Clean Group',                        type: 'team',   points: 5, hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team' },
+// Props themselves (key, label, hint, type, points, etc.) are NOT defined
+// here — the full catalog lives in Firestore config/public.scoring.props
+// (see queries.js configQueryOptions / composables/useScoring.js), so props
+// can be added, relabeled, or repointed without a code deploy. Only the
+// category set and ordering rule below are structural and stay in code.
+export const PROP_CATEGORIES = [
+  { key: 'tournament', label: 'Tournament Props' },
+  { key: 'group',      label: 'Group Stage Props' },
+  { key: 'knockout',   label: 'Knockout Props' },
 ]
+
+// Per FIFA's released match calendar: group stage runs through June 27,
+// 2026, Round of 32 June 28–July 3, Round of 16 July 4–7. Once the Round
+// of 16 kicks off, knockout props outrank group props in display order.
+export const ROUND_OF_16_START = new Date('2026-07-04')
+
+export function orderedPropCategories() {
+  const order = new Date() < ROUND_OF_16_START
+    ? ['tournament', 'group', 'knockout']
+    : ['tournament', 'knockout', 'group']
+  return order.map(key => PROP_CATEGORIES.find(c => c.key === key))
+}
