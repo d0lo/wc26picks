@@ -17,6 +17,7 @@ const props = defineProps({
   points: { type: Number, default: null },        // total score (null until scoring begins)
   rank: { type: Number, default: null },          // leaderboard place
   totalPlayers: { type: Number, default: null },  // field size, for "of N"
+  potential: { type: Number, default: null },     // max possible finish (lib/potential.js)
 })
 
 // All read from the shared TanStack caches — the scoreboard listener is owned
@@ -95,8 +96,11 @@ const outcomeClass = { W: 'text-emerald-400', L: 'text-red-400', D: 'text-zinc-3
       Your Standing
     </div>
 
-    <!-- ── Standing strip (always) ─────────────────────────────────────── -->
-    <div class="relative grid grid-cols-2 overflow-hidden rounded-2xl border border-court-700/60 bg-court-900/50" :class="championId ? 'mt-4' : ''">
+    <!-- ── Standing strip (always); 3rd "Max" tile when a ceiling exists ── -->
+    <div
+      class="relative grid overflow-hidden rounded-2xl border border-court-700/60 bg-court-900/50"
+      :class="[championId ? 'mt-4' : '', potential != null ? 'grid-cols-3' : 'grid-cols-2']"
+    >
       <div class="px-4 py-2.5 text-center">
         <div class="text-2xl font-black leading-none tabular-nums" :class="rank === 1 ? 'text-amber-400' : 'text-white'">
           {{ rank != null ? `#${rank}` : '—' }}
@@ -108,6 +112,10 @@ const outcomeClass = { W: 'text-emerald-400', L: 'text-red-400', D: 'text-zinc-3
       <div class="px-4 py-2.5 text-center border-l border-court-700/60">
         <div class="text-2xl font-black text-amber-400 leading-none tabular-nums">{{ points ?? 0 }}</div>
         <div class="text-[9px] text-zinc-500 uppercase tracking-[0.18em] mt-1">Points</div>
+      </div>
+      <div v-if="potential != null" class="px-4 py-2.5 text-center border-l border-court-700/60">
+        <div class="text-2xl font-black text-amber-400/70 leading-none tabular-nums">{{ potential }}</div>
+        <div class="text-[9px] text-zinc-500 uppercase tracking-[0.18em] mt-1">Max</div>
       </div>
     </div>
 
