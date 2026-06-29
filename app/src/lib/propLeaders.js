@@ -25,6 +25,9 @@ function goldenBootLeaders(matches) {
   return Object.values(byScorer).sort((a, b) => b.goals - a.goals)
 }
 
+// "Most goals in the group stage" — only the teams tied for the lead, no
+// full standings. Recomputed live, so the leading set grows/shrinks as
+// results come in; once the stage is over it's the final co-leaders.
 function mostGroupGoalsLeaders(matches) {
   const byTeam = {}
   for (const m of matches.filter(isGroupMatch)) {
@@ -33,9 +36,10 @@ function mostGroupGoalsLeaders(matches) {
       byTeam[play.teamId] = (byTeam[play.teamId] ?? 0) + 1
     }
   }
-  return Object.entries(byTeam)
-    .map(([teamId, goals]) => ({ teamId, goals }))
-    .sort((a, b) => b.goals - a.goals)
+  const teams = Object.entries(byTeam).map(([teamId, goals]) => ({ teamId, goals }))
+  const max = teams.reduce((acc, t) => Math.max(acc, t.goals), 0)
+  if (max === 0) return []
+  return teams.filter((t) => t.goals === max)
 }
 
 function hatTrickScorers(matches) {
@@ -53,40 +57,47 @@ function hatTrickScorers(matches) {
     .sort((a, b) => b.goals - a.goals)
 }
 
-// "Clean sheet in all 3 group games" — ranked by clean sheets earned so far
-// out of group games played, since the group stage may not be finished yet.
+// "Clean sheet in all 3 group games" — every team that has conceded 0 goals
+// across the group games it has played so far, no standings. While the stage
+// is in progress these are the teams still on track; once all 3 are played it
+// resolves to the teams that kept a clean sheet the entire group stage.
 function cleanGroupTeamLeaders(matches) {
   const byTeam = {}
   for (const m of matches.filter(isGroupMatch)) {
     if (m.status?.state !== 'post') continue
     for (const c of m.competitors ?? []) {
       const opponent = (m.competitors ?? []).find((o) => o.teamId !== c.teamId)
-      byTeam[c.teamId] ??= { teamId: c.teamId, played: 0, cleanSheets: 0 }
+      byTeam[c.teamId] ??= { teamId: c.teamId, played: 0, goalsAgainst: 0 }
       byTeam[c.teamId].played += 1
-      // ESPN scores are strings ('0','1',…); coerce before comparing, and
-      // guard null so a missing score isn't read as 0 (Number(null) === 0).
+      // ESPN scores are strings ('0','1',…); coerce before summing. A missing
+      // opponent score is unknowable, so fold in Infinity rather than reading
+      // null as 0 — that drops the team from the conceded-nothing set instead
+      // of falsely crediting it with a clean sheet.
       const oppScore = opponent?.score
-      if (oppScore != null && Number(oppScore) === 0) byTeam[c.teamId].cleanSheets += 1
+      byTeam[c.teamId].goalsAgainst += oppScore == null ? Infinity : Number(oppScore)
     }
   }
-  return Object.values(byTeam).sort(
-    (a, b) => b.cleanSheets - a.cleanSheets || b.played - a.played
-  )
+  return Object.values(byTeam).filter((t) => t.played >= 1 && t.goalsAgainst === 0)
 }
 
 // Keyed by config/public.scoring.props[].key (see scripts/seed-scoring-config.mjs).
 // Any prop key not listed here — goldenGlove, goldenBall, youngPlayer,
 // breakoutPlayer, mostAssists, mostYellowCards — is structurally
 // non-computable from currently tracked data.
+//
+// `ranked` props show a numbered podium capped at `limit`; unranked props show
+// every entry the resolver returns (already pre-filtered to the leading set)
+// with no rank numbers — "all the teams that lead", not a standings table.
 const RESOLVERS = {
-  goldenBoot: goldenBootLeaders,
-  mostGroupGoals: mostGroupGoalsLeaders,
-  hatTrickScorer: hatTrickScorers,
-  cleanGroupTeam: cleanGroupTeamLeaders,
+  goldenBoot: { resolve: goldenBootLeaders, ranked: true, limit: 5 },
+  mostGroupGoals: { resolve: mostGroupGoalsLeaders, ranked: false },
+  hatTrickScorer: { resolve: hatTrickScorers, ranked: true, limit: 3 },
+  cleanGroupTeam: { resolve: cleanGroupTeamLeaders, ranked: false },
 }
 
 export function resolvePropLeaders(propKey, matches) {
-  const resolver = RESOLVERS[propKey]
-  if (!resolver) return { computable: false, leaders: [] }
-  return { computable: true, leaders: resolver(matches ?? []) }
+  const entry = RESOLVERS[propKey]
+  if (!entry) return { computable: false, leaders: [], ranked: false, limit: 0 }
+  const leaders = entry.resolve(matches ?? [])
+  return { computable: true, leaders, ranked: entry.ranked, limit: entry.limit ?? leaders.length }
 }

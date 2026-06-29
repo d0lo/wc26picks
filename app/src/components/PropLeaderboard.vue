@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { TEAM_BY_ID } from '../data.js'
+import { TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { useScoring } from '../composables/useScoring.js'
 import { resolvePropLeaders } from '../lib/propLeaders.js'
 
@@ -9,8 +9,6 @@ const props = defineProps({
 })
 
 const { propsByCategory } = useScoring()
-
-const MAX_LEADERS = 3
 
 // One resolved leaderboard per prop, in the same category grouping/order
 // PicksSummary uses for the prop catalog.
@@ -32,8 +30,15 @@ function leaderFlag(leader) {
   return TEAM_BY_ID[leader.teamId]?.flag ?? '🏳️'
 }
 
+// FIFA rank of the leader's team, shown to the right of the name like
+// everywhere else (BracketView, PicksView). Null when the team isn't seeded.
+function leaderRank(leader) {
+  const name = TEAM_BY_ID[leader.teamId]?.name
+  return name ? (FIFA_RANKING[name] ?? null) : null
+}
+
 function leaderStat(prop, leader) {
-  if (prop.key === 'cleanGroupTeam') return `${leader.cleanSheets}/${leader.played} clean sheets`
+  if (prop.key === 'cleanGroupTeam') return `${leader.played}/3 · 0 GA`
   return `${leader.goals} goal${leader.goals === 1 ? '' : 's'}`
 }
 </script>
@@ -57,13 +62,14 @@ function leaderStat(prop, leader) {
         </div>
         <div v-else class="space-y-1.5">
           <div
-            v-for="(leader, i) in prop.leaders.slice(0, MAX_LEADERS)" :key="i"
+            v-for="(leader, i) in prop.leaders.slice(0, prop.limit)" :key="i"
             class="flex items-center gap-1.5 text-[11px]"
           >
-            <span class="text-[9px] font-black w-4 text-right tabular-nums shrink-0" :class="['text-amber-400','text-zinc-400','text-amber-700'][i]">{{ i + 1 }}</span>
+            <span v-if="prop.ranked" class="text-[9px] font-black w-4 text-right tabular-nums shrink-0" :class="['text-amber-400','text-zinc-400','text-amber-700'][i] ?? 'text-zinc-500'">{{ i + 1 }}</span>
             <span class="text-base leading-none shrink-0">{{ leaderFlag(leader) }}</span>
-            <span class="truncate min-w-0 flex-1 text-white font-bold">{{ leaderName(prop, leader) }}</span>
-            <span class="text-[9px] text-zinc-500 font-mono shrink-0">{{ leaderStat(prop, leader) }}</span>
+            <span class="truncate min-w-0 text-white font-bold">{{ leaderName(prop, leader) }}</span>
+            <span v-if="leaderRank(leader)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ leaderRank(leader) }}</span>
+            <span class="text-[9px] text-zinc-500 font-mono shrink-0 ml-auto">{{ leaderStat(prop, leader) }}</span>
           </div>
         </div>
       </div>
