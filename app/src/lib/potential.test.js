@@ -13,7 +13,6 @@ import {
   maxPossibleTotal,
   finalizedGroupLetters,
   isWildcardSetFinal,
-  knockoutStageReached,
 } from './potential.js'
 import { GROUPS } from '../data.js'
 
@@ -29,41 +28,38 @@ const ALL_GROUPS = Object.fromEntries(GROUPS.map((g) => [g, ['a', 'b', 'c', 'd']
 const FULL_KO = { r32: Array(16).fill('w'), r16: Array(8).fill('w'), qf: Array(4).fill('w'), sf: Array(2).fill('w'), final: ['w'] }
 const standings = (gamesPlayed) => ({ entries: [0, 1, 2, 3].map(() => ({ gamesPlayed })) })
 const allComplete = Object.fromEntries(GROUPS.map((g) => [g, standings(3)]))
-const SB_GROUP = [{ round: null, group: 'Group A' }, { round: null, group: 'Group B' }]
-const SB_KO = [{ round: 'r32', group: null }]
+// A recorded knockout match → isGroupStageComplete true (group stage over).
+const KO_RECORDED = [{ round: 'r32', status: { state: 'pre' } }]
 
-test('knockoutStageReached: positive round signal, no-group slate, recorded match', () => {
-  assert.equal(knockoutStageReached([{ round: 'r32', group: null }], []), true)
-  assert.equal(knockoutStageReached([{ round: null, group: null }], []), true)
-  assert.equal(knockoutStageReached([], [{ round: 'r16', status: { state: 'post' } }]), true)
-})
-
-test('knockoutStageReached: stays false mid-group-stage and on empty slates', () => {
-  assert.equal(knockoutStageReached(SB_GROUP, []), false)
-  assert.equal(knockoutStageReached([], []), false)
-})
-
-test('finalizedGroupLetters: gamesPlayed, 6-match, and stale-group cases', () => {
-  assert.equal(finalizedGroupLetters([], allComplete, SB_GROUP).size, 12)
+test('finalizedGroupLetters: per-group gamesPlayed locks finished groups', () => {
+  // No knockout/72-match signal yet → falls to per-group standings.
+  assert.equal(finalizedGroupLetters([], allComplete).size, 12)
   const oneStale = { ...allComplete, L: standings(2) }
-  assert.equal(finalizedGroupLetters([], oneStale, SB_GROUP).has('L'), false)
-  // Knockout reached rescues the straggler group.
-  assert.equal(finalizedGroupLetters([], oneStale, SB_KO).has('L'), true)
-  // Match-records signal: 6 post matches with the letter.
-  assert.equal(finalizedGroupLetters(Array(6).fill({ groupLetter: 'C', status: { state: 'post' } }), {}, SB_GROUP).has('C'), true)
-  assert.equal(finalizedGroupLetters(Array(5).fill({ groupLetter: 'C', status: { state: 'post' } }), {}, SB_GROUP).has('C'), false)
+  assert.equal(finalizedGroupLetters([], oneStale).has('L'), false)
+})
+
+test('finalizedGroupLetters: group stage over locks ALL groups incl. stale straggler', () => {
+  const oneStale = { ...allComplete, L: standings(2) }
+  // A recorded knockout match → whole stage final despite stale L.
+  assert.equal(finalizedGroupLetters(KO_RECORDED, oneStale).size, 12)
+  // 72 "post" group matches → whole stage final despite stale L.
+  const seventyTwoPost = Array.from({ length: 72 }, () => ({ round: null, status: { state: 'post' } }))
+  assert.equal(finalizedGroupLetters(seventyTwoPost, oneStale).size, 12)
+  // 71 post + 1 not-post and no knockout signal → NOT yet complete (L stays stale).
+  const notQuite = [...Array.from({ length: 71 }, () => ({ round: null, status: { state: 'post' } })), { round: null, status: { state: 'in' } }]
+  assert.equal(finalizedGroupLetters(notQuite, oneStale).has('L'), false)
 })
 
 test('isWildcardSetFinal: needs every group final', () => {
-  assert.equal(isWildcardSetFinal(allComplete, finalizedGroupLetters([], allComplete, SB_GROUP)), true)
+  assert.equal(isWildcardSetFinal(allComplete, finalizedGroupLetters([], allComplete)), true)
   const oneStale = { ...allComplete, L: standings(2) }
-  assert.equal(isWildcardSetFinal(oneStale, finalizedGroupLetters([], oneStale, SB_GROUP)), false)
+  assert.equal(isWildcardSetFinal(oneStale, finalizedGroupLetters([], oneStale)), false)
 })
 
-// Context with the group stage over (knockout reached) — groups + wildcards locked.
+// Context with the group stage over (knockout recorded) — groups + wildcards locked.
 function lockedCtx(overrides = {}) {
   const oneStale = { ...allComplete, L: standings(2) }
-  const finalizedGroups = finalizedGroupLetters([], oneStale, SB_KO)
+  const finalizedGroups = finalizedGroupLetters(KO_RECORDED, oneStale)
   return {
     scoring: SCORING,
     groupsByLetter: oneStale,
@@ -93,6 +89,13 @@ test('props: archived excluded, null counts, unanswered ignored, earned subtract
   assert.equal(maxPossibleTotal({ ...base, props: { p1: 'x', p2: 'y' } }, { total: 46, breakdown: { props: 5 }, ...lockedCtx() }), 50)
 })
 
+test('props clamp: an archived-after-scored prop cannot push potential below total', () => {
+  // pA is archived, so answeredPropMax ignores it, but its 5 pts are still in
+  // breakdown.props (and total). The prop term must clamp at 0, not go negative.
+  const pick = { groups: ALL_GROUPS, wildcards: [], knockout: {}, props: { pA: 'z' } }
+  assert.equal(maxPossibleTotal(pick, { total: 60, breakdown: { props: 5 }, ...lockedCtx() }), 60)
+})
+
 test('knockout: full bracket adds 80; decided slots and eliminated teams add nothing', () => {
   const pick = { groups: ALL_GROUPS, wildcards: [], knockout: FULL_KO, props: {} }
   assert.equal(maxPossibleTotal(pick, { total: 50, breakdown: {}, ...lockedCtx() }), 130)
@@ -112,9 +115,9 @@ test('potential equals total once nothing is open', () => {
 })
 
 test('mid-group-stage: only finished groups lock, wildcards stay open', () => {
-  // 11 groups done, group L still playing (genuinely, on a group-stage day).
+  // 11 groups done, group L still playing — no knockout/72-match signal yet.
   const mid = { ...allComplete, L: standings(2) }
-  const finalizedGroups = finalizedGroupLetters([], mid, SB_GROUP)
+  const finalizedGroups = finalizedGroupLetters([], mid)
   assert.equal(finalizedGroups.size, 11)
   const ctx = {
     scoring: SCORING, groupsByLetter: mid, finalizedGroups,

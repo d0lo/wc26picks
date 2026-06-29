@@ -7,6 +7,7 @@ import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
 import { configQueryOptions, pickQueryOptions, userQueryOptions, matchesQueryOptions, queryKeys } from './queries.js'
 import { isBracketPickComplete } from './bracket.js'
+import { isGroupStageComplete } from './lib/tournament.js'
 import { TEAM_BY_ID } from './data.js'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
@@ -50,25 +51,11 @@ const picksLocked = computed(() => {
 const matchesQuery = useQuery(matchesQueryOptions())
 const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
 
-// Group-stage completeness can't be derived from groupLetter — production
-// matches/{eventId} docs were found to be missing groupLetter (and round/
-// slot) entirely, not just on legacy data but across the whole group stage,
-// so per-group counts built on that field always undercount. status.state
-// is reliably correct on every doc regardless, so instead: a group-stage
-// match is just any match with no round set (knockout matches always carry
-// one, derived fresh from a fixed eventId->round/slot table, unaffected by
-// this gap) — the group stage is complete once all 72 of those are "post".
-const GROUP_STAGE_MATCH_COUNT = 72
-const groupStageComplete = computed(() => {
-  const matches = matchesQuery.data.value ?? []
-  // Any knockout match having data means the group stage is definitionally over.
-  if (matches.some((m) => m.round)) return true
-  // Otherwise the group stage is done once at least all 72 group matches are
-  // post. Use >= (not ===) so a knockout doc that ever lands untagged (missing
-  // round/slot) inflating the count can't hide the bracket again.
-  const groupMatches = matches.filter((m) => m.round == null)
-  return groupMatches.length >= GROUP_STAGE_MATCH_COUNT && groupMatches.every((m) => m.status?.state === 'post')
-})
+// Group-stage completeness can't be derived from groupLetter (production match
+// docs are missing it across the whole group stage); the shared helper derives
+// it from status.state + the knockout `round` tag instead. Same signal the
+// leaderboard's max-possible ceiling uses, so the two never disagree.
+const groupStageComplete = computed(() => isGroupStageComplete(matchesQuery.data.value ?? []))
 const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
 
 // Knockout bracket lock — separate from the group-stage picks lock

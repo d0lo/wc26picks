@@ -18,6 +18,7 @@
 // home shared by the leaderboard column and the score card, and stays testable.
 import { GROUPS } from '../data.js'
 import { ROUNDS, ROUND_SIZE, ROUND_POINTS, matchLoser } from '../bracket.js'
+import { isGroupStageComplete } from './tournament.js'
 
 // Max points a perfectly-correct group prediction can earn under `scoring`.
 export function groupMaxPoints(scoring) {
@@ -60,58 +61,27 @@ export function knockoutEliminatedTeams(matches) {
   return out
 }
 
-// A World Cup group is 4 teams each playing 3 round-robin games (6 matches).
+// A World Cup group is 4 teams each playing 3 round-robin games.
 const GROUP_TEAMS = 4
 const GROUP_GAMES_EACH = 3
-const GROUP_MATCHES = 6
 
-// Whether the schedule has reached the knockout stage. Every group match is
-// played before the first knockout match, so this proves the entire group stage
-// is over — the one signal a straggler group's stale standings can't defeat.
-// Detected from the scoreboard the leaderboard already subscribes to: an event
-// tagged with a knockout round, or a slate of events none of which is a group
-// match (knockout events carry no "Group X"). Falls back to any recorded
-// knockout match. Empty/rest-day slates don't trigger it, so mid-group-stage
-// the per-group checks still apply.
-export function knockoutStageReached(scoreboardEvents, matches) {
-  const evs = scoreboardEvents ?? []
-  if (evs.some((e) => e.round)) return true
-  if (evs.length > 0 && !evs.some((e) => e.group)) return true
-  return (matches ?? []).some((m) => m.round && ROUNDS.includes(m.round))
-}
-
-// Group letters whose round-robin has finished, derived client-side as a
-// fallback for a lagging/unwritten groups/{letter}.complete flag. Without this
-// the ceiling treats a finished-but-unflagged group as still open: each pick's
-// actual group score is swapped back out for the universal group max, so every
-// pick's ceiling collapses to the same constant — exactly the "everyone has the
-// same max" symptom. Signals, any of which is sufficient:
-//   0. the schedule has reached the knockout stage → every group is final
-//      (knockoutStageReached), which is what rescues a straggler group whose
-//      final matchday wasn't recorded, so its own standings still read 2 games;
-//   1. 6 finished group matches recorded for the letter (our own match records);
-//   2. the group's standings show every team has played all 3 of its games.
-// Signal 2 matters because group-stage match docs written before groupLetter
-// was tracked carry no letter (see scripts/backfill-match-group-letters.mjs),
-// which makes signal 1 silently find nothing once the group stage is over.
-export function finalizedGroupLetters(matches, groupsByLetter, scoreboardEvents) {
-  // Once the knockout stage is reached the whole group stage is final, even if
-  // an individual group's standings doc is a matchday stale.
-  if (knockoutStageReached(scoreboardEvents, matches)) return new Set(GROUPS)
+// Group letters whose round-robin has finished — these lock their actual score
+// into the pick's `total` instead of leaving the universal group max counting
+// toward the ceiling. Without this a finished-but-unflagged group reads as still
+// open, each pick's real group score is swapped back out for the max, and every
+// ceiling collapses to the same constant — the "everyone has the same max"
+// symptom. Two layers:
+//   - once the whole group stage is over (isGroupStageComplete — the same
+//     authoritative signal App.vue gates the knockout window on), every group is
+//     final, which is what rescues a straggler group whose standings doc lags a
+//     matchday behind its already-"post" matches;
+//   - before that, lock each group that has individually finished (every team
+//     has played all 3 of its games), so a group that wraps a day early stops
+//     counting toward the ceiling immediately.
+export function finalizedGroupLetters(matches, groupsByLetter) {
+  if (isGroupStageComplete(matches)) return new Set(GROUPS)
 
   const set = new Set()
-
-  const counts = {}
-  for (const m of matches ?? []) {
-    // Group matches carry groupLetter (knockout matches carry round instead).
-    if (m.groupLetter && m.status?.state === 'post') {
-      counts[m.groupLetter] = (counts[m.groupLetter] ?? 0) + 1
-    }
-  }
-  for (const [letter, n] of Object.entries(counts)) {
-    if (n >= GROUP_MATCHES) set.add(letter)
-  }
-
   for (const [letter, group] of Object.entries(groupsByLetter ?? {})) {
     const entries = group?.entries
     if (
@@ -122,7 +92,6 @@ export function finalizedGroupLetters(matches, groupsByLetter, scoreboardEvents)
       set.add(letter)
     }
   }
-
   return set
 }
 
@@ -197,7 +166,10 @@ export function maxPossibleTotal(pick, { total = 0, breakdown = {}, scoring, gro
   // resolve until the end, so every answered prop can still hit. Add the full
   // answered-prop max minus whatever's already scored (breakdown.props is the
   // aggregate the backend sums into `total`; 0 until a prop engine writes it).
-  potential += answeredPropMax(pick, scoring) - Number(breakdown.props ?? 0)
+  // Clamp at 0 so a prop archived *after* it scored — its points still baked
+  // into breakdown.props but dropped from answeredPropMax — can't push the
+  // ceiling below the pick's own total.
+  potential += Math.max(0, answeredPropMax(pick, scoring) - Number(breakdown.props ?? 0))
 
   return potential
 }
