@@ -5,6 +5,7 @@ import { GROUPS, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import { useScoring } from '../composables/useScoring.js'
 import { groupsQueryOptions, wildcardsQueryOptions, scoreQueryOptions, matchesQueryOptions, scoreboardQueryOptions } from '../queries.js'
+import { isGroupStageComplete } from '../lib/tournament.js'
 import PropPointsBadge from './PropPointsBadge.vue'
 import KnockoutBracket from './KnockoutBracket.vue'
 
@@ -131,6 +132,14 @@ const hasGroups = computed(() => {
   return !!g && Object.values(g).some((arr) => Array.isArray(arr) && arr.length > 0)
 })
 
+// Once the group stage is over and the user has a bracket, the knockout
+// bracket is the live, relevant thing — promote it above the now-settled
+// group-stage picks (standings + best 3rd-place). Until then it stays in its
+// usual position below them.
+const bracketFirst = computed(
+  () => componentProps.showBracket && !!componentProps.knockout && isGroupStageComplete(matches.value),
+)
+
 const groupCardRefs = reactive({})
 const wildcardsSectionRef = ref(null)
 
@@ -138,7 +147,9 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
 </script>
 
 <template>
-  <div class="space-y-3">
+  <!-- flex + gap (rather than space-y) so the bracket can be promoted above the
+       group-stage picks via order-first without breaking inter-section spacing. -->
+  <div class="flex flex-col gap-3">
 
     <!-- Group & prop picks hidden until picks lock (only when gated) -->
     <div
@@ -217,8 +228,9 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
       🔒 Bracket is hidden until the bracket locks.
     </div>
 
-    <!-- Knockout Bracket -->
-    <section v-if="showBracket && knockout">
+    <!-- Knockout Bracket — promoted above the group-stage picks once the group
+         stage is over (bracketFirst); otherwise sits here in normal flow. -->
+    <section v-if="showBracket && knockout" :class="bracketFirst ? 'order-first' : ''">
       <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">Knockout Bracket</h2>
       <KnockoutBracket :matches="matches" :events="liveEvents" :picks="knockout" :breakdown="knockoutBreakdown" compact />
     </section>
