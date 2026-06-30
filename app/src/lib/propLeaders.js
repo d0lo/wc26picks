@@ -41,6 +41,24 @@ function mostGoalsLeaders(matches) {
     .sort((a, b) => b.goals - a.goals)
 }
 
+// "Team with Most Yellow Cards" — sums the per-match `yellowCards` team stat
+// (already persisted in matches/{id}.teamStats from the ESPN boxscore) across
+// every match. Full standings sorted desc; the view shows the top 5.
+function mostYellowCardsLeaders(matches) {
+  const byTeam = {}
+  for (const m of matches) {
+    for (const ts of m.teamStats ?? []) {
+      const stat = (ts.stats ?? []).find((s) => s.name === 'yellowCards')
+      const n = Number(stat?.displayValue)
+      if (!ts.teamId || !Number.isFinite(n)) continue
+      byTeam[ts.teamId] = (byTeam[ts.teamId] ?? 0) + n
+    }
+  }
+  return Object.entries(byTeam)
+    .map(([teamId, cards]) => ({ teamId, cards }))
+    .sort((a, b) => b.cards - a.cards)
+}
+
 // One row per player who scored a hat trick, carrying the team(s) they scored
 // it against (a player can manage more than one across the tournament) rather
 // than a goal count — the view renders the opponent(s), not the tally.
@@ -92,18 +110,20 @@ function cleanGroupTeamLeaders(matches) {
 
 // Keyed by config/public.scoring.props[].key (see scripts/seed-scoring-config.mjs).
 // Any prop key not listed here — goldenGlove, goldenBall, youngPlayer,
-// breakoutPlayer, mostAssists, mostYellowCards — is structurally
-// non-computable from currently tracked data.
+// breakoutPlayer, mostAssists — is structurally non-computable from currently
+// tracked data.
 //
-// `ranked` props show a numbered podium capped at `limit`; unranked props show
-// every entry the resolver returns (already pre-filtered to the leading set)
-// with no rank numbers — "all the teams that lead", not a standings table.
+// `ranked` props show a standings list capped at `limit`, ranked by `metric`
+// (the numeric field on each leader) with `unit` as the displayed noun; ties
+// are shown golf-style by the view. Unranked props show every entry the
+// resolver returns (already pre-filtered to the leading set), no rank numbers.
 const RESOLVERS = {
-  goldenBoot: { resolve: goldenBootLeaders, ranked: true, limit: 5 },
+  goldenBoot: { resolve: goldenBootLeaders, ranked: true, limit: 5, metric: 'goals', unit: 'goal' },
   // Key predates the group→tournament prop rename; it now means "most goals in
   // the tournament" and resolves goals across all matches (see mostGoalsLeaders).
   // Kept as a stable internal handle — picks key off `id`, not this string.
-  mostGroupGoals: { resolve: mostGoalsLeaders, ranked: true, limit: 5 },
+  mostGroupGoals: { resolve: mostGoalsLeaders, ranked: true, limit: 5, metric: 'goals', unit: 'goal' },
+  mostYellowCards: { resolve: mostYellowCardsLeaders, ranked: true, limit: 5, metric: 'cards', unit: 'card' },
   hatTrickScorer: { resolve: hatTrickScorers, ranked: false },
   cleanGroupTeam: { resolve: cleanGroupTeamLeaders, ranked: false },
 }
@@ -112,5 +132,12 @@ export function resolvePropLeaders(propKey, matches) {
   const entry = RESOLVERS[propKey]
   if (!entry) return { computable: false, leaders: [], ranked: false, limit: 0 }
   const leaders = entry.resolve(matches ?? [])
-  return { computable: true, leaders, ranked: entry.ranked, limit: entry.limit ?? leaders.length }
+  return {
+    computable: true,
+    leaders,
+    ranked: entry.ranked,
+    limit: entry.limit ?? leaders.length,
+    metric: entry.metric,
+    unit: entry.unit,
+  }
 }

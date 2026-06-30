@@ -46,13 +46,15 @@ function leaderRank(leader) {
 }
 
 // Golf-style standings: tied entries share a position and ties don't shift the
-// numbering for everyone below — position = (count with strictly more goals) + 1,
-// shown as "T1" when shared. Computed over the full standings, then sliced.
+// numbering for everyone below — position = (count with a strictly higher
+// metric) + 1, shown as "T1" when shared. Computed over the full standings,
+// then sliced. `prop.metric` is the numeric field being ranked (goals, cards…).
 function golfRows(prop) {
   const list = prop.leaders
+  const val = (l) => l[prop.metric]
   return list.slice(0, prop.limit).map((leader) => {
-    const rank = list.filter((l) => l.goals > leader.goals).length + 1
-    const tied = list.filter((l) => l.goals === leader.goals).length > 1
+    const rank = list.filter((l) => val(l) > val(leader)).length + 1
+    const tied = list.filter((l) => val(l) === val(leader)).length > 1
     return { leader, rank, tied }
   })
 }
@@ -101,7 +103,7 @@ function flagByName(name) {
             <span class="text-base leading-none shrink-0">{{ teamFlag(row.leader.teamId) }}</span>
             <span class="truncate min-w-0 text-white font-bold">{{ leaderName(prop, row.leader) }}</span>
             <span v-if="leaderRank(row.leader)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ leaderRank(row.leader) }}</span>
-            <span class="text-[9px] text-zinc-500 font-mono shrink-0 ml-auto">{{ row.leader.goals }} goal{{ row.leader.goals === 1 ? '' : 's' }}</span>
+            <span class="text-[9px] text-zinc-500 font-mono shrink-0 ml-auto">{{ row.leader[prop.metric] }} {{ prop.unit }}{{ row.leader[prop.metric] === 1 ? '' : 's' }}</span>
           </div>
         </div>
 
