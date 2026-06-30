@@ -93,6 +93,7 @@ Treat the PR as a running development thread, not just a code diff.
 
 - This makes each PR read top-to-bottom as the story of how the feature evolved — every fix, every redirect, every lesson — so the next agent (or a reviewer) can follow the reasoning without diffing each commit. The commit body and its PR comment should be the same text; write it once, in the commit, then mirror it to the thread on push.
 - For a multi-commit push, post one comment covering the new commits (or one per commit if they're logically distinct). Don't post for no-op pushes (e.g. an empty rebase).
+- **The Firebase preview URL goes at the very top of the PR description** (the PR body), not in the thread comments. As soon as the preview deploy posts its URL, edit the PR body to lead with it on its own line — e.g. `🔗 Preview: https://wc26picks--pr53-…web.app` — so the live build is the first thing anyone sees when opening the PR. It stays constant across pushes (the deploy re-runs per commit but the URL is stable), so this is a one-time edit per PR. Never put it in commit bodies — the URL isn't known at commit time and doesn't belong in git history.
 
 ---
 
