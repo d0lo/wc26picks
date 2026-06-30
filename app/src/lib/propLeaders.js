@@ -25,12 +25,13 @@ function goldenBootLeaders(matches) {
   return Object.values(byScorer).sort((a, b) => b.goals - a.goals)
 }
 
-// "Most goals in the group stage" — only the teams tied for the lead, no
-// full standings. Recomputed live, so the leading set grows/shrinks as
-// results come in; once the stage is over it's the final co-leaders.
-function mostGroupGoalsLeaders(matches) {
+// "Most Goals in Tournament" — counts every goal across all matches (group
+// stage and knockout), not just group-stage games. Returns only the teams
+// tied for the lead, no full standings; the leading set grows/shrinks live
+// as results come in.
+function mostGoalsLeaders(matches) {
   const byTeam = {}
-  for (const m of matches.filter(isGroupMatch)) {
+  for (const m of matches) {
     for (const play of m.scoringPlays ?? []) {
       if (!play.teamId) continue
       byTeam[play.teamId] = (byTeam[play.teamId] ?? 0) + 1
@@ -90,7 +91,10 @@ function cleanGroupTeamLeaders(matches) {
 // with no rank numbers — "all the teams that lead", not a standings table.
 const RESOLVERS = {
   goldenBoot: { resolve: goldenBootLeaders, ranked: true, limit: 5 },
-  mostGroupGoals: { resolve: mostGroupGoalsLeaders, ranked: false },
+  // Key predates the group→tournament prop rename; it now means "most goals in
+  // the tournament" and resolves goals across all matches (see mostGoalsLeaders).
+  // Kept as a stable internal handle — picks key off `id`, not this string.
+  mostGroupGoals: { resolve: mostGoalsLeaders, ranked: false },
   hatTrickScorer: { resolve: hatTrickScorers, ranked: false },
   cleanGroupTeam: { resolve: cleanGroupTeamLeaders, ranked: false },
 }

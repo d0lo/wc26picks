@@ -7,6 +7,8 @@ import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from './firebase.js'
 import { configQueryOptions, pickQueryOptions, userQueryOptions, matchesQueryOptions, queryKeys } from './queries.js'
 import { isBracketPickComplete } from './bracket.js'
+import { isGroupStageComplete } from './lib/tournament.js'
+import { TEAM_BY_ID } from './data.js'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
 import ProfileModal from './components/ProfileModal.vue'
@@ -20,6 +22,13 @@ const user = ref(null)
 const picksLockTime = ref(null)
 const knockoutLockTime = ref(null)
 const hasSubmitted = ref(false)
+// True once the signed-in user's own pick doc is being delivered in realtime
+// (onSnapshot below). The knockout prompt/banner gate on this rather than the
+// pick query's isFetched, so they only ever evaluate against authoritative
+// live data — never a stale localStorage-hydrated snapshot from before the
+// bracket was saved, which would otherwise pop the "make your picks" dialog
+// for a user whose bracket is already complete.
+const pickLive = ref(false)
 const dataReady = ref(false)
 const showProfile = ref(false)
 const editNameMode = ref(false)
@@ -42,25 +51,11 @@ const picksLocked = computed(() => {
 const matchesQuery = useQuery(matchesQueryOptions())
 const pickQuery = useQuery(computed(() => pickQueryOptions(user.value?.uid)))
 
-// Group-stage completeness can't be derived from groupLetter — production
-// matches/{eventId} docs were found to be missing groupLetter (and round/
-// slot) entirely, not just on legacy data but across the whole group stage,
-// so per-group counts built on that field always undercount. status.state
-// is reliably correct on every doc regardless, so instead: a group-stage
-// match is just any match with no round set (knockout matches always carry
-// one, derived fresh from a fixed eventId->round/slot table, unaffected by
-// this gap) — the group stage is complete once all 72 of those are "post".
-const GROUP_STAGE_MATCH_COUNT = 72
-const groupStageComplete = computed(() => {
-  const matches = matchesQuery.data.value ?? []
-  // Any knockout match having data means the group stage is definitionally over.
-  if (matches.some((m) => m.round)) return true
-  // Otherwise the group stage is done once at least all 72 group matches are
-  // post. Use >= (not ===) so a knockout doc that ever lands untagged (missing
-  // round/slot) inflating the count can't hide the bracket again.
-  const groupMatches = matches.filter((m) => m.round == null)
-  return groupMatches.length >= GROUP_STAGE_MATCH_COUNT && groupMatches.every((m) => m.status?.state === 'post')
-})
+// Group-stage completeness can't be derived from groupLetter (production match
+// docs are missing it across the whole group stage); the shared helper derives
+// it from status.state + the knockout `round` tag instead. Same signal the
+// leaderboard's max-possible ceiling uses, so the two never disagree.
+const groupStageComplete = computed(() => isGroupStageComplete(matchesQuery.data.value ?? []))
 const r32Started = computed(() => (matchesQuery.data.value ?? []).some((m) => m.round === 'r32'))
 
 // Knockout bracket lock — separate from the group-stage picks lock
@@ -100,7 +95,13 @@ const debugInfo = computed(() => {
   }
 })
 const knockoutComplete = computed(() => !!pickQuery.data.value?.knockout && isBracketPickComplete(pickQuery.data.value.knockout))
-const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickQuery.isFetched.value && !knockoutComplete.value)
+
+// Champion's flag emoji for the header, once a champion has been picked.
+const championFlag = computed(() => {
+  const champId = pickQuery.data.value?.knockout?.final?.[0]
+  return TEAM_BY_ID[champId]?.flag ?? null
+})
+const needsKnockoutPicks = computed(() => hasSubmitted.value && knockoutWindowOpen.value && pickLive.value && !knockoutComplete.value)
 
 provide('user', user)
 provide('picksLocked', picksLocked)
@@ -122,6 +123,10 @@ watch(needsKnockoutPicks, (needed) => {
   if (needed && !knockoutDialogShown.value) {
     showKnockoutDialog.value = true
     knockoutDialogShown.value = true
+  } else if (!needed) {
+    // Saved the bracket (here or on another device) → drop the dialog if it's
+    // still up, so a completed bracket never leaves the prompt lingering.
+    showKnockoutDialog.value = false
   }
 })
 
@@ -198,6 +203,11 @@ watch(groupStageComplete, (complete) => {
 // client-visible trigger, so a one-shot fetch would otherwise require a
 // full reload to pick up a newly granted admin.
 let profileUnsub = null
+// Realtime listener on the signed-in user's own pick doc — keeps the cached
+// pick (and the knockout-complete / hasSubmitted signals derived from it) in
+// lockstep with the DB across tabs and reloads, instead of trusting a
+// persisted, 5-min-stale query cache that can lag a just-saved bracket.
+let pickUnsub = null
 
 onMounted(async () => {
   // Config is public — fetch before auth so splash page shows lock time immediately.
@@ -223,6 +233,9 @@ onMounted(async () => {
       editNameMode.value = false
       profileUnsub?.()
       profileUnsub = null
+      pickUnsub?.()
+      pickUnsub = null
+      pickLive.value = false
       // Drop the previous user's pick/profile from cache (and from the next
       // localStorage persist) — on a shared device the next sign-in
       // shouldn't briefly paint the prior user's cached data before its own
@@ -273,6 +286,16 @@ onMounted(async () => {
         queryClient.setQueryData(userQueryOptions(u.uid).queryKey, profile)
         isAdmin.value = !!profile?.isAdmin
       })
+
+      // Realtime sync of the user's own pick doc — drives hasSubmitted and the
+      // knockout-complete signal off live data, never a stale cache.
+      pickUnsub?.()
+      pickUnsub = onSnapshot(doc(db, 'picks', u.uid), (snap) => {
+        const pick = snap.exists() ? snap.data() : null
+        queryClient.setQueryData(queryKeys.pick(u.uid), pick)
+        hasSubmitted.value = !!pick
+        pickLive.value = true
+      })
     } else {
       hasSubmitted.value = false
       isAdmin.value = false
@@ -308,7 +331,7 @@ function onNameSaved() {
       <!-- Persistent header + knockout banner, pinned together so the banner
            stays stuck right under the header as the page scrolls. -->
       <div v-if="showChrome" class="sticky top-0 z-50">
-        <AppHeader :user="user" @profile="openProfile(false)" />
+        <AppHeader :user="user" :champion-flag="championFlag" @profile="openProfile(false)" />
 
         <!-- Knockout-picks reminder banner — visible for the whole window
              between group-stage completion and Round of 32 kickoff, for

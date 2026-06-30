@@ -5,10 +5,13 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { TEAM_BY_ID } from '../data.js'
-import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
+import { pickQueryOptions, scoresQueryOptions, picksListQueryOptions, usersByIdsQueryOptions, scoreboardQueryOptions, groupsQueryOptions, matchesQueryOptions, startScoreboardListener, stopScoreboardListener, queryKeys } from '../queries.js'
+import { useScoring } from '../composables/useScoring.js'
+import { maxPossibleTotal, decidedKnockoutSlots, knockoutEliminatedTeams, isWildcardSetFinal, finalizedGroupLetters } from '../lib/potential.js'
 import PicksSummary from '../components/PicksSummary.vue'
 import PicksModal from '../components/PicksModal.vue'
 import GroupOverlayPanel from '../components/GroupOverlayPanel.vue'
+import ChampionHero from '../components/ChampionHero.vue'
 
 const router = useRouter()
 const user = inject('user')
@@ -23,6 +26,45 @@ const picksListQuery = useQuery(picksListQueryOptions())
 const submission = computed(() => pickQuery.data.value ?? null)
 const scores = computed(() => scoresQuery.data.value ?? [])
 const submitters = computed(() => picksListQuery.data.value ?? [])
+
+// ── Potential ("max possible finish") ──────────────────────────────────
+// The ceiling each pick can still reach: decided picks stay at their actual
+// value, everything still undecided is assumed to hit. Computed client-side
+// from data already cached (picks + standings + results + config) — purely
+// display-derived, never persisted (see lib/potential.js).
+const { scoring } = useScoring()
+const groupsQuery = useQuery(groupsQueryOptions())
+const matchesQuery = useQuery(matchesQueryOptions())
+
+const decidedSlots = computed(() => decidedKnockoutSlots(matchesQuery.data.value ?? []))
+const eliminatedTeams = computed(() => knockoutEliminatedTeams(matchesQuery.data.value ?? []))
+// Group letters whose round-robin is finished. Once the whole group stage is
+// over (same signal App.vue gates the knockout window on), all 12 are final —
+// which survives a straggler group whose standings doc lags its already-"post"
+// matches; before that, each individually-finished group locks on its own.
+const finalizedGroups = computed(() => finalizedGroupLetters(matchesQuery.data.value ?? [], groupsQuery.data.value ?? {}))
+const wildcardsFinal = computed(() => isWildcardSetFinal(groupsQuery.data.value ?? {}, finalizedGroups.value))
+const pickByUid = computed(() => Object.fromEntries((picksListQuery.data.value ?? []).map(p => [p.id, p])))
+const scoreByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, s])))
+
+function potentialFor(uid) {
+  const pick = pickByUid.value[uid] ?? (uid === user.value?.uid ? submission.value : null)
+  if (!pick) return null
+  const s = scoreByUid.value[uid] ?? {}
+  return maxPossibleTotal(pick, {
+    total: s.total ?? 0,
+    breakdown: s.breakdown ?? {},
+    scoring: scoring.value,
+    groupsByLetter: groupsQuery.data.value ?? {},
+    finalizedGroups: finalizedGroups.value,
+    decidedSlots: decidedSlots.value,
+    eliminatedTeams: eliminatedTeams.value,
+    wildcardsFinal: wildcardsFinal.value,
+  })
+}
+
+const myPotential = computed(() => potentialFor(user.value?.uid))
+const potentialByUid = computed(() => Object.fromEntries(scores.value.map(s => [s.id, potentialFor(s.id)])))
 
 // Only resolve names for uids that actually appear on this page — picks-list
 // submitters plus anyone with a score — instead of pulling the whole users
@@ -107,6 +149,10 @@ const myRank = computed(() => {
 
 const myScore = computed(() => scores.value.find(s => s.id === user.value?.uid))
 
+// The user's predicted champion — the single team they picked to win the
+// final. Drives the <ChampionHero> at the top of the home screen.
+const championId = computed(() => submission.value?.knockout?.final?.[0] ?? null)
+
 function fmtName(name) {
   if (!name) return '?'
   const parts = name.trim().split(/\s+/)
@@ -162,32 +208,15 @@ function resolveTeamFlag(teamId) {
       </div>
       <template v-if="!loading">
 
-      <!-- My score card (only when I have submitted) -->
+      <!-- Champion hero (only when I have submitted) -->
       <div v-if="submission" class="mt-4 mb-5">
-        <!-- No scores yet -->
-        <div v-if="!hasScores" class="bg-court-800 border border-court-700 rounded-2xl p-5">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-3xl font-black text-white">0 <span class="text-lg text-zinc-400 font-normal">pts</span></div>
-              <div class="text-xs text-zinc-400 mt-1">Scoring begins once the tournament starts</div>
-            </div>
-            <div class="text-4xl select-none">🏆</div>
-          </div>
-        </div>
-
-        <!-- Scores live -->
-        <div v-else class="bg-court-800 border border-court-700 rounded-2xl p-5">
-          <div class="flex items-center gap-4">
-            <div v-if="myRank" class="bg-court-700/70 rounded-xl px-4 py-2 text-center min-w-[64px]">
-              <div class="text-2xl font-black text-white">#{{ myRank }}</div>
-              <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Rank</div>
-            </div>
-            <div v-if="myScore" class="bg-court-700/70 rounded-xl px-4 py-2 text-center min-w-[64px]">
-              <div class="text-2xl font-black text-amber-400">{{ myScore.total }}</div>
-              <div class="text-[9px] text-zinc-400 uppercase tracking-widest">Points</div>
-            </div>
-          </div>
-        </div>
+        <ChampionHero
+          :champion-id="championId"
+          :points="myScore?.total ?? null"
+          :rank="myRank"
+          :total-players="sortedSubmitters.length"
+          :potential="myPotential"
+        />
       </div>
 
       <!-- Leaderboard -->
@@ -275,11 +304,14 @@ function resolveTeamFlag(teamId) {
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.wildcards ?? '—' }}</div>
             <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.knockout ? Object.values(s.breakdown.knockout).flatMap((slots) => Object.values(slots)).reduce((sum, v) => sum + v, 0) : '—' }}</div>
 
-            <!-- Total -->
-            <div
-              class="text-sm text-right font-black"
-              :class="i === 0 ? 'text-amber-400' : 'text-white'"
-            >{{ s.total }}</div>
+            <!-- Total (+ max possible) -->
+            <div class="text-right">
+              <div
+                class="text-sm font-black"
+                :class="i === 0 ? 'text-amber-400' : 'text-white'"
+              >{{ s.total }}</div>
+              <div v-if="potentialByUid[s.id] != null" class="text-[9px] font-mono text-amber-400/50 leading-tight">max {{ potentialByUid[s.id] }}</div>
+            </div>
           </div>
         </div>
       </section>

@@ -1,5 +1,5 @@
 <script setup>
-defineProps({ user: Object })
+defineProps({ user: Object, championFlag: { type: String, default: null } })
 defineEmits(['profile'])
 </script>
 
@@ -17,6 +17,7 @@ defineEmits(['profile'])
     <div class="relative z-10 flex items-center justify-between">
       <!-- Logo -->
       <span class="text-lg font-black tracking-tight">
+        <span v-if="championFlag" class="text-lg leading-none mr-1.5">{{ championFlag }}</span>
         <span class="text-emerald-400">WC26</span>
         <span class="text-white"> Picks</span>
       </span>

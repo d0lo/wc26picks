@@ -125,6 +125,15 @@ export const TEAM_BY_ID = Object.fromEntries(
   Object.entries(TEAM_ID).map(([name, id]) => [id, { name, flag: TEAM_FLAG[name] ?? '🏳️' }])
 )
 
+// A team's display shape from its UUID, with the same neutral fallbacks the app
+// uses everywhere an unknown/TBD team can appear. Shared so the flag/name
+// fallback rule lives in one place (lib/fixtures.js carries a richer variant
+// that also threads a fallback name + score for unresolved knockout slots).
+export function teamView(teamId) {
+  const t = teamId ? TEAM_BY_ID[teamId] : null
+  return { teamId: teamId ?? null, name: t?.name ?? 'TBD', flag: t?.flag ?? '🏳️' }
+}
+
 // FIFA World Rankings as of April 1, 2026
 export const FIFA_RANKING = {
   France:               1,
@@ -180,22 +189,14 @@ export const FIFA_RANKING = {
 // Props themselves (key, label, hint, type, points, etc.) are NOT defined
 // here — the full catalog lives in Firestore config/public.scoring.props
 // (see queries.js configQueryOptions / composables/useScoring.js), so props
-// can be added, relabeled, or repointed without a code deploy. Only the
-// category set and ordering rule below are structural and stay in code.
+// can be added, relabeled, or repointed without a code deploy. Every prop is
+// a tournament prop — there is no separate "group stage" or "knockout" prop
+// section. The single category below is the only structural piece in code;
+// any legacy `category` value on an older Firestore doc is coalesced to it.
 export const PROP_CATEGORIES = [
   { key: 'tournament', label: 'Tournament Props' },
-  { key: 'group',      label: 'Group Stage Props' },
-  { key: 'knockout',   label: 'Knockout Props' },
 ]
 
-// Per FIFA's released match calendar: group stage runs through June 27,
-// 2026, Round of 32 June 28–July 3, Round of 16 July 4–7. Once the Round
-// of 16 kicks off, knockout props outrank group props in display order.
-export const ROUND_OF_16_START = new Date('2026-07-04')
-
 export function orderedPropCategories() {
-  const order = new Date() < ROUND_OF_16_START
-    ? ['tournament', 'group', 'knockout']
-    : ['tournament', 'knockout', 'group']
-  return order.map(key => PROP_CATEGORIES.find(c => c.key === key))
+  return PROP_CATEGORIES
 }

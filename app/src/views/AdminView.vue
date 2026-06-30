@@ -69,7 +69,14 @@ function loadFromConfig(data) {
   scoringForm.perfectGroupBonus = s.perfectGroupBonus ?? 0
   scoringForm.wildcard = s.wildcard ?? 0
   scoringForm.knockout = Object.fromEntries(ROUNDS.map((r) => [r, s.knockout?.[r] ?? ROUND_POINTS[r] ?? 0]))
-  propsForm.items = (s.props ?? []).map(p => ({ ...p }))
+  // Coalesce any legacy `category` (e.g. 'group'/'knockout' from before props
+  // were unified) onto the single tournament category so older docs still
+  // render and edit instead of silently dropping out of every category list.
+  const KNOWN_CATEGORIES = new Set(PROP_CATEGORIES.map(c => c.key))
+  propsForm.items = (s.props ?? []).map(p => ({
+    ...p,
+    category: KNOWN_CATEGORIES.has(p.category) ? p.category : 'tournament',
+  }))
   rebuildCategoryLists()
   savedSnapshot.lock = snapshotLock()
   savedSnapshot.knockoutLock = snapshotKnockoutLock()
