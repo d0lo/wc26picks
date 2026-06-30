@@ -84,7 +84,10 @@ function flagByName(name) {
         v-for="prop in cat.props" :key="prop.id"
         class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3"
       >
-        <div class="text-[11px] text-zinc-400 mb-2">{{ prop.label }}</div>
+        <div class="flex items-baseline gap-1.5 mb-2">
+          <span class="text-[11px] text-zinc-400">{{ prop.label }}</span>
+          <span v-if="prop.key === 'goldenGlove'" class="text-[9px] italic text-amber-400/80">*Unofficial</span>
+        </div>
 
         <div v-if="!prop.computable" class="text-xs text-zinc-500 italic">
           – Can't be tracked from available data
@@ -103,7 +106,10 @@ function flagByName(name) {
             <span class="text-base leading-none shrink-0">{{ teamFlag(row.leader.teamId) }}</span>
             <span class="truncate min-w-0 text-white font-bold">{{ leaderName(prop, row.leader) }}</span>
             <span v-if="leaderRank(row.leader)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ leaderRank(row.leader) }}</span>
-            <span class="text-[9px] text-zinc-500 font-mono shrink-0 ml-auto">{{ row.leader[prop.metric] }} {{ prop.unit }}{{ row.leader[prop.metric] === 1 ? '' : 's' }}</span>
+            <span class="text-[9px] text-zinc-500 font-mono shrink-0 ml-auto">
+              <template v-if="prop.key === 'goldenGlove'">{{ row.leader.saves }} sv · {{ row.leader.cleanSheets }} CS</template>
+              <template v-else>{{ row.leader[prop.metric] }} {{ prop.unit }}{{ row.leader[prop.metric] === 1 ? '' : 's' }}</template>
+            </span>
           </div>
         </div>
 

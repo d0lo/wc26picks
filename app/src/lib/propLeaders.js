@@ -60,6 +60,31 @@ function mostAssistsLeaders(matches) {
   return Object.values(byPlayer).sort((a, b) => b.assists - a.assists)
 }
 
+// "Golden Glove" (unofficial) — the real award is committee-voted, but we can
+// approximate from goalkeeper stats: total saves and clean sheets (matches the
+// keeper played and personally conceded 0). Only counts keepers (position "G")
+// in matches they actually appeared in, so a benched backup isn't credited a
+// clean sheet. Ranked by clean sheets, then saves.
+function goldenGloveLeaders(matches) {
+  const byKeeper = {}
+  for (const m of matches) {
+    for (const side of m.rosters ?? []) {
+      for (const p of side.players ?? []) {
+        if (p.position !== 'G') continue
+        const appeared = p.starter || Number(p.stats?.appearances) > 0
+        if (!appeared) continue
+        const key = p.playerId ?? `${p.name}|${side.teamId}`
+        byKeeper[key] ??= { scorer: p.name, teamId: side.teamId, saves: 0, cleanSheets: 0 }
+        byKeeper[key].saves += Number(p.stats?.saves) || 0
+        if (Number(p.stats?.goalsConceded) === 0) byKeeper[key].cleanSheets += 1
+      }
+    }
+  }
+  return Object.values(byKeeper).sort(
+    (a, b) => b.cleanSheets - a.cleanSheets || b.saves - a.saves
+  )
+}
+
 // "Team with Most Yellow Cards" — sums the per-match `yellowCards` team stat
 // (already persisted in matches/{id}.teamStats from the ESPN boxscore) across
 // every match. Full standings sorted desc; the view shows the top 5.
@@ -128,10 +153,8 @@ function cleanGroupTeamLeaders(matches) {
 }
 
 // Keyed by config/public.scoring.props[].key (see scripts/seed-scoring-config.mjs).
-// Any prop key not listed here — goldenGlove, goldenBall, youngPlayer,
-// breakoutPlayer — is structurally non-computable from currently tracked data.
-// (goldenGlove is now derivable from per-player saves/goalsConceded too, but
-// isn't wired up yet.)
+// Any prop key not listed here — goldenBall, youngPlayer, breakoutPlayer — is
+// structurally non-computable from currently tracked data (subjective awards).
 //
 // `ranked` props show a standings list capped at `limit`, ranked by `metric`
 // (the numeric field on each leader) with `unit` as the displayed noun; ties
@@ -139,6 +162,9 @@ function cleanGroupTeamLeaders(matches) {
 // resolver returns (already pre-filtered to the leading set), no rank numbers.
 const RESOLVERS = {
   goldenBoot: { resolve: goldenBootLeaders, ranked: true, limit: 5, metric: 'goals', unit: 'goal' },
+  // Ranked by clean sheets; the view shows both saves and clean sheets, and
+  // flags it "*Unofficial" since the real Golden Glove is a committee award.
+  goldenGlove: { resolve: goldenGloveLeaders, ranked: true, limit: 5, metric: 'cleanSheets', unit: 'clean sheet' },
   // Key predates the group→tournament prop rename; it now means "most goals in
   // the tournament" and resolves goals across all matches (see mostGoalsLeaders).
   // Kept as a stable internal handle — picks key off `id`, not this string.
