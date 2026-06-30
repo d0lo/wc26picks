@@ -80,9 +80,9 @@ function goldenGloveLeaders(matches) {
       }
     }
   }
-  return Object.values(byKeeper).sort(
-    (a, b) => b.cleanSheets - a.cleanSheets || b.saves - a.saves
-  )
+  return Object.values(byKeeper)
+    .filter((k) => k.cleanSheets > 0 || k.saves > 0) // drop keepers with nothing to show
+    .sort((a, b) => b.cleanSheets - a.cleanSheets || b.saves - a.saves)
 }
 
 // "Team with Most Yellow Cards" — sums the per-match `yellowCards` team stat
@@ -100,6 +100,7 @@ function mostYellowCardsLeaders(matches) {
   }
   return Object.entries(byTeam)
     .map(([teamId, cards]) => ({ teamId, cards }))
+    .filter((t) => t.cards > 0) // a team with no cards isn't a "most cards" leader
     .sort((a, b) => b.cards - a.cards)
 }
 
