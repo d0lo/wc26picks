@@ -160,6 +160,28 @@ function fmtName(name) {
   return name
 }
 
+// ── Leaderboard breakdown cells ────────────────────────────────────────
+// Three compact stat columns: GRP folds the wildcard score into the group
+// score (they're one prediction surface to the user), KO sums the bracket,
+// PROP is the prop aggregate. Each shows an em dash until its piece is scored.
+function grpScore(s) {
+  const groups = s.breakdown?.groups
+  const groupSum = groups ? Object.values(groups).reduce((sum, v) => sum + v, 0) : null
+  const wc = s.breakdown?.wildcards ?? null
+  if (groupSum === null && wc === null) return '—'
+  return (groupSum ?? 0) + (wc ?? 0)
+}
+
+function koScore(s) {
+  const ko = s.breakdown?.knockout
+  if (!ko) return '—'
+  return Object.values(ko).flatMap((slots) => Object.values(slots)).reduce((sum, v) => sum + v, 0)
+}
+
+function propScore(s) {
+  return s.breakdown?.props ?? '—'
+}
+
 function fmtDate(ts) {
   if (!ts?.toDate) return ''
   return ts.toDate().toLocaleString('en-US', {
@@ -259,14 +281,14 @@ function resolveTeamFlag(teamId) {
         <div v-else class="bg-court-800 border border-court-700 rounded-2xl overflow-hidden">
           <!-- Table header -->
           <div
-            class="grid text-[10px] font-black tracking-[0.15em] text-zinc-400 uppercase border-b border-court-700 px-4 py-2.5"
-            style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 3.5rem 4rem"
+            class="grid text-[10px] font-black tracking-[0.08em] text-zinc-400 uppercase border-b border-court-700 px-3 py-2.5"
+            style="grid-template-columns: 1.5rem 1fr 2.5rem 2.5rem 2.5rem 3.25rem"
           >
             <div>#</div>
             <div>Player</div>
-            <div class="text-center">Grps</div>
-            <div class="text-center">WCs</div>
+            <div class="text-center">GRP</div>
             <div class="text-center">KO</div>
+            <div class="text-center">PROP</div>
             <div class="text-right">Total</div>
           </div>
 
@@ -274,11 +296,11 @@ function resolveTeamFlag(teamId) {
           <div
             v-for="(s, i) in scores"
             :key="s.id"
-            class="grid items-center px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors cursor-pointer"
+            class="grid items-center px-3 py-3 border-b border-court-700/40 last:border-0 transition-colors cursor-pointer"
             :class="[
               s.id === user?.uid ? 'bg-emerald-500/5 hover:bg-emerald-500/10 active:bg-emerald-500/15' : 'hover:bg-court-700/20 active:bg-court-700/30',
             ]"
-            style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 3.5rem 4rem"
+            style="grid-template-columns: 1.5rem 1fr 2.5rem 2.5rem 2.5rem 3.25rem"
             @click="openUser(s)"
           >
             <!-- Rank -->
@@ -299,10 +321,10 @@ function resolveTeamFlag(teamId) {
               <span v-if="s.id === user?.uid" class="text-[9px] text-emerald-500/50 font-bold uppercase tracking-wider shrink-0">you</span>
             </div>
 
-            <!-- Breakdown -->
-            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.groups ? Object.values(s.breakdown.groups).reduce((sum, v) => sum + v, 0) : '—' }}</div>
-            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.wildcards ?? '—' }}</div>
-            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.knockout ? Object.values(s.breakdown.knockout).flatMap((slots) => Object.values(slots)).reduce((sum, v) => sum + v, 0) : '—' }}</div>
+            <!-- Breakdown — GRP folds wildcards into the group score; KO; PROP -->
+            <div class="text-xs text-center font-mono text-zinc-400">{{ grpScore(s) }}</div>
+            <div class="text-xs text-center font-mono text-zinc-400">{{ koScore(s) }}</div>
+            <div class="text-xs text-center font-mono text-zinc-400">{{ propScore(s) }}</div>
 
             <!-- Total (+ max possible) -->
             <div class="text-right">
