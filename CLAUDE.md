@@ -74,10 +74,25 @@ Use **conventional commits** — the CI auto-bumps the app version based on thes
 | `feat!:` | Breaking change | major |
 
 - Subject line 50 chars or fewer (not counting the prefix)
-- Body explains *why*, not *what*, when non-obvious
+- **Every commit has a body** — a blank line after the subject, then a descriptive paragraph (or bullets) explaining *why* the change exists and any non-obvious decision, gotcha, or trade-off. The subject is the *what*; the body is the *why* and the *how it was tricky*. Even small commits get a one- or two-sentence body. Write it for a future agent who has only the diff and this message.
 - One commit per logical change
 
 Example: `feat: add forgot password flow` / `fix: restore group order on cancelled drag`
+
+---
+
+### Commit Bodies → PR Thread
+
+Treat the PR as a running development thread, not just a code diff.
+
+- **After every push to a PR branch, post the just-pushed commit's body as a PR comment** (`mcp__github__add_issue_comment` on the PR). Prefix it with the commit's conventional subject so the thread is self-describing, e.g.:
+
+  > **`fix: restore group order on cancelled drag`**
+  >
+  > Desktop and touch are separate code paths — touch has no native `drop` event, so we hit-test the release point with `elementFromPoint(...).closest('[data-group]')`. Reverts via in-place splice to keep Vue's reactive array identity.
+
+- This makes each PR read top-to-bottom as the story of how the feature evolved — every fix, every redirect, every lesson — so the next agent (or a reviewer) can follow the reasoning without diffing each commit. The commit body and its PR comment should be the same text; write it once, in the commit, then mirror it to the thread on push.
+- For a multi-commit push, post one comment covering the new commits (or one per commit if they're logically distinct). Don't post for no-op pushes (e.g. an empty rebase).
 
 ---
 
