@@ -37,6 +37,10 @@ const liveByKey = computed(() => {
 const DISPLAY_ROUNDS = [...ROUNDS, 'third']
 const { scrollRef, trackRef, focusedIdx, containerHeight, trackStyle } = useBracketFocus(DISPLAY_ROUNDS, ROUND_SIZE)
 
+// The bracket (knockout) rounds — used to tell a knockout match apart from a
+// group-stage fixture in the shared `matches` collection.
+const KNOCKOUT_ROUNDS = new Set([...ROUNDS, 'third'])
+
 function teamLabel(teamId) {
   return teamId ? TEAM_BY_ID[teamId] ?? { name: teamId, flag: '🏳️' } : null
 }
@@ -59,28 +63,66 @@ function slotScore(slotInfo, teamId) { return mergedScore(slotInfo.match, slotIn
 const configQuery = useQuery(configQueryOptions())
 const knockoutPoints = computed(() => ({ ...ROUND_POINTS, ...(configQuery.data.value?.scoring?.knockout ?? {}) }))
 
-// Each round's matchups are derived from the previous round's actual
-// winners (bracket.js's deriveRoundMatchups) rather than waiting on that
-// round's own ESPN event to go live — a later round's real team names are
-// knowable as soon as its two feeder matches finish, exactly mirroring how
-// PicksView's picker derives the user's own projected bracket.
+function pickFor(round, slot) {
+  return props.picks?.[round]?.[slot - 1] ?? null
+}
+
+// The team a slot projects forward to the next round. When a user's picks are
+// supplied this is THEIR pick for the slot — the bracket is their *predicted*
+// bracket, with live reality layered on top via strikethrough (see rowClass),
+// NOT by swapping the real winner in for their pick. That's what keeps an
+// eliminated pick (say Argentina) visible — and struck out — in every later
+// round they predicted it to reach, instead of vanishing the moment a real
+// result comes in. The stadium view passes no picks, so it falls back to the
+// real winner and fills in as matches are decided (TBD until then).
+function advancingTeam(slotInfo) {
+  if (props.picks) return pickFor(slotInfo.round, slotInfo.slot) ?? slotInfo.winner
+  return slotInfo.winner
+}
+
+// The team that doesn't advance from a slot (feeds the 3rd-place match from the
+// semis). Mirrors advancingTeam: with picks it's the non-advancing team of the
+// projected matchup; without, the real loser.
+function eliminatedTeam(slotInfo) {
+  if (!props.picks) return slotInfo.loser
+  const adv = advancingTeam(slotInfo)
+  if (!adv) return null // nothing advances yet → nothing's eliminated yet
+  return slotInfo.teams?.find((t) => t && t !== adv) ?? null
+}
+
+// Each round's matchups are derived from the previous round's advancing teams
+// (the user's picks where supplied, real winners otherwise) rather than waiting
+// on that round's own ESPN event to go live — exactly mirroring how PicksView's
+// picker derives the user's own projected bracket.
 const bracket = computed(() => {
   const result = { r32: R32_SLOTS.map((teams, i) => makeSlot('r32', i + 1, teams)) }
   for (const round of ['r16', 'qf', 'sf']) {
     const prevRound = PREV_ROUND[round]
-    const prevWinners = result[prevRound].map((s) => s.winner)
+    const prevWinners = result[prevRound].map((s) => advancingTeam(s))
     result[round] = deriveRoundMatchups(round, prevWinners).map((teams, i) => makeSlot(round, i + 1, teams))
   }
-  const sfWinners = result.sf.map((s) => s.winner)
-  const sfLosers = result.sf.map((s) => s.loser)
+  const sfWinners = result.sf.map((s) => advancingTeam(s))
+  const sfLosers = result.sf.map((s) => eliminatedTeam(s))
   result.final = [makeSlot('final', 1, sfWinners)]
   result.third = [makeSlot('third', 1, sfLosers)]
   return result
 })
 
-function pickFor(round, slot) {
-  return props.picks?.[round]?.[slot - 1] ?? null
-}
+// Teams officially out of the tournament — they lost a real KNOCKOUT match.
+// This is the live-results source of truth for striking a team out wherever it
+// appears in the bracket, independent of anyone's picks. Group-stage matches
+// are excluded: losing a group game doesn't eliminate a team (it can still
+// advance as a runner-up or best third), so only losses in a bracket round
+// count — `matches` holds group fixtures too, keyed without a knockout round.
+const eliminatedTeamIds = computed(() => {
+  const set = new Set()
+  for (const m of props.matches ?? []) {
+    if (!KNOCKOUT_ROUNDS.has(m.round)) continue
+    const loser = matchLoser(m)
+    if (loser) set.add(loser)
+  }
+  return set
+})
 
 function pickStatus(slotInfo) {
   if (!props.picks) return null
@@ -96,18 +138,24 @@ function pointsFor(slotInfo) {
 
 function rowClass(slotInfo, teamId) {
   const isWinner = slotInfo.winner && teamId === slotInfo.winner
-  const isLoser = slotInfo.winner && teamId !== slotInfo.winner
-  const isPick = props.picks && pickFor(slotInfo.round, slotInfo.slot) === teamId
-  // The champion (final round) is shown in amber/yellow for consistency with the
-  // picker, instead of the emerald used for every other correct knockout pick.
   const isFinal = slotInfo.round === 'final'
-  if (isPick) {
-    if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
-    if (isLoser) return 'text-red-400/70'
-    return 'text-white font-bold'
+  // Graded picks view: styling only ever marks up the team YOU picked to win a
+  // slot. The strike + red tracks live real results — your pick is crossed out
+  // once it's officially out (lost a real knockout match), in every later round
+  // you advanced it to, but not in a slot it actually won (it's eliminated from
+  // a *later* round, not this one). Teams you didn't pick stay plain.
+  if (props.picks) {
+    const isPick = pickFor(slotInfo.round, slotInfo.slot) === teamId
+    if (isPick) {
+      if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
+      if (teamId && eliminatedTeamIds.value.has(teamId)) return 'text-red-400 font-bold line-through'
+      return 'text-white font-bold'
+    }
+    return 'text-zinc-300'
   }
-  if (isLoser) return 'text-zinc-500 opacity-50'
-  if (isWinner) return 'text-zinc-300'
+  // Stadium view (no picks): real-results styling — dim the loser of a decided
+  // match, everything else plain. Unchanged from before the picks projection.
+  if (slotInfo.winner && teamId !== slotInfo.winner) return 'text-zinc-500 opacity-50'
   return 'text-zinc-300'
 }
 
@@ -152,7 +200,6 @@ function rowClass(slotInfo, teamId) {
                   :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
                 >{{ slotScore(slotInfo, teamId) ?? '' }}</span>
                 <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-[10px] shrink-0" :class="slotInfo.round === 'final' ? 'text-amber-400' : 'text-emerald-400'">✓</span>
-                <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
               </div>
 
               <div v-if="slotClock(slotInfo) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
@@ -209,7 +256,6 @@ function rowClass(slotInfo, teamId) {
                 :class="teamId === slotInfo.winner ? 'text-white font-bold' : 'text-zinc-400'"
               >{{ slotScore(slotInfo, teamId) ?? '' }}</span>
               <span v-if="pickStatus(slotInfo) === 'correct' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-emerald-400 text-[10px] shrink-0">✓</span>
-              <span v-else-if="pickStatus(slotInfo) === 'incorrect' && pickFor(slotInfo.round, slotInfo.slot) === teamId" class="text-red-400/70 text-[10px] shrink-0">✗</span>
             </div>
 
             <div v-if="slotClock(slotInfo) || pointsFor(slotInfo) !== null" class="flex items-center justify-between pt-0.5 mt-0.5 border-t border-court-700/60">
