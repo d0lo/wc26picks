@@ -50,9 +50,10 @@ every feature merge into `dev`; it auto-updates in place as `dev` moves.
    - Make the changes, commit, and push
    - Run `/code-review` again
    - Repeat until there are no remaining issues we both agree need fixing
-4. Once the review is clean, **merge the PR into `dev`**
-5. If the standing `dev` → `main` PR hasn't had its preview deploy/comment yet, that's the only time to check for and post it — otherwise it's already posted and just updates automatically
-6. **Merging `dev` into `main`** (deploying live) only happens when the user explicitly gives the go-ahead — never as an automatic next step after a feature merges into `dev`
+4. **Before merging, finalize the PR description** with the two standing wrap-up sections every feature PR ends with (see *PR Description Format* below) — `## ✅ What actually shipped (final branch state)` and `## 🧠 Retrospective — notes for a future AI agent` — written against the final branch state, not the original intent
+5. Once the review is clean, **merge the PR into `dev`**
+6. If the standing `dev` → `main` PR hasn't had its preview deploy/comment yet, that's the only time to check for and post it — otherwise it's already posted and just updates automatically
+7. **Merging `dev` into `main`** (deploying live) only happens when the user explicitly gives the go-ahead — never as an automatic next step after a feature merges into `dev`
 
 ---
 
@@ -112,6 +113,17 @@ Treat the PR as a running development thread, not just a code diff.
 - The preview URL should be confirmed working before starting Loop 2
 - Never merge `dev` into `main` without the user explicitly saying so
 - Any UI work (new components or edits to existing ones) must follow `docs/UI_GUIDELINES.md` — the readability playbook (alignment, type scale, color semantics, empty states). `ScoreSplitsCard.vue` is the canonical example.
+
+---
+
+### PR Description Format
+
+A PR description is finalized just before merge (Loop 2, step 4), written against the **final** branch state rather than the original plan. Lead with the preview URL (see *Commit Bodies → PR Thread*), keep whatever intro sections fit the change (e.g. `## Problem` / `## Root cause` / `## Fix`, or `## What & why` / `## Changes` / `## Notes`), then **always end with these two standing sections**:
+
+- `## ✅ What actually shipped (final branch state)` — what the merged branch actually does, reconciled with any mid-review redirects, not the opening pitch.
+- `## 🧠 Retrospective — notes for a future AI agent` — the reasoning, dead ends, and gotchas a future agent would want, so the PR is a durable record and not just a diff.
+
+These mirror the trailing sections on every prior feature PR (#43–#47, #49, #50). Add them at finalize/merge time; the intro sections can exist from the moment the PR is opened.
 
 ---
 
