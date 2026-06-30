@@ -26,26 +26,45 @@ function leaderName(prop, leader) {
   return leader.scorer ?? TEAM_BY_ID[leader.teamId]?.name ?? '—'
 }
 
-function leaderFlag(leader) {
-  return TEAM_BY_ID[leader.teamId]?.flag ?? '🏳️'
+function teamFlag(teamId) {
+  return TEAM_BY_ID[teamId]?.flag ?? '🏳️'
 }
 
-// FIFA rank of the leader's team, shown to the right of the name like
-// everywhere else (BracketView, PicksView). Null when the team isn't seeded.
-function leaderRank(leader) {
-  const name = TEAM_BY_ID[leader.teamId]?.name
+function teamName(teamId) {
+  return TEAM_BY_ID[teamId]?.name ?? '—'
+}
+
+// FIFA rank of a team, shown to the right of the name like everywhere else
+// (BracketView, PicksView). Null when the team isn't seeded.
+function teamRank(teamId) {
+  const name = TEAM_BY_ID[teamId]?.name
   return name ? (FIFA_RANKING[name] ?? null) : null
 }
 
-function leaderStat(prop, leader) {
-  if (prop.key === 'cleanGroupTeam') return `${leader.played}/3 · 0 GA`
-  return `${leader.goals} goal${leader.goals === 1 ? '' : 's'}`
+function leaderRank(leader) {
+  return teamRank(leader.teamId)
+}
+
+// Golf-style standings: tied entries share a position and ties don't shift the
+// numbering for everyone below — position = (count with strictly more goals) + 1,
+// shown as "T1" when shared. Computed over the full standings, then sliced.
+function golfRows(prop) {
+  const list = prop.leaders
+  return list.slice(0, prop.limit).map((leader) => {
+    const rank = list.filter((l) => l.goals > leader.goals).length + 1
+    const tied = list.filter((l) => l.goals === leader.goals).length > 1
+    return { leader, rank, tied }
+  })
+}
+
+function rankColor(rank) {
+  return { 1: 'text-amber-400', 2: 'text-zinc-400', 3: 'text-amber-700' }[rank] ?? 'text-zinc-500'
 }
 </script>
 
 <template>
   <div class="space-y-3">
-    <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase">Prop Leaders — Live</div>
+    <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase">Prop Leaders</div>
 
     <template v-for="cat in categoriesWithLeaders" :key="cat.key">
       <div
@@ -60,16 +79,58 @@ function leaderStat(prop, leader) {
         <div v-else-if="!prop.leaders.length" class="text-xs text-zinc-500 italic">
           – No data yet
         </div>
-        <div v-else class="space-y-1.5">
+
+        <!-- Ranked standings (Golden Boot, Most Goals) — golf-style ties -->
+        <div v-else-if="prop.ranked" class="space-y-1.5">
           <div
-            v-for="(leader, i) in prop.leaders.slice(0, prop.limit)" :key="i"
+            v-for="(row, i) in golfRows(prop)" :key="i"
             class="flex items-center gap-1.5 text-[11px]"
           >
-            <span v-if="prop.ranked" class="text-[9px] font-black w-4 text-right tabular-nums shrink-0" :class="['text-amber-400','text-zinc-400','text-amber-700'][i] ?? 'text-zinc-500'">{{ i + 1 }}</span>
-            <span class="text-base leading-none shrink-0">{{ leaderFlag(leader) }}</span>
-            <span class="truncate min-w-0 text-white font-bold">{{ leaderName(prop, leader) }}</span>
+            <span class="text-[9px] font-black w-6 text-right tabular-nums shrink-0" :class="rankColor(row.rank)">{{ row.tied ? 'T' : '' }}{{ row.rank }}</span>
+            <span class="text-base leading-none shrink-0">{{ teamFlag(row.leader.teamId) }}</span>
+            <span class="truncate min-w-0 text-white font-bold">{{ leaderName(prop, row.leader) }}</span>
+            <span v-if="leaderRank(row.leader)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ leaderRank(row.leader) }}</span>
+            <span class="text-[9px] text-zinc-500 font-mono shrink-0 ml-auto">{{ row.leader.goals }} goal{{ row.leader.goals === 1 ? '' : 's' }}</span>
+          </div>
+        </div>
+
+        <!-- Hat Trick — show who it was scored against, not a goal count -->
+        <div v-else-if="prop.key === 'hatTrickScorer'" class="space-y-1.5">
+          <div
+            v-for="(leader, i) in prop.leaders" :key="i"
+            class="flex items-center gap-1.5 text-[11px]"
+          >
+            <span class="text-base leading-none shrink-0">{{ teamFlag(leader.teamId) }}</span>
+            <span class="truncate min-w-0 text-white font-bold">{{ leader.scorer }}</span>
+            <span class="flex items-center gap-1 shrink-0 ml-auto text-[9px] text-zinc-400">
+              <span>vs</span>
+              <template v-if="leader.opponents.length === 1">
+                <span class="text-sm leading-none">{{ teamFlag(leader.opponents[0]) }}</span>
+                <span class="font-bold text-zinc-300">{{ teamName(leader.opponents[0]) }}</span>
+                <span v-if="teamRank(leader.opponents[0])" class="text-zinc-500 font-mono">#{{ teamRank(leader.opponents[0]) }}</span>
+              </template>
+              <template v-else>
+                <span v-for="(opp, j) in leader.opponents" :key="j" class="text-sm leading-none">{{ teamFlag(opp) }}<span v-if="j < leader.opponents.length - 1" class="text-zinc-500">,</span></span>
+              </template>
+            </span>
+          </div>
+        </div>
+
+        <!-- Clean Group — show the group and the opponents kept scoreless -->
+        <div v-else-if="prop.key === 'cleanGroupTeam'" class="space-y-1.5">
+          <div
+            v-for="(leader, i) in prop.leaders" :key="i"
+            class="flex items-center gap-1.5 text-[11px]"
+          >
+            <span class="text-base leading-none shrink-0">{{ teamFlag(leader.teamId) }}</span>
+            <span class="truncate min-w-0 text-white font-bold">{{ teamName(leader.teamId) }}</span>
             <span v-if="leaderRank(leader)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ leaderRank(leader) }}</span>
-            <span class="text-[9px] text-zinc-500 font-mono shrink-0 ml-auto">{{ leaderStat(prop, leader) }}</span>
+            <span class="flex items-center gap-1.5 shrink-0 ml-auto">
+              <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400">GROUP {{ leader.group }}</span>
+              <span class="flex items-center gap-0.5">
+                <span v-for="(opp, j) in leader.opponents" :key="j" class="text-sm leading-none">{{ teamFlag(opp) }}</span>
+              </span>
+            </span>
           </div>
         </div>
       </div>

@@ -26,9 +26,8 @@ function goldenBootLeaders(matches) {
 }
 
 // "Most Goals in Tournament" — counts every goal across all matches (group
-// stage and knockout), not just group-stage games. Returns only the teams
-// tied for the lead, no full standings; the leading set grows/shrinks live
-// as results come in.
+// stage and knockout), not just group-stage games. Full standings sorted by
+// goals desc; the view shows the top 5 and ranks ties golf-style.
 function mostGoalsLeaders(matches) {
   const byTeam = {}
   for (const m of matches) {
@@ -37,25 +36,35 @@ function mostGoalsLeaders(matches) {
       byTeam[play.teamId] = (byTeam[play.teamId] ?? 0) + 1
     }
   }
-  const teams = Object.entries(byTeam).map(([teamId, goals]) => ({ teamId, goals }))
-  const max = teams.reduce((acc, t) => Math.max(acc, t.goals), 0)
-  if (max === 0) return []
-  return teams.filter((t) => t.goals === max)
+  return Object.entries(byTeam)
+    .map(([teamId, goals]) => ({ teamId, goals }))
+    .sort((a, b) => b.goals - a.goals)
 }
 
+// One row per player who scored a hat trick, carrying the team(s) they scored
+// it against (a player can manage more than one across the tournament) rather
+// than a goal count — the view renders the opponent(s), not the tally.
 function hatTrickScorers(matches) {
+  // First tally goals per (match, scorer); 3+ in a single game is a hat trick.
   const byMatchScorer = {}
   for (const m of matches) {
     for (const play of m.scoringPlays ?? []) {
       if (!play.scorer) continue
       const key = `${m.eventId ?? m.id}|${play.scorer}|${play.teamId ?? ''}`
-      byMatchScorer[key] ??= { scorer: play.scorer, teamId: play.teamId ?? null, goals: 0 }
+      byMatchScorer[key] ??= { match: m, scorer: play.scorer, teamId: play.teamId ?? null, goals: 0 }
       byMatchScorer[key].goals += 1
     }
   }
-  return Object.values(byMatchScorer)
-    .filter((s) => s.goals >= 3)
-    .sort((a, b) => b.goals - a.goals)
+  // Collapse to one row per player, collecting the opponent of each hat-trick game.
+  const byScorer = {}
+  for (const h of Object.values(byMatchScorer)) {
+    if (h.goals < 3) continue
+    const opponent = (h.match.competitors ?? []).find((c) => c.teamId !== h.teamId)
+    const key = `${h.scorer}|${h.teamId ?? ''}`
+    byScorer[key] ??= { scorer: h.scorer, teamId: h.teamId, opponents: [] }
+    byScorer[key].opponents.push(opponent?.teamId ?? null)
+  }
+  return Object.values(byScorer)
 }
 
 // "Clean sheet in all 3 group games" — every team that has conceded 0 goals
@@ -68,8 +77,9 @@ function cleanGroupTeamLeaders(matches) {
     if (m.status?.state !== 'post') continue
     for (const c of m.competitors ?? []) {
       const opponent = (m.competitors ?? []).find((o) => o.teamId !== c.teamId)
-      byTeam[c.teamId] ??= { teamId: c.teamId, played: 0, goalsAgainst: 0 }
+      byTeam[c.teamId] ??= { teamId: c.teamId, group: m.groupLetter, played: 0, goalsAgainst: 0, opponents: [] }
       byTeam[c.teamId].played += 1
+      byTeam[c.teamId].opponents.push(opponent?.teamId ?? null)
       // ESPN scores are strings ('0','1',…); coerce before summing. A missing
       // opponent score is unknowable, so fold in Infinity rather than reading
       // null as 0 — that drops the team from the conceded-nothing set instead
@@ -94,7 +104,7 @@ const RESOLVERS = {
   // Key predates the group→tournament prop rename; it now means "most goals in
   // the tournament" and resolves goals across all matches (see mostGoalsLeaders).
   // Kept as a stable internal handle — picks key off `id`, not this string.
-  mostGroupGoals: { resolve: mostGoalsLeaders, ranked: false },
+  mostGroupGoals: { resolve: mostGoalsLeaders, ranked: true, limit: 5 },
   hatTrickScorer: { resolve: hatTrickScorers, ranked: false },
   cleanGroupTeam: { resolve: cleanGroupTeamLeaders, ranked: false },
 }
