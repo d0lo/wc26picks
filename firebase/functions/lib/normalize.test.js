@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { knockoutRoundSlot, normalizeEvent, normalizeMatch } from './normalize.js'
+import { knockoutRoundSlot, normalizeEvent, normalizeMatch, computeScoreFacts } from './normalize.js'
 
 function makeEvent(overrides = {}) {
   return {
@@ -112,4 +112,40 @@ test('normalizeMatch preserves per-player stats as a name→value map', () => {
   const m = normalizeMatch(makeSummary())
   assert.equal(m.rosters[0].players[0].stats.goalAssists, 1)
   assert.equal(m.rosters[1].players[0].stats.saves, 5)
+})
+
+const COMPETITORS = [{ teamId: 'home' }, { teamId: 'away' }]
+
+test('computeScoreFacts flags a 1–0-at-70 game that finished regulation 1–1', () => {
+  const plays = [
+    { teamId: 'home', period: 1, minute: "30'" },   // 1–0 by 70'
+    { teamId: 'away', period: 2, minute: "82'" },    // equalizer after 70'
+  ]
+  const f = computeScoreFacts(plays, COMPETITORS)
+  assert.deepEqual(f.scoreAt70, [1, 0])
+  assert.equal(f.was1_0at70, true)
+  assert.deepEqual(f.regulationFinal, [1, 1])
+  assert.equal(f.finishedRegAt1_1, true)
+})
+
+test('computeScoreFacts: goal in the 70th minute still counts as 1–0 at 70', () => {
+  const f = computeScoreFacts([{ teamId: 'home', period: 2, minute: "70'" }], COMPETITORS)
+  assert.equal(f.was1_0at70, true)
+})
+
+test('computeScoreFacts: a goal at 71 is not yet on the board at 70', () => {
+  const f = computeScoreFacts([{ teamId: 'home', period: 2, minute: "71'" }], COMPETITORS)
+  assert.deepEqual(f.scoreAt70, [0, 0])
+  assert.equal(f.was1_0at70, false)
+})
+
+test('computeScoreFacts excludes extra-time goals from regulation totals', () => {
+  const plays = [
+    { teamId: 'home', period: 1, minute: "20'" },
+    { teamId: 'away', period: 2, minute: "90'+3'" },  // 1–1 in regulation
+    { teamId: 'home', period: 3, minute: "105'" },     // extra time — ignored
+  ]
+  const f = computeScoreFacts(plays, COMPETITORS)
+  assert.deepEqual(f.regulationFinal, [1, 1])
+  assert.equal(f.finishedRegAt1_1, true)
 })

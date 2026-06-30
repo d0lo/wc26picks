@@ -81,6 +81,39 @@ function normalizeStandingEntry(entry) {
   }
 }
 
+// Parses an ESPN clock label ("70'", "45'+2'", "90'+4'") to its base minute.
+function baseMinute(clock) {
+  const n = parseInt(String(clock || '').replace(/[^\d].*$/, ''), 10)
+  return Number.isFinite(n) ? n : 0
+}
+
+// Score splits derived from regulation goals only — periods 1 & 2, so extra
+// time and penalty shootouts are excluded by design. scoreAt70 / regulationFinal
+// are [homeOrder…] arrays aligned to competitors[]. Used for the "1–0 at 70'
+// that finished regulation 1–1" stat on the stadium page; mirrored client-side
+// in app/src/lib/matchFacts.js for match docs written before this field existed.
+export function computeScoreFacts(scoringPlays, competitors) {
+  const ids = competitors.map((c) => c.teamId)
+  const isReg = (p) => p.period === 1 || p.period === 2
+  const tally = (pred) => {
+    const s = Object.fromEntries(ids.map((id) => [id, 0]))
+    for (const p of scoringPlays) {
+      if (p.teamId in s && pred(p)) s[p.teamId] += 1
+    }
+    return ids.map((id) => s[id])
+  }
+  const scoreAt70 = tally((p) => isReg(p) && baseMinute(p.minute) <= 70)
+  const regulationFinal = tally((p) => isReg(p))
+  const sum = (a) => a.reduce((x, y) => x + y, 0)
+  return {
+    scoreAt70,
+    regulationFinal,
+    // Exactly one goal in regulation by the 70' mark ⇒ the game was 1–0.
+    was1_0at70: sum(scoreAt70) === 1,
+    finishedRegAt1_1: regulationFinal[0] === 1 && regulationFinal[1] === 1,
+  }
+}
+
 // Maps an ESPN /summary response into the matches/{eventId} doc
 // (eventId, fetchedAt added by the caller, which owns the Firestore timestamp).
 export function normalizeMatch(summary) {
@@ -175,6 +208,7 @@ export function normalizeMatch(summary) {
     scoringPlays,
     cards,
     substitutions,
+    scoreFacts: computeScoreFacts(scoringPlays, competitors),
     rosters,
     teamStats,
     groupStandings,
