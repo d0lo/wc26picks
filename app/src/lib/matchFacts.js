@@ -50,6 +50,10 @@ export function scoreSplitSummary(matches) {
       finished1_1: !!facts.finishedRegAt1_1,
     })
   }
+  // Chronological (earliest first); ISO date strings sort lexicographically.
+  // Undated games sink to the end (￿ sorts after any real date).
+  const sortKey = (g) => g.date ?? '￿'
+  games.sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
   return {
     total: games.length,
     finished1_1: games.filter((g) => g.finished1_1).length,
