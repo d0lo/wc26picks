@@ -135,9 +135,12 @@ const sortedSubmitters = computed(() => {
     if (sa !== null && sb !== null) return sb - sa
     if (sa !== null) return -1
     if (sb !== null) return 1
-    const ta = a.submittedAt?.toMillis?.() ?? 0
-    const tb = b.submittedAt?.toMillis?.() ?? 0
-    return ta - tb
+    // Missing submittedAt sorts last (Infinity), matching picksListQueryOptions —
+    // a knockout-only entrant has no submittedAt and shouldn't jump ahead of
+    // people who actually submitted group picks early. Guard Infinity−Infinity=NaN.
+    const ta = a.submittedAt?.toMillis?.() ?? Infinity
+    const tb = b.submittedAt?.toMillis?.() ?? Infinity
+    return ta === tb ? 0 : ta - tb
   })
 })
 
@@ -159,6 +162,107 @@ function fmtName(name) {
   if (parts.length >= 2) return `${parts[0]} ${parts[parts.length - 1][0]}.`
   return name
 }
+
+// ── Leaderboard breakdown cells ────────────────────────────────────────
+// Three compact stat columns: GRP folds the wildcard score into the group
+// score (they're one prediction surface to the user), KO sums the bracket,
+// PROP is the prop aggregate.
+//
+// Each column shows an em dash when the user never made that kind of pick —
+// gated on the pick doc, NOT the score breakdown. The auto-scoring engine
+// writes a breakdown (all zeros) for EVERY picks doc, so a knockout-only
+// entrant still gets breakdown.groups = { A: 0, … }; keying the dash off the
+// score would render a misleading 0 there instead of "didn't pick". A user
+// who did make the picks shows their real score (0 included).
+function hasNonEmpty(obj) {
+  return !!obj && Object.values(obj).some((v) => (Array.isArray(v) ? v.length > 0 : v != null))
+}
+
+function grpScore(s) {
+  const pick = pickByUid.value[s.id]
+  if (!hasNonEmpty(pick?.groups) && !pick?.wildcards?.length) return '—'
+  const groups = s.breakdown?.groups
+  const groupSum = groups ? Object.values(groups).reduce((sum, v) => sum + v, 0) : 0
+  return groupSum + (s.breakdown?.wildcards ?? 0)
+}
+
+function koScore(s) {
+  const pick = pickByUid.value[s.id]
+  if (!hasNonEmpty(pick?.knockout)) return '—'
+  const ko = s.breakdown?.knockout
+  if (!ko) return 0
+  return Object.values(ko).flatMap((slots) => Object.values(slots)).reduce((sum, v) => sum + v, 0)
+}
+
+function propScore(s) {
+  const pick = pickByUid.value[s.id]
+  if (!pick?.props || Object.keys(pick.props).length === 0) return '—'
+  return s.breakdown?.props ?? 0
+}
+
+// ── Sortable columns ───────────────────────────────────────────────────
+// The board's canonical order is total desc; clicking a score-column header
+// re-sorts the rows by that column. The `#` cell always shows each player's
+// canonical total-rank (and its medal colour) regardless of sort, so sorting
+// by GRP/KO/PROP surfaces that column's leaders while still telling you each
+// one's overall standing. Em-dash cells (no pick of that kind) always sink to
+// the bottom, in either direction.
+const sortKey = ref('total') // 'total' | 'grp' | 'ko' | 'prop'
+const sortDir = ref('desc')  // 'desc' | 'asc'
+
+// Tappable score-column headers, in display order. `align` matches each cell's
+// alignment in the row grid below.
+const SORT_COLUMNS = [
+  { key: 'grp', label: 'GRP', align: 'text-center' },
+  { key: 'ko', label: 'KO', align: 'text-center' },
+  { key: 'prop', label: 'PROP', align: 'text-center' },
+  { key: 'total', label: 'Total', align: 'text-right' },
+]
+
+function setSort(key) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'desc'
+  }
+}
+
+function sortIndicator(key) {
+  if (sortKey.value !== key) return ''
+  return sortDir.value === 'desc' ? '▼' : '▲'
+}
+
+// Numeric value for the active sort metric, or null for an em-dash cell.
+function metricValue(s, key) {
+  const v = key === 'grp' ? grpScore(s) : key === 'ko' ? koScore(s) : key === 'prop' ? propScore(s) : (s.total ?? 0)
+  return v === '—' ? null : v
+}
+
+// Canonical total-rank by uid — scores arrives ordered total desc from the
+// query, so position is the rank.
+const rankByUid = computed(() => Object.fromEntries(scores.value.map((s, i) => [s.id, i + 1])))
+
+// Podium medal scale for the rank cell — gold/silver/bronze for the top three,
+// neutral below. (Intentionally a touch brighter than PropLeaderboard's
+// rankColor, so kept local rather than shared.)
+function medalColor(rank) {
+  return { 1: 'text-amber-400', 2: 'text-zinc-300', 3: 'text-amber-700' }[rank] ?? 'text-zinc-400'
+}
+
+const sortedScores = computed(() => {
+  const key = sortKey.value
+  const dir = sortDir.value
+  return [...scores.value].sort((a, b) => {
+    const va = metricValue(a, key)
+    const vb = metricValue(b, key)
+    if (va === null && vb === null) return (b.total ?? 0) - (a.total ?? 0)
+    if (va === null) return 1   // no-pick rows always last
+    if (vb === null) return -1
+    if (va !== vb) return dir === 'desc' ? vb - va : va - vb
+    return (b.total ?? 0) - (a.total ?? 0) // stable tie-break by total
+  })
+})
 
 function fmtDate(ts) {
   if (!ts?.toDate) return ''
@@ -257,35 +361,35 @@ function resolveTeamFlag(teamId) {
 
         <!-- Scores table -->
         <div v-else class="bg-court-800 border border-court-700 rounded-2xl overflow-hidden">
-          <!-- Table header -->
+          <!-- Table header — score columns sort the rows on tap -->
           <div
-            class="grid text-[10px] font-black tracking-[0.15em] text-zinc-400 uppercase border-b border-court-700 px-4 py-2.5"
-            style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 3.5rem 4rem"
+            class="grid text-[10px] font-black tracking-[0.08em] text-zinc-400 uppercase border-b border-court-700 px-3 py-2.5"
+            style="grid-template-columns: 1.5rem 1fr 2.5rem 2.5rem 2.5rem 3.25rem"
           >
             <div>#</div>
             <div>Player</div>
-            <div class="text-center">Grps</div>
-            <div class="text-center">WCs</div>
-            <div class="text-center">KO</div>
-            <div class="text-right">Total</div>
+            <button
+              v-for="col in SORT_COLUMNS" :key="col.key"
+              type="button"
+              class="uppercase tracking-[0.08em] transition-colors select-none"
+              :class="[col.align, sortKey === col.key ? 'text-white' : 'hover:text-zinc-200']"
+              @click="setSort(col.key)"
+            >{{ col.label }}<span class="text-emerald-400">{{ sortIndicator(col.key) }}</span></button>
           </div>
 
           <!-- Score rows -->
           <div
-            v-for="(s, i) in scores"
+            v-for="s in sortedScores"
             :key="s.id"
-            class="grid items-center px-4 py-3 border-b border-court-700/40 last:border-0 transition-colors cursor-pointer"
+            class="grid items-center px-3 py-3 border-b border-court-700/40 last:border-0 transition-colors cursor-pointer"
             :class="[
               s.id === user?.uid ? 'bg-emerald-500/5 hover:bg-emerald-500/10 active:bg-emerald-500/15' : 'hover:bg-court-700/20 active:bg-court-700/30',
             ]"
-            style="grid-template-columns: 2rem 1fr 3.5rem 3.5rem 3.5rem 4rem"
+            style="grid-template-columns: 1.5rem 1fr 2.5rem 2.5rem 2.5rem 3.25rem"
             @click="openUser(s)"
           >
-            <!-- Rank -->
-            <div
-              class="text-sm font-black"
-              :class="i === 0 ? 'text-amber-400' : i === 1 ? 'text-zinc-300' : i === 2 ? 'text-amber-700' : 'text-zinc-400'"
-            >{{ i + 1 }}</div>
+            <!-- Rank — always the canonical total-rank, even when sorted by another column -->
+            <div class="text-sm font-black" :class="medalColor(rankByUid[s.id])">{{ rankByUid[s.id] }}</div>
 
             <!-- Name -->
             <div class="flex items-center gap-1.5 min-w-0">
@@ -299,16 +403,16 @@ function resolveTeamFlag(teamId) {
               <span v-if="s.id === user?.uid" class="text-[9px] text-emerald-500/50 font-bold uppercase tracking-wider shrink-0">you</span>
             </div>
 
-            <!-- Breakdown -->
-            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.groups ? Object.values(s.breakdown.groups).reduce((sum, v) => sum + v, 0) : '—' }}</div>
-            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.wildcards ?? '—' }}</div>
-            <div class="text-xs text-center font-mono text-zinc-400">{{ s.breakdown?.knockout ? Object.values(s.breakdown.knockout).flatMap((slots) => Object.values(slots)).reduce((sum, v) => sum + v, 0) : '—' }}</div>
+            <!-- Breakdown — GRP folds wildcards into the group score; KO; PROP -->
+            <div class="text-xs text-center font-mono text-zinc-400">{{ grpScore(s) }}</div>
+            <div class="text-xs text-center font-mono text-zinc-400">{{ koScore(s) }}</div>
+            <div class="text-xs text-center font-mono text-zinc-400">{{ propScore(s) }}</div>
 
             <!-- Total (+ max possible) -->
             <div class="text-right">
               <div
                 class="text-sm font-black"
-                :class="i === 0 ? 'text-amber-400' : 'text-white'"
+                :class="rankByUid[s.id] === 1 ? 'text-amber-400' : 'text-white'"
               >{{ s.total }}</div>
               <div v-if="potentialByUid[s.id] != null" class="text-[9px] font-mono text-amber-400/50 leading-tight">max {{ potentialByUid[s.id] }}</div>
             </div>
