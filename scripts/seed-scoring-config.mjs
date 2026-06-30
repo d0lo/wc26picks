@@ -44,7 +44,7 @@ const scoring = {
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000006', key: 'mostGroupGoals', label: 'Most Goals in Tournament', hint: 'Team that scores the most goals in the tournament', type: 'team', category: 'tournament', points: 3 },
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000007', key: 'hatTrickScorer', label: 'Hat Trick Scorer', hint: 'Player to score a hat trick', type: 'player', category: 'tournament', points: 6 },
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000008', key: 'mostAssists', label: 'Most Assists', hint: 'Player with the most assists', type: 'player', category: 'tournament', points: 4 },
-    { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000009', key: 'mostYellowCards', label: 'Team with Most Yellow Cards', hint: 'Most disciplinary cards received', type: 'team', category: 'tournament', points: 3 },
+    { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000009', key: 'mostYellowCards', label: 'Team with Most Yellow Cards', hint: 'Team that receives the most yellow cards', type: 'team', category: 'tournament', points: 3 },
     { id: 'a1c2e3d4-1111-4a2b-8c3d-000000000010', key: 'cleanGroupTeam', label: 'Clean Group', hint: 'Team that keeps a clean sheet in all 3 group games — or pick No Team', type: 'team', allowNone: true, category: 'tournament', points: 5 },
   ],
 }

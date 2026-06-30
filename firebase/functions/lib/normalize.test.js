@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { knockoutRoundSlot, normalizeEvent } from './normalize.js'
+import { knockoutRoundSlot, normalizeEvent, normalizeMatch, computeScoreFacts } from './normalize.js'
 
 function makeEvent(overrides = {}) {
   return {
@@ -60,4 +60,92 @@ test('normalizeEvent leaves round/slot null for a group-stage match', () => {
   const e = normalizeEvent(makeEvent({ id: '999999', competitions: [{ ...makeEvent().competitions[0], altGameNote: 'FIFA World Cup, Group A' }] }))
   assert.equal(e.round, null)
   assert.equal(e.group, 'Group A')
+})
+
+function makeSummary() {
+  return {
+    header: {
+      competitions: [{
+        status: { type: { state: 'post', description: 'FT' } },
+        competitors: [
+          { team: { id: '206' }, score: '2', homeAway: 'home', winner: true },
+          { team: { id: '467' }, score: '1', homeAway: 'away', winner: false },
+        ],
+      }],
+    },
+    keyEvents: [
+      { id: 'g1', scoringPlay: true, team: { id: '206' }, participants: [{ athlete: { displayName: 'Scorer One' } }, { athlete: { displayName: 'Assister One' } }], clock: { displayValue: "23'" }, period: { number: 1 }, shortText: 'Scorer One Goal', goalPositionX: 0.5, goalPositionY: 0.4, fieldPositionX: 0.16, fieldPositionY: 0.5 },
+      { id: 'y1', type: { text: 'Yellow Card' }, team: { id: '467' }, participants: [{ athlete: { displayName: 'Booked Player' } }], clock: { displayValue: "40'" }, period: { number: 1 } },
+      { id: 'r1', type: { text: 'Red Card' }, team: { id: '467' }, participants: [{ athlete: { displayName: 'Sent Off' } }], clock: { displayValue: "77'" }, period: { number: 2 } },
+      { id: 's1', type: { text: 'Substitution' }, team: { id: '206' }, participants: [{ athlete: { displayName: 'Came On' } }, { athlete: { displayName: 'Came Off' } }], clock: { displayValue: "60'" }, period: { number: 2 }, shortText: 'Came On Substitution' },
+    ],
+    rosters: [
+      { team: { id: '206' }, roster: [{ athlete: { id: 'p1', displayName: 'Scorer One' }, starter: true, position: { abbreviation: 'F' }, jersey: '9', stats: [{ name: 'goalAssists', value: 1 }, { name: 'totalGoals', value: 1 }] }] },
+      { team: { id: '467' }, roster: [{ athlete: { id: 'gk', displayName: 'Keeper' }, starter: true, position: { abbreviation: 'G' }, jersey: '1', stats: [{ name: 'saves', value: 5 }, { name: 'goalsConceded', value: 2 }] }] },
+    ],
+    boxscore: { teams: [] },
+    standings: {},
+  }
+}
+
+test('normalizeMatch captures assist + coordinates on scoring plays', () => {
+  const m = normalizeMatch(makeSummary())
+  assert.equal(m.scoringPlays[0].assist, 'Assister One')
+  assert.equal(m.scoringPlays[0].fieldPosition.x, 0.16)
+  assert.equal(m.scoringPlays[0].goalPosition.y, 0.4)
+})
+
+test('normalizeMatch extracts typed card events', () => {
+  const m = normalizeMatch(makeSummary())
+  assert.equal(m.cards.length, 2)
+  assert.deepEqual(m.cards.map((c) => c.type).sort(), ['red', 'yellow'])
+  assert.equal(m.cards.find((c) => c.type === 'yellow').player, 'Booked Player')
+})
+
+test('normalizeMatch extracts substitution events with both players', () => {
+  const m = normalizeMatch(makeSummary())
+  assert.equal(m.substitutions.length, 1)
+  assert.deepEqual(m.substitutions[0].players, ['Came On', 'Came Off'])
+})
+
+test('normalizeMatch preserves per-player stats as a name→value map', () => {
+  const m = normalizeMatch(makeSummary())
+  assert.equal(m.rosters[0].players[0].stats.goalAssists, 1)
+  assert.equal(m.rosters[1].players[0].stats.saves, 5)
+})
+
+const COMPETITORS = [{ teamId: 'home' }, { teamId: 'away' }]
+
+test('computeScoreFacts flags a 1–0-at-70 game that finished regulation 1–1', () => {
+  const plays = [
+    { teamId: 'home', period: 1, minute: "30'" },   // 1–0 by 70'
+    { teamId: 'away', period: 2, minute: "82'" },    // equalizer after 70'
+  ]
+  const f = computeScoreFacts(plays, COMPETITORS)
+  assert.deepEqual(f.scoreAt70, [1, 0])
+  assert.equal(f.was1_0at70, true)
+  assert.deepEqual(f.regulationFinal, [1, 1])
+  assert.equal(f.finishedRegAt1_1, true)
+})
+
+test('computeScoreFacts: goal in the 70th minute still counts as 1–0 at 70', () => {
+  const f = computeScoreFacts([{ teamId: 'home', period: 2, minute: "70'" }], COMPETITORS)
+  assert.equal(f.was1_0at70, true)
+})
+
+test('computeScoreFacts: a goal at 71 is not yet on the board at 70', () => {
+  const f = computeScoreFacts([{ teamId: 'home', period: 2, minute: "71'" }], COMPETITORS)
+  assert.deepEqual(f.scoreAt70, [0, 0])
+  assert.equal(f.was1_0at70, false)
+})
+
+test('computeScoreFacts excludes extra-time goals from regulation totals', () => {
+  const plays = [
+    { teamId: 'home', period: 1, minute: "20'" },
+    { teamId: 'away', period: 2, minute: "90'+3'" },  // 1–1 in regulation
+    { teamId: 'home', period: 3, minute: "105'" },     // extra time — ignored
+  ]
+  const f = computeScoreFacts(plays, COMPETITORS)
+  assert.deepEqual(f.regulationFinal, [1, 1])
+  assert.equal(f.finishedRegAt1_1, true)
 })

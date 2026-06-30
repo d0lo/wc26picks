@@ -192,8 +192,15 @@ matches/{eventId}                 written once per match by Feature 1 trigger
   fetchedAt: Timestamp
   header: object                  from ESPN summary.header
   competitors: Competitor[]       both teams with final scores
-  scoringPlays: ScoringPlay[]     goals with scorer, minute, running score
-  rosters: { teamId, players: RosterEntry[] }[]     lineup for both teams (starter + subs)
+  scoringPlays: ScoringPlay[]     goals with scorer, assist, minute, running score, and
+                                  normalized goal/field coordinates ({x,y}, 0–1)
+  cards: { teamId, player, type: "yellow"|"red", minute, period }[]   booking events
+  substitutions: { teamId, players: string[], minute, period, text }[] sub events
+  scoreFacts: { scoreAt70: [n,n], regulationFinal: [n,n],          regulation-only score
+                was1_0at70: bool, finishedRegAt1_1: bool }          splits (aligned to competitors[])
+  rosters: { teamId, players: RosterEntry[] }[]     lineup for both teams (starter + subs);
+                                  each player carries stats: { [espnStatName]: number }
+                                  (goalAssists, saves, goalsConceded, totalGoals, yellowCards, …)
   teamStats: { teamId, stats: TeamStat[] }[]        possession, shots, passes, etc.
   groupStandings: StandingEntry[] group table at time of match
   status: { state, description }  "pre" | "in" | "post"
