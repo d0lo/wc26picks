@@ -50,9 +50,10 @@ every feature merge into `dev`; it auto-updates in place as `dev` moves.
    - Make the changes, commit, and push
    - Run `/code-review` again
    - Repeat until there are no remaining issues we both agree need fixing
-4. Once the review is clean, **merge the PR into `dev`**
-5. If the standing `dev` → `main` PR hasn't had its preview deploy/comment yet, that's the only time to check for and post it — otherwise it's already posted and just updates automatically
-6. **Merging `dev` into `main`** (deploying live) only happens when the user explicitly gives the go-ahead — never as an automatic next step after a feature merges into `dev`
+4. **Before merging, finalize the PR description** with the two standing wrap-up sections every feature PR ends with (see *PR Description Format* below) — `## ✅ What actually shipped (final branch state)` and `## 🧠 Retrospective — notes for a future AI agent` — written against the final branch state, not the original intent
+5. Once the review is clean, **merge the PR into `dev`**
+6. If the standing `dev` → `main` PR hasn't had its preview deploy/comment yet, that's the only time to check for and post it — otherwise it's already posted and just updates automatically
+7. **Merging `dev` into `main`** (deploying live) only happens when the user explicitly gives the go-ahead — never as an automatic next step after a feature merges into `dev`
 
 ---
 
@@ -93,6 +94,7 @@ Treat the PR as a running development thread, not just a code diff.
 
 - This makes each PR read top-to-bottom as the story of how the feature evolved — every fix, every redirect, every lesson — so the next agent (or a reviewer) can follow the reasoning without diffing each commit. The commit body and its PR comment should be the same text; write it once, in the commit, then mirror it to the thread on push.
 - For a multi-commit push, post one comment covering the new commits (or one per commit if they're logically distinct). Don't post for no-op pushes (e.g. an empty rebase).
+- **The Firebase preview URL goes at the very top of the PR description** (the PR body), not in the thread comments. As soon as the preview deploy posts its URL, edit the PR body to lead with it on its own line — e.g. `🔗 Preview: https://wc26picks--pr53-…web.app` — so the live build is the first thing anyone sees when opening the PR. It stays constant across pushes (the deploy re-runs per commit but the URL is stable), so this is a one-time edit per PR. Never put it in commit bodies — the URL isn't known at commit time and doesn't belong in git history.
 
 ---
 
@@ -111,6 +113,17 @@ Treat the PR as a running development thread, not just a code diff.
 - The preview URL should be confirmed working before starting Loop 2
 - Never merge `dev` into `main` without the user explicitly saying so
 - Any UI work (new components or edits to existing ones) must follow `docs/UI_GUIDELINES.md` — the readability playbook (alignment, type scale, color semantics, empty states). `ScoreSplitsCard.vue` is the canonical example.
+
+---
+
+### PR Description Format
+
+A PR description is finalized just before merge (Loop 2, step 4), written against the **final** branch state rather than the original plan. Lead with the preview URL (see *Commit Bodies → PR Thread*), keep whatever intro sections fit the change (e.g. `## Problem` / `## Root cause` / `## Fix`, or `## What & why` / `## Changes` / `## Notes`), then **always end with these two standing sections**:
+
+- `## ✅ What actually shipped (final branch state)` — what the merged branch actually does, reconciled with any mid-review redirects, not the opening pitch.
+- `## 🧠 Retrospective — notes for a future AI agent` — the reasoning, dead ends, and gotchas a future agent would want, so the PR is a durable record and not just a diff.
+
+These mirror the trailing sections on every prior feature PR (#43–#47, #49, #50). Add them at finalize/merge time; the intro sections can exist from the moment the PR is opened.
 
 ---
 

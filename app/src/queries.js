@@ -76,8 +76,21 @@ export function picksListQueryOptions() {
   return {
     queryKey: queryKeys.picksList,
     queryFn: async () => {
-      const snap = await getDocs(query(collection(db, 'picks'), orderBy('submittedAt', 'asc')))
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      // Fetch every pick doc and sort client-side instead of orderBy('submittedAt'):
+      // a Firestore orderBy silently drops docs missing the field, which would hide
+      // anyone who saved only a knockout bracket — BracketView writes picks/{uid}
+      // without submittedAt (only the group-stage submit sets it). Those users still
+      // belong on the leaderboard and need their pick doc for the max-possible-points
+      // projection. Earliest group submitter stays first; submittedAt-less docs sort
+      // last (treated as Infinity).
+      const snap = await getDocs(collection(db, 'picks'))
+      return snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const ta = a.submittedAt?.toMillis?.() ?? Infinity
+          const tb = b.submittedAt?.toMillis?.() ?? Infinity
+          return ta === tb ? 0 : ta - tb
+        })
     },
     staleTime: FIVE_MINUTES,
   }
