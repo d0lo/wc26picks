@@ -53,9 +53,9 @@ function fmtDate(iso) {
         >
           <span class="shrink-0 w-3 text-center" :class="g.finished1_1 ? 'text-emerald-400' : 'text-zinc-600'">{{ g.finished1_1 ? '✓' : '✗' }}</span>
 
-          <span class="flex items-center gap-1 min-w-0">
+          <span class="flex items-center gap-1 shrink-0">
             <span class="text-sm leading-none shrink-0">{{ teamFlag(g.match.competitors?.[0]?.teamId) }}</span>
-            <span class="text-white font-bold truncate">{{ teamName(g.match, 0) }}</span>
+            <span class="text-white font-bold whitespace-nowrap">{{ teamName(g.match, 0) }}</span>
             <span v-if="teamRank(g.match, 0)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ teamRank(g.match, 0) }}</span>
           </span>
 
