@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import { TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { scoreSplitSummary } from '../lib/matchFacts.js'
 
 const props = defineProps({
@@ -8,9 +9,23 @@ const props = defineProps({
 
 const summary = computed(() => scoreSplitSummary(props.matches))
 
-function abbr(match, i) {
+function teamFlag(teamId) {
+  return TEAM_BY_ID[teamId]?.flag ?? '🏳️'
+}
+
+function teamName(match, i) {
   const c = match.competitors?.[i]
-  return c?.abbreviation || c?.name || '?'
+  return TEAM_BY_ID[c?.teamId]?.name ?? c?.name ?? '?'
+}
+
+function teamRank(match, i) {
+  const name = TEAM_BY_ID[match.competitors?.[i]?.teamId]?.name
+  return name ? (FIFA_RANKING[name] ?? null) : null
+}
+
+function fmtDate(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 </script>
 
@@ -23,16 +38,11 @@ function abbr(match, i) {
         Games 1–0 at 70′ that finished 1–1 <span class="text-zinc-500">· regulation only, extra time ignored</span>
       </div>
 
-      <div class="flex items-center gap-4 mb-3">
-        <div>
-          <div class="text-2xl font-black text-white tabular-nums leading-none">{{ summary.total }}</div>
-          <div class="text-[9px] uppercase tracking-wider text-zinc-500 mt-1">1–0 at 70′</div>
+      <div class="flex items-baseline gap-2 mb-3">
+        <div class="text-3xl font-black tabular-nums leading-none">
+          <span class="text-emerald-400">{{ summary.finished1_1 }}</span><span class="text-zinc-600">/</span><span class="text-white">{{ summary.total }}</span>
         </div>
-        <div class="text-zinc-600 text-lg">→</div>
-        <div>
-          <div class="text-2xl font-black text-emerald-400 tabular-nums leading-none">{{ summary.finished1_1 }}</div>
-          <div class="text-[9px] uppercase tracking-wider text-zinc-500 mt-1">finished 1–1</div>
-        </div>
+        <div class="text-[9px] uppercase tracking-wider text-zinc-500">finished 1–1 of 1–0 at 70′</div>
       </div>
 
       <div v-if="!summary.total" class="text-xs text-zinc-500 italic">– No games yet</div>
@@ -42,10 +52,22 @@ function abbr(match, i) {
           class="flex items-center gap-2 text-[11px]"
         >
           <span class="shrink-0 w-3 text-center" :class="g.finished1_1 ? 'text-emerald-400' : 'text-zinc-600'">{{ g.finished1_1 ? '✓' : '✗' }}</span>
-          <span class="text-white font-bold">{{ abbr(g.match, 0) }}</span>
-          <span class="text-zinc-400 font-mono tabular-nums">{{ g.regulationFinal[0] }}–{{ g.regulationFinal[1] }}</span>
-          <span class="text-white font-bold">{{ abbr(g.match, 1) }}</span>
-          <span class="text-[9px] text-zinc-500 ml-auto">{{ g.finished1_1 ? 'hit' : 'no' }}</span>
+
+          <span class="flex items-center gap-1 min-w-0">
+            <span class="text-sm leading-none shrink-0">{{ teamFlag(g.match.competitors?.[0]?.teamId) }}</span>
+            <span class="text-white font-bold truncate">{{ teamName(g.match, 0) }}</span>
+            <span v-if="teamRank(g.match, 0)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ teamRank(g.match, 0) }}</span>
+          </span>
+
+          <span class="text-zinc-400 font-mono tabular-nums shrink-0">{{ g.regulationFinal[0] }}–{{ g.regulationFinal[1] }}</span>
+
+          <span class="flex items-center gap-1 min-w-0">
+            <span class="text-sm leading-none shrink-0">{{ teamFlag(g.match.competitors?.[1]?.teamId) }}</span>
+            <span class="text-white font-bold truncate">{{ teamName(g.match, 1) }}</span>
+            <span v-if="teamRank(g.match, 1)" class="text-[9px] text-zinc-500 font-mono shrink-0">#{{ teamRank(g.match, 1) }}</span>
+          </span>
+
+          <span class="text-[9px] text-zinc-500 shrink-0 ml-auto">{{ fmtDate(g.date) }}</span>
         </div>
       </div>
     </div>

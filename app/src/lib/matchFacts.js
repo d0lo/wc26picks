@@ -45,6 +45,7 @@ export function scoreSplitSummary(matches) {
     if (!facts?.was1_0at70) continue
     games.push({
       match: m,
+      date: m.header?.competitions?.[0]?.date ?? m.date ?? null,
       regulationFinal: facts.regulationFinal,
       finished1_1: !!facts.finishedRegAt1_1,
     })
