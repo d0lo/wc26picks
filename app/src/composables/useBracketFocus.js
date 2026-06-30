@@ -27,6 +27,7 @@ export function useBracketFocus(rounds, roundSize, options = {}) {
   const dragDelta = ref(0)
   const dragging = ref(false)
   const rowH = ref(96)
+  const colH = ref(0)             // measured natural height of the focused round column
   const offsets = ref([])         // left offset (px) of each round column within the track
   const isMobile = ref(false)
   const HEADER_H = 24
@@ -34,12 +35,13 @@ export function useBracketFocus(rounds, roundSize, options = {}) {
 
   const focusedIdx = computed(() => (isMobile.value ? index.value : 0))
 
+  // Fallback estimate used only until the focused column has been measured.
   function heightFor(i) {
     return HEADER_H + (roundSize[rounds[i]] ?? 1) * rowH.value
   }
 
   const containerHeight = computed(() =>
-    isMobile.value ? `${heightFor(focusedIdx.value)}px` : ''
+    isMobile.value ? `${colH.value || heightFor(focusedIdx.value)}px` : ''
   )
 
   const trackStyle = computed(() => {
@@ -56,9 +58,32 @@ export function useBracketFocus(rounds, roundSize, options = {}) {
     const h = probe?.offsetHeight
     if (h && h > 0) rowH.value = h
     const track = trackRef.value
-    if (track) {
-      offsets.value = [...track.querySelectorAll('[data-round-col]')].map((c) => c.offsetLeft)
+    if (!track) return
+    offsets.value = [...track.querySelectorAll('[data-round-col]')].map((c) => c.offsetLeft)
+    // The container height is driven by the focused (densest) column, whose
+    // rows are flexGrow:0 — i.e. natural height regardless of the current
+    // container height. Summing its children (header + each match row) instead
+    // of multiplying one probed row by the slot count means rows of differing
+    // height (a completed match grows a score/points footer) no longer make
+    // the column overflow its fixed-height container and clip the bottom
+    // matches. Rounds to the right still fan out (flexGrow:1) to fill it.
+    const col = track.querySelector(`[data-round-col="${focusedIdx.value}"]`)
+    if (col) {
+      let total = 0
+      for (const child of col.children) total += child.offsetHeight
+      if (total > 0) colH.value = total
     }
+  }
+
+  // Card heights change after mount as async data (matches/scores) loads and
+  // adds footers; re-measure so the container grows to fit rather than clipping.
+  let resizeObs = null
+  function observeFocusedCol() {
+    if (!resizeObs) return
+    resizeObs.disconnect()
+    const col = trackRef.value?.querySelector(`[data-round-col="${focusedIdx.value}"]`)
+    if (!col) return
+    for (const child of col.children) resizeObs.observe(child)
   }
 
   // ── Touch/pointer drag (mobile only) ───────────────────────────────────────
@@ -116,6 +141,7 @@ export function useBracketFocus(rounds, roundSize, options = {}) {
     // document-level listeners hijacking pointer events.
     rebindGesture()
     measure()
+    observeFocusedCol()
   }
 
   function addGestureListeners(target) {
@@ -169,39 +195,47 @@ export function useBracketFocus(rounds, roundSize, options = {}) {
     syncViewport()
   }, { immediate: true })
 
-  // ── Reconcile vertical scroll when the focused round changes (change 8) ─────
-  // Each round has a very different height (r32 = 16 rows, final = 1), and the
-  // container collapses to the focused round's height. Swiping from a tall round
-  // (scrolled far down) to a short one leaves window.scrollY parked below the
-  // now-shorter bracket, in blank space.
-  //
-  // We can't rely on document.scrollHeight at nextTick: the height transition is
-  // animated over 300ms, so the DOM hasn't shrunk yet. Instead we compute the
-  // bracket's final bottom directly from the *target* height we already know
-  // (heightFor(index)) plus the container's top offset in the page, and clamp
-  // scrollY so that bottom can't sit above the viewport bottom. Inert on desktop
-  // (pager pinned to Round of 32, height is auto).
+  // When the focused round changes (a swipe), re-measure and re-target the
+  // observer — the newly focused column's rows are the ones now setting the
+  // container height.
   watch(index, async () => {
-    if (!isMobile.value) return
     await nextTick()
+    measure()
+    observeFocusedCol()
+    // ── Reconcile vertical scroll when the focused round changes (change 8) ───
+    // Each round has a very different height (r32 = 16 rows, final = 1), and the
+    // container collapses to the focused round's height. Swiping from a tall
+    // round (scrolled far down) to a short one leaves window.scrollY parked
+    // below the now-shorter bracket, in blank space.
+    //
+    // The height transition is animated over 300ms, so the live document height
+    // hasn't shrunk yet at nextTick — but measure() above already computed the
+    // focused column's *target* height (colH), so clamp scrollY against that.
+    // Inert on desktop (pager pinned to Round of 32, height is auto).
+    if (!isMobile.value) return
     const el = scrollRef.value
     if (!el) return
     const topInPage = window.scrollY + el.getBoundingClientRect().top
-    const bracketBottom = topInPage + heightFor(index.value)
+    const bracketBottom = topInPage + (colH.value || heightFor(index.value))
     const maxScroll = Math.max(0, bracketBottom - window.innerHeight)
     if (window.scrollY > maxScroll) window.scrollTo({ top: maxScroll, behavior: 'auto' })
   })
 
   onMounted(() => {
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObs = new ResizeObserver(() => measure())
+    }
     mql = window.matchMedia('(max-width: 639.98px)')
     mql.addEventListener('change', syncViewport)
     syncViewport()
+    observeFocusedCol()
     window.addEventListener('resize', syncViewport)
   })
 
   onBeforeUnmount(() => {
     removeGestureListeners(boundTarget)
     boundTarget = null
+    resizeObs?.disconnect()
     window.removeEventListener('resize', syncViewport)
     mql?.removeEventListener('change', syncViewport)
   })

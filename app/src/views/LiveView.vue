@@ -5,6 +5,7 @@ import { scoreboardQueryOptions, scheduleQueryOptions, groupsQueryOptions, match
 import MatchSchedule from '../components/MatchSchedule.vue'
 import GroupStandingsBoard from '../components/GroupStandingsBoard.vue'
 import PropLeaderboard from '../components/PropLeaderboard.vue'
+import ScoreSplitsCard from '../components/ScoreSplitsCard.vue'
 import KnockoutBracket from '../components/KnockoutBracket.vue'
 
 const queryClient = useQueryClient()
@@ -32,5 +33,6 @@ onUnmounted(() => stopScoreboardListener())
 
     <GroupStandingsBoard :groups="groups" />
     <PropLeaderboard :matches="matches" />
+    <ScoreSplitsCard :matches="matches" />
   </div>
 </template>

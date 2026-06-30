@@ -81,6 +81,39 @@ function normalizeStandingEntry(entry) {
   }
 }
 
+// Parses an ESPN clock label ("70'", "45'+2'", "90'+4'") to its base minute.
+function baseMinute(clock) {
+  const n = parseInt(String(clock || '').replace(/[^\d].*$/, ''), 10)
+  return Number.isFinite(n) ? n : 0
+}
+
+// Score splits derived from regulation goals only — periods 1 & 2, so extra
+// time and penalty shootouts are excluded by design. scoreAt70 / regulationFinal
+// are [homeOrder…] arrays aligned to competitors[]. Used for the "1–0 at 70'
+// that finished regulation 1–1" stat on the stadium page; mirrored client-side
+// in app/src/lib/matchFacts.js for match docs written before this field existed.
+export function computeScoreFacts(scoringPlays, competitors) {
+  const ids = competitors.map((c) => c.teamId)
+  const isReg = (p) => p.period === 1 || p.period === 2
+  const tally = (pred) => {
+    const s = Object.fromEntries(ids.map((id) => [id, 0]))
+    for (const p of scoringPlays) {
+      if (p.teamId in s && pred(p)) s[p.teamId] += 1
+    }
+    return ids.map((id) => s[id])
+  }
+  const scoreAt70 = tally((p) => isReg(p) && baseMinute(p.minute) <= 70)
+  const regulationFinal = tally((p) => isReg(p))
+  const sum = (a) => a.reduce((x, y) => x + y, 0)
+  return {
+    scoreAt70,
+    regulationFinal,
+    // Exactly one goal in regulation by the 70' mark ⇒ the game was 1–0.
+    was1_0at70: sum(scoreAt70) === 1,
+    finishedRegAt1_1: regulationFinal[0] === 1 && regulationFinal[1] === 1,
+  }
+}
+
 // Maps an ESPN /summary response into the matches/{eventId} doc
 // (eventId, fetchedAt added by the caller, which owns the Firestore timestamp).
 export function normalizeMatch(summary) {
@@ -103,12 +136,41 @@ export function normalizeMatch(summary) {
         id: e.id,
         teamId,
         scorer: e.participants?.[0]?.athlete?.displayName ?? null,
+        // ESPN lists the assist provider as the goal event's second participant.
+        assist: e.participants?.[1]?.athlete?.displayName ?? null,
         minute: e.clock?.displayValue ?? null,
         period: e.period?.number ?? null,
         text: e.shortText ?? e.text ?? null,
+        // Normalized pitch coordinates (0–1). goalPosition is the shot's
+        // location in the goalmouth; fieldPosition is where it was struck.
+        goalPosition: { x: e.goalPositionX ?? null, y: e.goalPositionY ?? null },
+        fieldPosition: { x: e.fieldPositionX ?? null, y: e.fieldPositionY ?? null },
         runningScore: { ...teamScoreAt },
       }
     })
+
+  // Card and substitution events — kept alongside (not inside) scoringPlays
+  // so a goals-only consumer isn't forced to filter. ESPN tags the disciplined
+  // / substituted player as the event's participant(s).
+  const cards = (summary.keyEvents || [])
+    .filter((e) => /card/i.test(e.type?.text || ''))
+    .map((e) => ({
+      teamId: resolveTeam(e.team?.id)?.id ?? null,
+      player: e.participants?.[0]?.athlete?.displayName ?? null,
+      type: /red/i.test(e.type?.text || '') ? 'red' : 'yellow',
+      minute: e.clock?.displayValue ?? null,
+      period: e.period?.number ?? null,
+    }))
+
+  const substitutions = (summary.keyEvents || [])
+    .filter((e) => /substitution/i.test(e.type?.text || ''))
+    .map((e) => ({
+      teamId: resolveTeam(e.team?.id)?.id ?? null,
+      players: (e.participants || []).map((p) => p.athlete?.displayName ?? null),
+      minute: e.clock?.displayValue ?? null,
+      period: e.period?.number ?? null,
+      text: e.shortText ?? null,
+    }))
 
   // Firestore arrays can't directly contain other arrays, so each side is
   // wrapped in a map. Keyed by teamId (resolved the same way as competitors)
@@ -122,6 +184,10 @@ export function normalizeMatch(summary) {
       starter: !!p.starter,
       position: p.position?.abbreviation ?? null,
       jersey: p.jersey ?? null,
+      // Per-player match stats keyed by ESPN stat name → numeric value
+      // (goalAssists, saves, goalsConceded, totalGoals, yellowCards, …).
+      // Powers player props (Most Assists, Golden Glove) without re-fetching.
+      stats: Object.fromEntries((p.stats || []).map((s) => [s.name, s.value])),
     })),
   }))
 
@@ -140,6 +206,9 @@ export function normalizeMatch(summary) {
     header: summary.header,
     competitors,
     scoringPlays,
+    cards,
+    substitutions,
+    scoreFacts: computeScoreFacts(scoringPlays, competitors),
     rosters,
     teamStats,
     groupStandings,

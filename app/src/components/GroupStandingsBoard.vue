@@ -16,7 +16,7 @@ function rowsFor(letter, groupDoc) {
 
 <template>
   <div class="bg-court-800 border border-court-700 rounded-2xl p-4">
-    <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-4">Group Standings — Live</div>
+    <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-4">Group Standings</div>
     <div class="grid grid-cols-2 gap-x-5 gap-y-4">
       <div v-for="g in GROUPS" :key="g">
         <div class="flex items-center justify-between mb-1.5">
