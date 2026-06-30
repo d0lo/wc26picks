@@ -163,23 +163,38 @@ function fmtName(name) {
 // ── Leaderboard breakdown cells ────────────────────────────────────────
 // Three compact stat columns: GRP folds the wildcard score into the group
 // score (they're one prediction surface to the user), KO sums the bracket,
-// PROP is the prop aggregate. Each shows an em dash until its piece is scored.
+// PROP is the prop aggregate.
+//
+// Each column shows an em dash when the user never made that kind of pick —
+// gated on the pick doc, NOT the score breakdown. The auto-scoring engine
+// writes a breakdown (all zeros) for EVERY picks doc, so a knockout-only
+// entrant still gets breakdown.groups = { A: 0, … }; keying the dash off the
+// score would render a misleading 0 there instead of "didn't pick". A user
+// who did make the picks shows their real score (0 included).
+function hasNonEmpty(obj) {
+  return !!obj && Object.values(obj).some((v) => (Array.isArray(v) ? v.length > 0 : v != null))
+}
+
 function grpScore(s) {
+  const pick = pickByUid.value[s.id]
+  if (!hasNonEmpty(pick?.groups) && !pick?.wildcards?.length) return '—'
   const groups = s.breakdown?.groups
-  const groupSum = groups ? Object.values(groups).reduce((sum, v) => sum + v, 0) : null
-  const wc = s.breakdown?.wildcards ?? null
-  if (groupSum === null && wc === null) return '—'
-  return (groupSum ?? 0) + (wc ?? 0)
+  const groupSum = groups ? Object.values(groups).reduce((sum, v) => sum + v, 0) : 0
+  return groupSum + (s.breakdown?.wildcards ?? 0)
 }
 
 function koScore(s) {
+  const pick = pickByUid.value[s.id]
+  if (!hasNonEmpty(pick?.knockout)) return '—'
   const ko = s.breakdown?.knockout
-  if (!ko) return '—'
+  if (!ko) return 0
   return Object.values(ko).flatMap((slots) => Object.values(slots)).reduce((sum, v) => sum + v, 0)
 }
 
 function propScore(s) {
-  return s.breakdown?.props ?? '—'
+  const pick = pickByUid.value[s.id]
+  if (!pick?.props || Object.keys(pick.props).length === 0) return '—'
+  return s.breakdown?.props ?? 0
 }
 
 function fmtDate(ts) {
