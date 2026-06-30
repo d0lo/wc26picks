@@ -41,6 +41,25 @@ function mostGoalsLeaders(matches) {
     .sort((a, b) => b.goals - a.goals)
 }
 
+// "Most Assists" — sums each player's per-match `goalAssists` roster stat
+// (newly persisted in matches/{id}.rosters[].players[].stats) across all
+// matches. Full standings sorted desc; the view shows the top 5.
+function mostAssistsLeaders(matches) {
+  const byPlayer = {}
+  for (const m of matches) {
+    for (const side of m.rosters ?? []) {
+      for (const p of side.players ?? []) {
+        const a = Number(p.stats?.goalAssists)
+        if (!Number.isFinite(a) || a <= 0) continue
+        const key = p.playerId ?? `${p.name}|${side.teamId}`
+        byPlayer[key] ??= { scorer: p.name, teamId: side.teamId, assists: 0 }
+        byPlayer[key].assists += a
+      }
+    }
+  }
+  return Object.values(byPlayer).sort((a, b) => b.assists - a.assists)
+}
+
 // "Team with Most Yellow Cards" — sums the per-match `yellowCards` team stat
 // (already persisted in matches/{id}.teamStats from the ESPN boxscore) across
 // every match. Full standings sorted desc; the view shows the top 5.
@@ -110,8 +129,9 @@ function cleanGroupTeamLeaders(matches) {
 
 // Keyed by config/public.scoring.props[].key (see scripts/seed-scoring-config.mjs).
 // Any prop key not listed here — goldenGlove, goldenBall, youngPlayer,
-// breakoutPlayer, mostAssists — is structurally non-computable from currently
-// tracked data.
+// breakoutPlayer — is structurally non-computable from currently tracked data.
+// (goldenGlove is now derivable from per-player saves/goalsConceded too, but
+// isn't wired up yet.)
 //
 // `ranked` props show a standings list capped at `limit`, ranked by `metric`
 // (the numeric field on each leader) with `unit` as the displayed noun; ties
@@ -124,6 +144,7 @@ const RESOLVERS = {
   // Kept as a stable internal handle — picks key off `id`, not this string.
   mostGroupGoals: { resolve: mostGoalsLeaders, ranked: true, limit: 5, metric: 'goals', unit: 'goal' },
   mostYellowCards: { resolve: mostYellowCardsLeaders, ranked: true, limit: 5, metric: 'cards', unit: 'card' },
+  mostAssists: { resolve: mostAssistsLeaders, ranked: true, limit: 5, metric: 'assists', unit: 'assist' },
   hatTrickScorer: { resolve: hatTrickScorers, ranked: false },
   cleanGroupTeam: { resolve: cleanGroupTeamLeaders, ranked: false },
 }

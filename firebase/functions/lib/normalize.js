@@ -103,12 +103,41 @@ export function normalizeMatch(summary) {
         id: e.id,
         teamId,
         scorer: e.participants?.[0]?.athlete?.displayName ?? null,
+        // ESPN lists the assist provider as the goal event's second participant.
+        assist: e.participants?.[1]?.athlete?.displayName ?? null,
         minute: e.clock?.displayValue ?? null,
         period: e.period?.number ?? null,
         text: e.shortText ?? e.text ?? null,
+        // Normalized pitch coordinates (0–1). goalPosition is the shot's
+        // location in the goalmouth; fieldPosition is where it was struck.
+        goalPosition: { x: e.goalPositionX ?? null, y: e.goalPositionY ?? null },
+        fieldPosition: { x: e.fieldPositionX ?? null, y: e.fieldPositionY ?? null },
         runningScore: { ...teamScoreAt },
       }
     })
+
+  // Card and substitution events — kept alongside (not inside) scoringPlays
+  // so a goals-only consumer isn't forced to filter. ESPN tags the disciplined
+  // / substituted player as the event's participant(s).
+  const cards = (summary.keyEvents || [])
+    .filter((e) => /card/i.test(e.type?.text || ''))
+    .map((e) => ({
+      teamId: resolveTeam(e.team?.id)?.id ?? null,
+      player: e.participants?.[0]?.athlete?.displayName ?? null,
+      type: /red/i.test(e.type?.text || '') ? 'red' : 'yellow',
+      minute: e.clock?.displayValue ?? null,
+      period: e.period?.number ?? null,
+    }))
+
+  const substitutions = (summary.keyEvents || [])
+    .filter((e) => /substitution/i.test(e.type?.text || ''))
+    .map((e) => ({
+      teamId: resolveTeam(e.team?.id)?.id ?? null,
+      players: (e.participants || []).map((p) => p.athlete?.displayName ?? null),
+      minute: e.clock?.displayValue ?? null,
+      period: e.period?.number ?? null,
+      text: e.shortText ?? null,
+    }))
 
   // Firestore arrays can't directly contain other arrays, so each side is
   // wrapped in a map. Keyed by teamId (resolved the same way as competitors)
@@ -122,6 +151,10 @@ export function normalizeMatch(summary) {
       starter: !!p.starter,
       position: p.position?.abbreviation ?? null,
       jersey: p.jersey ?? null,
+      // Per-player match stats keyed by ESPN stat name → numeric value
+      // (goalAssists, saves, goalsConceded, totalGoals, yellowCards, …).
+      // Powers player props (Most Assists, Golden Glove) without re-fetching.
+      stats: Object.fromEntries((p.stats || []).map((s) => [s.name, s.value])),
     })),
   }))
 
@@ -140,6 +173,8 @@ export function normalizeMatch(summary) {
     header: summary.header,
     competitors,
     scoringPlays,
+    cards,
+    substitutions,
     rosters,
     teamStats,
     groupStandings,
