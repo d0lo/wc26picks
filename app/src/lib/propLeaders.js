@@ -77,9 +77,8 @@ function cleanGroupTeamLeaders(matches) {
     if (m.status?.state !== 'post') continue
     for (const c of m.competitors ?? []) {
       const opponent = (m.competitors ?? []).find((o) => o.teamId !== c.teamId)
-      byTeam[c.teamId] ??= { teamId: c.teamId, group: m.groupLetter, played: 0, goalsAgainst: 0, opponents: [] }
+      byTeam[c.teamId] ??= { teamId: c.teamId, group: m.groupLetter, played: 0, goalsAgainst: 0 }
       byTeam[c.teamId].played += 1
-      byTeam[c.teamId].opponents.push(opponent?.teamId ?? null)
       // ESPN scores are strings ('0','1',…); coerce before summing. A missing
       // opponent score is unknowable, so fold in Infinity rather than reading
       // null as 0 — that drops the team from the conceded-nothing set instead

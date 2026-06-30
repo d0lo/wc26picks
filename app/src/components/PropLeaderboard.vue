@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { TEAM_BY_ID, FIFA_RANKING } from '../data.js'
+import { TEAM_BY_ID, FIFA_RANKING, GROUP_TEAMS, TEAM_FLAG } from '../data.js'
 import { useScoring } from '../composables/useScoring.js'
 import { resolvePropLeaders } from '../lib/propLeaders.js'
 
@@ -59,6 +59,17 @@ function golfRows(prop) {
 
 function rankColor(rank) {
   return { 1: 'text-amber-400', 2: 'text-zinc-400', 3: 'text-amber-700' }[rank] ?? 'text-zinc-500'
+}
+
+// The other three teams sharing this team's group — the field it had to keep
+// clean. Pulled from the group roster, not match records.
+function groupMates(leader) {
+  const own = TEAM_BY_ID[leader.teamId]?.name
+  return (GROUP_TEAMS[leader.group] ?? []).filter((name) => name !== own)
+}
+
+function flagByName(name) {
+  return TEAM_FLAG[name] ?? '🏳️'
 }
 </script>
 
@@ -128,7 +139,7 @@ function rankColor(rank) {
             <span class="flex items-center gap-1.5 shrink-0 ml-auto">
               <span class="text-[9px] font-black tracking-[0.15em] text-emerald-400">GROUP {{ leader.group }}</span>
               <span class="flex items-center gap-0.5">
-                <span v-for="(opp, j) in leader.opponents" :key="j" class="text-sm leading-none">{{ teamFlag(opp) }}</span>
+                <span v-for="(mate, j) in groupMates(leader)" :key="j" class="text-sm leading-none">{{ flagByName(mate) }}</span>
               </span>
             </span>
           </div>
