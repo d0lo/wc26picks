@@ -35,6 +35,37 @@ export function matchScoreFacts(match) {
   }
 }
 
+// Live candidates for the 1–0-at-70' watch, derived purely from the streaming
+// liveData/scoreboard events[] (current aggregate score + clock) — the detailed
+// matches/{eventId} doc with goal minutes is only re-fetched at state flips, so
+// it's stale mid-match and can't be used here. A candidate is an in-progress
+// regulation match (period 1 or 2) that's past the 70' mark with a 1–0
+// scoreline right now: the live games you'd watch for a late equalizer.
+//
+// Caveat baked into the framing (see ScoreSplitsCard copy): without goal
+// minutes we can't prove the lone goal landed before exactly 70', so this is
+// "currently 1–0, 70'+" rather than the precise "was 1–0 at 70'" the completed
+// tally computes. Once a second goal makes it 1–1 the total is no longer 1 and
+// the game drops out — it reappears in the completed tally only after it ends.
+export function liveScoreSplitCandidates(events) {
+  const out = []
+  for (const e of events ?? []) {
+    if (e.status?.state !== 'in') continue
+    // Regulation only — extra time/shootout goals would break the 1–0 framing.
+    const period = e.status?.period ?? 0
+    if (period !== 1 && period !== 2) continue
+    const minute = baseMinute(e.status?.displayClock)
+    if (minute < 70) continue
+    const competitors = e.competitors ?? []
+    if (competitors.length !== 2) continue
+    const scores = competitors.map((c) => parseInt(c.score, 10) || 0)
+    // Exactly one goal on the board ⇒ the match is 1–0 right now.
+    if (scores[0] + scores[1] !== 1) continue
+    out.push({ event: e, minute, displayClock: e.status?.displayClock ?? null, scores })
+  }
+  return out
+}
+
 // Aggregate over completed matches: the games that were 1–0 at 70', and within
 // that set which finished regulation 1–1 (the rest "didn't hit").
 export function scoreSplitSummary(matches) {

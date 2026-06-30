@@ -33,6 +33,6 @@ onUnmounted(() => stopScoreboardListener())
 
     <GroupStandingsBoard :groups="groups" />
     <PropLeaderboard :matches="matches" />
-    <ScoreSplitsCard :matches="matches" />
+    <ScoreSplitsCard :matches="matches" :events="events" />
   </div>
 </template>

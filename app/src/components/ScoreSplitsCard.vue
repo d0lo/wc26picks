@@ -1,13 +1,16 @@
 <script setup>
 import { computed } from 'vue'
 import { TEAM_BY_ID } from '../data.js'
-import { scoreSplitSummary } from '../lib/matchFacts.js'
+import { scoreSplitSummary, liveScoreSplitCandidates } from '../lib/matchFacts.js'
 
 const props = defineProps({
   matches: { type: Array, default: () => [] },
+  // liveData/scoreboard events[] — current score + clock for in-progress games.
+  events: { type: Array, default: () => [] },
 })
 
 const summary = computed(() => scoreSplitSummary(props.matches))
+const live = computed(() => liveScoreSplitCandidates(props.events))
 
 function teamFlag(teamId) {
   return TEAM_BY_ID[teamId]?.flag ?? '🏳️'
@@ -29,6 +32,44 @@ function fmtDate(iso) {
     <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase">Score Splits</div>
 
     <div class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3">
+      <!-- Live watch: in-progress games sitting 1–0 past 70′ right now. Amber =
+           provisional (Rule 3); a pulsing dot marks them as live. Derived from
+           the streaming scoreboard score+clock, so it updates every tick. -->
+      <div v-if="live.length" class="mb-4">
+        <div class="flex items-center gap-1.5 mb-2">
+          <span class="relative flex h-1.5 w-1.5">
+            <span class="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping"></span>
+            <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-400"></span>
+          </span>
+          <span class="text-[10px] font-black tracking-[0.15em] text-amber-400 uppercase">Live · 1–0 past 70′</span>
+        </div>
+
+        <div
+          class="grid items-center gap-x-2.5 gap-y-2 text-[11px]"
+          style="grid-template-columns: auto auto auto minmax(0, 1fr) auto;"
+        >
+          <template v-for="g in live" :key="g.event.id">
+            <span class="text-amber-400 text-[10px]">▸</span>
+
+            <span class="flex items-center gap-1.5 justify-self-end whitespace-nowrap">
+              <span class="text-white font-bold">{{ teamName(g.event, 0) }}</span>
+              <span class="text-sm leading-none">{{ teamFlag(g.event.competitors?.[0]?.teamId) }}</span>
+            </span>
+
+            <span class="font-mono tabular-nums font-bold text-center text-amber-400">{{ g.scores[0] }}–{{ g.scores[1] }}</span>
+
+            <span class="flex items-center gap-1.5 min-w-0">
+              <span class="text-sm leading-none shrink-0">{{ teamFlag(g.event.competitors?.[1]?.teamId) }}</span>
+              <span class="text-white font-bold truncate">{{ teamName(g.event, 1) }}</span>
+            </span>
+
+            <span class="text-[10px] text-amber-400 tabular-nums text-right whitespace-nowrap">{{ g.displayClock }}</span>
+          </template>
+        </div>
+
+        <div class="text-[9px] text-zinc-500 mt-2">Watching for a late equalizer · folds into the tally below when full-time</div>
+      </div>
+
       <div class="text-[11px] text-zinc-400 mb-3">
         Games 1–0 at 70′ that finished 1–1 <span class="text-zinc-500">· regulation only, extra time ignored</span>
       </div>
