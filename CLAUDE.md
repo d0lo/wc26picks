@@ -95,6 +95,7 @@ Example: `feat: add forgot password flow` / `fix: restore group order on cancell
 - Keep PRs focused on a single feature
 - The preview URL should be confirmed working before starting Loop 2
 - Never merge `dev` into `main` without the user explicitly saying so
+- Any UI work (new components or edits to existing ones) must follow `docs/UI_GUIDELINES.md` — the readability playbook (alignment, type scale, color semantics, empty states). `ScoreSplitsCard.vue` is the canonical example.
 
 ---
 
