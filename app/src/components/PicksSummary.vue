@@ -121,6 +121,16 @@ const wildcardPointsPossible = computed(() => {
 
 const wildcardPointsEarned = computed(() => scoreQuery.data.value?.breakdown?.wildcards ?? null)
 
+// Whether this pick actually contains group predictions. A knockout-only
+// submission (BracketView writes picks/{uid} with just `knockout`) has no
+// `groups`, so the Group Standings card is hidden entirely rather than
+// rendered as an empty shell — mirroring how the props section drops out
+// when `props` is absent.
+const hasGroups = computed(() => {
+  const g = componentProps.groups
+  return !!g && Object.values(g).some((arr) => Array.isArray(arr) && arr.length > 0)
+})
+
 const groupCardRefs = reactive({})
 const wildcardsSectionRef = ref(null)
 
@@ -138,8 +148,9 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
       🔒 Group & prop picks are hidden until picks lock.
     </div>
 
-    <!-- Group Standings — single card, 2-col grid -->
-    <div v-if="showGroupsProps" class="bg-court-800 border border-court-700 rounded-2xl p-4">
+    <!-- Group Standings — single card, 2-col grid. Hidden when the pick has no
+         group predictions (e.g. a knockout-only submission). -->
+    <div v-if="showGroupsProps && hasGroups" class="bg-court-800 border border-court-700 rounded-2xl p-4">
       <div class="text-[10px] font-black tracking-[0.2em] text-zinc-400 uppercase mb-4">Group Standings</div>
       <div class="grid grid-cols-2 gap-x-5 gap-y-4">
         <div v-for="g in GROUPS" :key="g" :ref="el => { if (el) groupCardRefs[g] = el }">
