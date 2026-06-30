@@ -135,9 +135,12 @@ const sortedSubmitters = computed(() => {
     if (sa !== null && sb !== null) return sb - sa
     if (sa !== null) return -1
     if (sb !== null) return 1
-    const ta = a.submittedAt?.toMillis?.() ?? 0
-    const tb = b.submittedAt?.toMillis?.() ?? 0
-    return ta - tb
+    // Missing submittedAt sorts last (Infinity), matching picksListQueryOptions —
+    // a knockout-only entrant has no submittedAt and shouldn't jump ahead of
+    // people who actually submitted group picks early. Guard Infinity−Infinity=NaN.
+    const ta = a.submittedAt?.toMillis?.() ?? Infinity
+    const tb = b.submittedAt?.toMillis?.() ?? Infinity
+    return ta === tb ? 0 : ta - tb
   })
 })
 
@@ -207,6 +210,15 @@ function propScore(s) {
 const sortKey = ref('total') // 'total' | 'grp' | 'ko' | 'prop'
 const sortDir = ref('desc')  // 'desc' | 'asc'
 
+// Tappable score-column headers, in display order. `align` matches each cell's
+// alignment in the row grid below.
+const SORT_COLUMNS = [
+  { key: 'grp', label: 'GRP', align: 'text-center' },
+  { key: 'ko', label: 'KO', align: 'text-center' },
+  { key: 'prop', label: 'PROP', align: 'text-center' },
+  { key: 'total', label: 'Total', align: 'text-right' },
+]
+
 function setSort(key) {
   if (sortKey.value === key) {
     sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
@@ -230,6 +242,13 @@ function metricValue(s, key) {
 // Canonical total-rank by uid — scores arrives ordered total desc from the
 // query, so position is the rank.
 const rankByUid = computed(() => Object.fromEntries(scores.value.map((s, i) => [s.id, i + 1])))
+
+// Podium medal scale for the rank cell — gold/silver/bronze for the top three,
+// neutral below. (Intentionally a touch brighter than PropLeaderboard's
+// rankColor, so kept local rather than shared.)
+function medalColor(rank) {
+  return { 1: 'text-amber-400', 2: 'text-zinc-300', 3: 'text-amber-700' }[rank] ?? 'text-zinc-400'
+}
 
 const sortedScores = computed(() => {
   const key = sortKey.value
@@ -349,10 +368,13 @@ function resolveTeamFlag(teamId) {
           >
             <div>#</div>
             <div>Player</div>
-            <button type="button" class="text-center uppercase tracking-[0.08em] transition-colors select-none" :class="sortKey === 'grp' ? 'text-white' : 'hover:text-zinc-200'" @click="setSort('grp')">GRP<span class="text-emerald-400">{{ sortIndicator('grp') }}</span></button>
-            <button type="button" class="text-center uppercase tracking-[0.08em] transition-colors select-none" :class="sortKey === 'ko' ? 'text-white' : 'hover:text-zinc-200'" @click="setSort('ko')">KO<span class="text-emerald-400">{{ sortIndicator('ko') }}</span></button>
-            <button type="button" class="text-center uppercase tracking-[0.08em] transition-colors select-none" :class="sortKey === 'prop' ? 'text-white' : 'hover:text-zinc-200'" @click="setSort('prop')">PROP<span class="text-emerald-400">{{ sortIndicator('prop') }}</span></button>
-            <button type="button" class="text-right uppercase tracking-[0.08em] transition-colors select-none" :class="sortKey === 'total' ? 'text-white' : 'hover:text-zinc-200'" @click="setSort('total')">Total<span class="text-emerald-400">{{ sortIndicator('total') }}</span></button>
+            <button
+              v-for="col in SORT_COLUMNS" :key="col.key"
+              type="button"
+              class="uppercase tracking-[0.08em] transition-colors select-none"
+              :class="[col.align, sortKey === col.key ? 'text-white' : 'hover:text-zinc-200']"
+              @click="setSort(col.key)"
+            >{{ col.label }}<span class="text-emerald-400">{{ sortIndicator(col.key) }}</span></button>
           </div>
 
           <!-- Score rows -->
@@ -367,10 +389,7 @@ function resolveTeamFlag(teamId) {
             @click="openUser(s)"
           >
             <!-- Rank — always the canonical total-rank, even when sorted by another column -->
-            <div
-              class="text-sm font-black"
-              :class="rankByUid[s.id] === 1 ? 'text-amber-400' : rankByUid[s.id] === 2 ? 'text-zinc-300' : rankByUid[s.id] === 3 ? 'text-amber-700' : 'text-zinc-400'"
-            >{{ rankByUid[s.id] }}</div>
+            <div class="text-sm font-black" :class="medalColor(rankByUid[s.id])">{{ rankByUid[s.id] }}</div>
 
             <!-- Name -->
             <div class="flex items-center gap-1.5 min-w-0">
