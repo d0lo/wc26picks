@@ -86,6 +86,7 @@ function advancingTeam(slotInfo) {
 function eliminatedTeam(slotInfo) {
   if (!props.picks) return slotInfo.loser
   const adv = advancingTeam(slotInfo)
+  if (!adv) return null // nothing advances yet → nothing's eliminated yet
   return slotInfo.teams?.find((t) => t && t !== adv) ?? null
 }
 
@@ -137,21 +138,24 @@ function pointsFor(slotInfo) {
 
 function rowClass(slotInfo, teamId) {
   const isWinner = slotInfo.winner && teamId === slotInfo.winner
-  const isPick = props.picks && pickFor(slotInfo.round, slotInfo.slot) === teamId
-  const isEliminated = teamId && eliminatedTeamIds.value.has(teamId)
-  // The champion (final round) is shown in amber/yellow for consistency with the
-  // picker, instead of the emerald used for every other correct knockout pick.
   const isFinal = slotInfo.round === 'final'
-  // Styling only ever marks up the team YOU picked to win a slot. The strike +
-  // red tracks live real results: your pick is crossed out once it's officially
-  // out (lost a real knockout match), in every later round you advanced it to —
-  // but not in a slot it actually won (it's eliminated from a *later* round, not
-  // this one). Teams you didn't pick stay plain regardless of the result.
-  if (isPick) {
-    if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
-    if (isEliminated) return 'text-red-400 font-bold line-through'
-    return 'text-white font-bold'
+  // Graded picks view: styling only ever marks up the team YOU picked to win a
+  // slot. The strike + red tracks live real results — your pick is crossed out
+  // once it's officially out (lost a real knockout match), in every later round
+  // you advanced it to, but not in a slot it actually won (it's eliminated from
+  // a *later* round, not this one). Teams you didn't pick stay plain.
+  if (props.picks) {
+    const isPick = pickFor(slotInfo.round, slotInfo.slot) === teamId
+    if (isPick) {
+      if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
+      if (teamId && eliminatedTeamIds.value.has(teamId)) return 'text-red-400 font-bold line-through'
+      return 'text-white font-bold'
+    }
+    return 'text-zinc-300'
   }
+  // Stadium view (no picks): real-results styling — dim the loser of a decided
+  // match, everything else plain. Unchanged from before the picks projection.
+  if (slotInfo.winner && teamId !== slotInfo.winner) return 'text-zinc-500 opacity-50'
   return 'text-zinc-300'
 }
 
