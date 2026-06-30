@@ -197,6 +197,54 @@ function propScore(s) {
   return s.breakdown?.props ?? 0
 }
 
+// ── Sortable columns ───────────────────────────────────────────────────
+// The board's canonical order is total desc; clicking a score-column header
+// re-sorts the rows by that column. The `#` cell always shows each player's
+// canonical total-rank (and its medal colour) regardless of sort, so sorting
+// by GRP/KO/PROP surfaces that column's leaders while still telling you each
+// one's overall standing. Em-dash cells (no pick of that kind) always sink to
+// the bottom, in either direction.
+const sortKey = ref('total') // 'total' | 'grp' | 'ko' | 'prop'
+const sortDir = ref('desc')  // 'desc' | 'asc'
+
+function setSort(key) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'desc'
+  }
+}
+
+function sortIndicator(key) {
+  if (sortKey.value !== key) return ''
+  return sortDir.value === 'desc' ? '▼' : '▲'
+}
+
+// Numeric value for the active sort metric, or null for an em-dash cell.
+function metricValue(s, key) {
+  const v = key === 'grp' ? grpScore(s) : key === 'ko' ? koScore(s) : key === 'prop' ? propScore(s) : (s.total ?? 0)
+  return v === '—' ? null : v
+}
+
+// Canonical total-rank by uid — scores arrives ordered total desc from the
+// query, so position is the rank.
+const rankByUid = computed(() => Object.fromEntries(scores.value.map((s, i) => [s.id, i + 1])))
+
+const sortedScores = computed(() => {
+  const key = sortKey.value
+  const dir = sortDir.value
+  return [...scores.value].sort((a, b) => {
+    const va = metricValue(a, key)
+    const vb = metricValue(b, key)
+    if (va === null && vb === null) return (b.total ?? 0) - (a.total ?? 0)
+    if (va === null) return 1   // no-pick rows always last
+    if (vb === null) return -1
+    if (va !== vb) return dir === 'desc' ? vb - va : va - vb
+    return (b.total ?? 0) - (a.total ?? 0) // stable tie-break by total
+  })
+})
+
 function fmtDate(ts) {
   if (!ts?.toDate) return ''
   return ts.toDate().toLocaleString('en-US', {
@@ -294,22 +342,22 @@ function resolveTeamFlag(teamId) {
 
         <!-- Scores table -->
         <div v-else class="bg-court-800 border border-court-700 rounded-2xl overflow-hidden">
-          <!-- Table header -->
+          <!-- Table header — score columns sort the rows on tap -->
           <div
             class="grid text-[10px] font-black tracking-[0.08em] text-zinc-400 uppercase border-b border-court-700 px-3 py-2.5"
             style="grid-template-columns: 1.5rem 1fr 2.5rem 2.5rem 2.5rem 3.25rem"
           >
             <div>#</div>
             <div>Player</div>
-            <div class="text-center">GRP</div>
-            <div class="text-center">KO</div>
-            <div class="text-center">PROP</div>
-            <div class="text-right">Total</div>
+            <button type="button" class="text-center uppercase tracking-[0.08em] transition-colors select-none" :class="sortKey === 'grp' ? 'text-white' : 'hover:text-zinc-200'" @click="setSort('grp')">GRP<span class="text-emerald-400">{{ sortIndicator('grp') }}</span></button>
+            <button type="button" class="text-center uppercase tracking-[0.08em] transition-colors select-none" :class="sortKey === 'ko' ? 'text-white' : 'hover:text-zinc-200'" @click="setSort('ko')">KO<span class="text-emerald-400">{{ sortIndicator('ko') }}</span></button>
+            <button type="button" class="text-center uppercase tracking-[0.08em] transition-colors select-none" :class="sortKey === 'prop' ? 'text-white' : 'hover:text-zinc-200'" @click="setSort('prop')">PROP<span class="text-emerald-400">{{ sortIndicator('prop') }}</span></button>
+            <button type="button" class="text-right uppercase tracking-[0.08em] transition-colors select-none" :class="sortKey === 'total' ? 'text-white' : 'hover:text-zinc-200'" @click="setSort('total')">Total<span class="text-emerald-400">{{ sortIndicator('total') }}</span></button>
           </div>
 
           <!-- Score rows -->
           <div
-            v-for="(s, i) in scores"
+            v-for="s in sortedScores"
             :key="s.id"
             class="grid items-center px-3 py-3 border-b border-court-700/40 last:border-0 transition-colors cursor-pointer"
             :class="[
@@ -318,11 +366,11 @@ function resolveTeamFlag(teamId) {
             style="grid-template-columns: 1.5rem 1fr 2.5rem 2.5rem 2.5rem 3.25rem"
             @click="openUser(s)"
           >
-            <!-- Rank -->
+            <!-- Rank — always the canonical total-rank, even when sorted by another column -->
             <div
               class="text-sm font-black"
-              :class="i === 0 ? 'text-amber-400' : i === 1 ? 'text-zinc-300' : i === 2 ? 'text-amber-700' : 'text-zinc-400'"
-            >{{ i + 1 }}</div>
+              :class="rankByUid[s.id] === 1 ? 'text-amber-400' : rankByUid[s.id] === 2 ? 'text-zinc-300' : rankByUid[s.id] === 3 ? 'text-amber-700' : 'text-zinc-400'"
+            >{{ rankByUid[s.id] }}</div>
 
             <!-- Name -->
             <div class="flex items-center gap-1.5 min-w-0">
@@ -345,7 +393,7 @@ function resolveTeamFlag(teamId) {
             <div class="text-right">
               <div
                 class="text-sm font-black"
-                :class="i === 0 ? 'text-amber-400' : 'text-white'"
+                :class="rankByUid[s.id] === 1 ? 'text-amber-400' : 'text-white'"
               >{{ s.total }}</div>
               <div v-if="potentialByUid[s.id] != null" class="text-[9px] font-mono text-amber-400/50 leading-tight">max {{ potentialByUid[s.id] }}</div>
             </div>
