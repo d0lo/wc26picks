@@ -21,6 +21,45 @@ export function moreProgressed(a, b) {
 // dropped it from the scoreboard) — so it can't wake the poller forever.
 export const WAKE_WINDOW_MS = 12 * 60 * 60 * 1000
 
+// Tournament calendar (UTC). The scheduled functions read the ESPN scoreboard
+// every minute all year round; outside this window there is nothing to poll, so
+// gating on it takes the app's steady-state cost to $0/day in the off-season
+// instead of ~2,880 idle Firestore reads/day forever. GROUP_STAGE_END gates the
+// group-only scoring triggers: once the group stage is decided, group standings
+// (and the wildcard ranking derived from them) are frozen, so those triggers
+// can short-circuit before their full-collection reads for the rest of the
+// tournament.
+export const TOURNAMENT_START = '2026-06-11' // opening match
+export const TOURNAMENT_END = '2026-07-19'   // final
+export const GROUP_STAGE_END = '2026-06-27'  // last group-stage matchday
+
+// Grace past a window's final UTC day: a match can kick off late and run into
+// extra time / penalties past midnight UTC before its result is processed. One
+// full day is comfortably longer than any single match, so no late finish is
+// ever gated out before it's scored.
+const GRACE_MS = 24 * 60 * 60 * 1000
+const DAY_MS = 24 * 60 * 60 * 1000
+
+// Exclusive end-of-day: midnight UTC starting the day *after* isoDate, so the
+// whole of isoDate is inside the window.
+function endOfDayMs(isoDate) {
+  return new Date(`${isoDate}T00:00:00Z`).getTime() + DAY_MS
+}
+
+// True while the tournament is live (plus the post-final grace). The scheduled
+// functions do zero work — not even their liveData reads — when this is false.
+export function isWithinTournament(now, startISO = TOURNAMENT_START, endISO = TOURNAMENT_END) {
+  const start = new Date(`${startISO}T00:00:00Z`).getTime()
+  return now >= start && now <= endOfDayMs(endISO) + GRACE_MS
+}
+
+// True once the group stage (and its grace) is behind us. Group standings are
+// frozen from here on, so any group/wildcard rescore would be a no-op — the
+// group-stage triggers short-circuit before reading picks/groups/config.
+export function isGroupStageOver(now, endISO = GROUP_STAGE_END) {
+  return now > endOfDayMs(endISO) + GRACE_MS
+}
+
 // Today's kickoff ledger: every schedule fixture dated today (seeded with the
 // schedule's own state), merged with any state we've already recorded today
 // (post/in is sticky), so finished games stay finished and later kickoffs are
