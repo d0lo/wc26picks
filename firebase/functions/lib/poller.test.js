@@ -1,6 +1,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { moreProgressed, todaysKickoffs, shouldFetch, mergeFetchedKickoffs, WAKE_WINDOW_MS } from './poller.js'
+import {
+  moreProgressed,
+  todaysKickoffs,
+  shouldFetch,
+  mergeFetchedKickoffs,
+  WAKE_WINDOW_MS,
+  isWithinTournament,
+  isGroupStageOver,
+  TOURNAMENT_START,
+  TOURNAMENT_END,
+  GROUP_STAGE_END,
+} from './poller.js'
 
 test('moreProgressed never regresses a known state', () => {
   assert.equal(moreProgressed('pre', 'in'), 'in')
@@ -62,4 +73,25 @@ test('mergeFetchedKickoffs keeps a tracked game ESPN dropped, advancing state on
 test('shouldFetch always wakes on a new day and while polling', () => {
   assert.equal(shouldFetch({ scheduleDate: '20260627' }, '20260628', Date.now(), []), true)
   assert.equal(shouldFetch({ state: 'polling', scheduleDate: '20260628' }, '20260628', Date.now(), []), true)
+})
+
+test('isWithinTournament brackets the calendar with a post-final grace day', () => {
+  // Before the opener and long after the final: off-season, no polling.
+  assert.equal(isWithinTournament(Date.parse('2026-06-10T23:59:00Z')), false)
+  assert.equal(isWithinTournament(Date.parse('2026-08-01T00:00:00Z')), false)
+  // Opening day, an in-tournament day, and the final's evening: live.
+  assert.equal(isWithinTournament(Date.parse(`${TOURNAMENT_START}T00:00:00Z`)), true)
+  assert.equal(isWithinTournament(Date.parse('2026-06-29T18:00:00Z')), true)
+  assert.equal(isWithinTournament(Date.parse(`${TOURNAMENT_END}T22:00:00Z`)), true)
+  // A final that runs to penalties past midnight UTC is still inside the grace.
+  assert.equal(isWithinTournament(Date.parse('2026-07-20T01:00:00Z')), true)
+})
+
+test('isGroupStageOver flips only after the group stage plus grace', () => {
+  // The last group matchday and its late-finishing evening: still group stage.
+  assert.equal(isGroupStageOver(Date.parse(`${GROUP_STAGE_END}T22:00:00Z`)), false)
+  assert.equal(isGroupStageOver(Date.parse('2026-06-28T06:00:00Z')), false) // within grace
+  // Knockout days (e.g. the June 29 R32 spike): group triggers gate out.
+  assert.equal(isGroupStageOver(Date.parse('2026-06-29T18:00:00Z')), true)
+  assert.equal(isGroupStageOver(Date.parse('2026-07-19T00:00:00Z')), true)
 })
