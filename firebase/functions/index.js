@@ -17,7 +17,16 @@ import {
 import { ROUNDS } from './lib/bracket.js'
 import { isGroupComplete } from './lib/tournament.js'
 import { applyBreakdownPatch } from './lib/firestoreScoring.js'
-import { utcDateString, todaysKickoffs, shouldFetch, mergeFetchedKickoffs } from './lib/poller.js'
+import {
+  utcDateString,
+  todaysKickoffs,
+  shouldFetch,
+  mergeFetchedKickoffs,
+  isWithinTournament,
+  isGroupStageOver,
+  TOURNAMENT_START,
+  TOURNAMENT_END,
+} from './lib/poller.js'
 
 initializeApp()
 const db = getFirestore()
@@ -30,12 +39,30 @@ const db = getFirestore()
 // poller wakes for every scheduled game, including ones that kick off after an
 // earlier batch has already finished (e.g. R32 right after the group finale).
 export const espnPoller = onSchedule({ schedule: '* * * * *', timeZone: 'UTC' }, async () => {
-  const scoreboardRef = db.doc('liveData/scoreboard')
-  const today = utcDateString(new Date())
   const now = Date.now()
+  // Off-season short-circuit: before any Firestore read. Outside the tournament
+  // window there are no matches to poll, so every tick returns here for $0/day.
+  if (!isWithinTournament(now)) return
+
+  const scoreboardRef = db.doc('liveData/scoreboard')
+  const today = utcDateString(new Date(now))
   const data = (await scoreboardRef.get()).data()
-  const schedule = (await db.doc('liveData/schedule').get()).data()
-  const kickoffs = todaysKickoffs(schedule?.events, data, today)
+
+  // The scoreboard doc already caches today's kickoff ledger once the first tick
+  // of the day has seeded it from liveData/schedule (the end-of-tick write sets
+  // scheduleDate + kickoffs together, and the first tick of any new day always
+  // fetches). So only re-read the schedule doc when the cache is for a prior
+  // day — halving this every-minute function's steady-state reads (2→1) on all
+  // but the first tick of each day. A same-day schedule change is picked up on
+  // the next day's reseed or when the match appears in a live fetch (the same
+  // mergeFetchedKickoffs backstop that already self-heals a missing fixture).
+  let kickoffs
+  if (data?.scheduleDate === today) {
+    kickoffs = data.kickoffs ?? []
+  } else {
+    const schedule = (await db.doc('liveData/schedule').get()).data()
+    kickoffs = todaysKickoffs(schedule?.events, data, today)
+  }
 
   if (!shouldFetch(data, today, now, kickoffs)) return
 
@@ -68,9 +95,6 @@ export const espnPoller = onSchedule({ schedule: '* * * * *', timeZone: 'UTC' },
 // and completed-match detail stay where they already live (liveData/scoreboard
 // for today's in-progress games, matches/{eventId} for finished ones); this
 // function never re-fetches a game's detail and does no per-match polling.
-const SCHEDULE_START = '2026-06-11'   // tournament opening match
-const SCHEDULE_END = '2026-07-19'     // final
-
 function* scheduleDates(startISO, endISO) {
   const day = new Date(`${startISO}T00:00:00Z`)
   const end = new Date(`${endISO}T00:00:00Z`)
@@ -81,8 +105,12 @@ function* scheduleDates(startISO, endISO) {
 }
 
 export const scheduleSync = onSchedule({ schedule: '0 7 * * *', timeZone: 'UTC' }, async () => {
+  // Off-season short-circuit: the fixture list is static once the tournament is
+  // over, so stop the daily ~39-day ESPN walk (and its write) outside the window.
+  if (!isWithinTournament(Date.now())) return
+
   const byId = new Map()
-  for (const ymd of scheduleDates(SCHEDULE_START, SCHEDULE_END)) {
+  for (const ymd of scheduleDates(TOURNAMENT_START, TOURNAMENT_END)) {
     let raw
     try {
       raw = await fetchScoreboardForDate(ymd)
@@ -183,6 +211,13 @@ export const onMatchComplete = onDocumentWritten('matches/{eventId}', async (eve
   const letter = after.groupLetter
   if (!letter) return
 
+  // Belt-and-braces: no group match completes after the group stage is over, so
+  // this normally wouldn't fire post-group-stage anyway — but a late re-write of
+  // an old group match doc shouldn't pay for a full picks/groups/config read to
+  // recompute a frozen score. (Deliberate point-value retunes still rescore
+  // frozen groups via onScoringConfigWrite, which is intentionally not gated.)
+  if (isGroupStageOver(Date.now())) return
+
   const [groupsSnap, picksSnap, configSnap] = await Promise.all([db.collection('groups').get(), db.collection('picks').get(), db.doc('config/public').get()])
 
   const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
@@ -249,6 +284,12 @@ export const onKnockoutMatchComplete = onDocumentWritten('matches/{eventId}', as
 // (breakdown.wildcards), one writer (this trigger), recomputed fresh from
 // the latest groups data on every call rather than from a stale snapshot.
 export const onGroupsWrite = onDocumentWritten('groups/{letter}', async () => {
+  // The advancing-thirds ranking is finalized when the group stage ends and is
+  // frozen thereafter; no groups/{letter} write occurs during the knockout
+  // stage, so this normally won't fire then, but gate before the reads anyway.
+  // (A point-value retune still rescores wildcards via onScoringConfigWrite.)
+  if (isGroupStageOver(Date.now())) return
+
   const wildcardsRef = db.doc('liveData/wildcards')
   const [groupsSnap, previousSnap] = await Promise.all([db.collection('groups').get(), wildcardsRef.get()])
 
