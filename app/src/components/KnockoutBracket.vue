@@ -151,6 +151,12 @@ function rowClass(slotInfo, teamId) {
       if (teamId && eliminatedTeamIds.value.has(teamId)) return 'text-red-400 font-bold line-through'
       return 'text-white font-bold'
     }
+    // Non-pick opponent (the team YOUR pick was projected to face here). Still
+    // strike it out once it's really out of the tournament, so an eliminated
+    // team you advanced as an opponent — e.g. Senegal reaching the QF vs your
+    // Spain pick — reads as gone, not still alive. Neutral zinc, not the red
+    // bold used for your own eliminated pick: no points of yours ride on it.
+    if (teamId && eliminatedTeamIds.value.has(teamId)) return 'text-zinc-500 line-through'
     return 'text-zinc-300'
   }
   // Stadium view (no picks): real-results styling — dim the loser of a decided
