@@ -101,6 +101,46 @@ export function scorePick(pick, groupsByLetter, advancing, scoring) {
   return { groups, wildcards }
 }
 
+// Whether a liveData/propResults entry is decided enough to score/style
+// against. An entry with any unmatched leader names is NOT resolved even if
+// other leaders matched: the unmatched name may be a tied co-leader, and
+// scoring the matched ones would mark that co-leader's pickers wrong on a
+// known-incomplete result — everyone stays pending until the admin grades
+// it. Shared rule between scorePropPicks and the client's propStatus
+// (PicksSummary.vue), which must never disagree.
+export function isPropEntryResolved(entry) {
+  if (!entry) return false
+  if (entry.unmatched?.length) return false
+  return !!entry.noWinner || (entry.winners?.length ?? 0) > 0
+}
+
+// Whether one prop answer is correct against a RESOLVED results entry.
+// A null pick is the deliberate "No Team" answer and can only win on props
+// that actually offer it (allowNone) — legacy pick docs can carry null for
+// props saved as unanswered, and a manual noWinner grade on a non-allowNone
+// prop must not gift those users the points.
+export function isPropPickCorrect(picked, entry, prop) {
+  if (entry.noWinner) return picked === null && !!prop.allowNone
+  return picked != null && entry.winners.includes(picked)
+}
+
+// Total prop points for one pick against the resolved prop winners
+// (liveData/propResults.results, see lib/props.js computePropResults).
+// pickProps: picks/{uid}.props — { [propId]: playerUUID | teamUUID | null },
+// where an absent id means the prop was never answered (added after
+// submission). catalog: config/public.scoring.props.
+export function scorePropPicks(pickProps, catalog, results) {
+  let total = 0
+  for (const prop of catalog ?? []) {
+    if (prop.archived) continue
+    const entry = results?.[prop.id]
+    if (!isPropEntryResolved(entry)) continue
+    if (!pickProps || !(prop.id in pickProps)) continue
+    if (isPropPickCorrect(pickProps[prop.id], entry, prop)) total += Number(prop.points ?? 0)
+  }
+  return total
+}
+
 // Decides the winner of a finished knockout match. ESPN's `winner` flag is
 // the authoritative signal (it accounts for penalty shootouts, where the
 // score alone ends level) — score comparison is only a fallback for the
