@@ -3,11 +3,14 @@ import { computed, reactive, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { doc, updateDoc, Timestamp } from 'firebase/firestore'
+import { doc, updateDoc, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { configQueryOptions, queryKeys } from '../queries.js'
-import { PROP_CATEGORIES } from '../data.js'
+import { configQueryOptions, propResultsQueryOptions, propOverridesQueryOptions, queryKeys } from '../queries.js'
+import { PROP_CATEGORIES, TEAM_BY_ID, TEAM_FLAG } from '../data.js'
+import { ROSTERS } from '../rosters.js'
 import { ROUNDS, ROUND_LABELS, ROUND_POINTS } from '../bracket.js'
+import PlayerSelect from '../components/PlayerSelect.vue'
+import CountrySelect from '../components/CountrySelect.vue'
 
 const router = useRouter()
 const queryClient = useQueryClient()
@@ -27,9 +30,14 @@ const lockTimeInput = reactive({ value: '' })
 const knockoutLockInput = reactive({ value: '' })
 const scoringForm = reactive({ groupExact: { 1: 0, 2: 0, 3: 0, 4: 0 }, perfectGroupBonus: 0, wildcard: 0, knockout: { r32: 0, r16: 0, qf: 0, sf: 0, final: 0 } })
 const propsForm = reactive({ items: [] })
+// Manual prop-winner overrides — mirrors config/propResults.overrides:
+// { [propId]: { winners: [entityIds], noWinner?: true } }. The prop engine
+// merges these over its auto-computed winners (manual always wins), so
+// deleting an entry here reverts that prop to auto grading.
+const winnersForm = reactive({ overrides: {} })
 
-const saveStatus = reactive({ lock: '', knockoutLock: '', scoring: '', props: '' })
-const saveError = reactive({ lock: '', knockoutLock: '', scoring: '', props: '' })
+const saveStatus = reactive({ lock: '', knockoutLock: '', scoring: '', props: '', winners: '' })
+const saveError = reactive({ lock: '', knockoutLock: '', scoring: '', props: '', winners: '' })
 
 // Snapshots of each section's last-saved state, used both to detect "dirty"
 // (unsaved changes) and to revert on Cancel. Replaced whenever config data
@@ -38,7 +46,11 @@ function snapshotLock() { return lockTimeInput.value }
 function snapshotKnockoutLock() { return knockoutLockInput.value }
 function snapshotScoring() { return JSON.stringify(scoringForm) }
 function snapshotProps() { return JSON.stringify(propsForm.items) }
-const savedSnapshot = reactive({ lock: '', knockoutLock: '', scoring: '', props: '' })
+// Key-sorted so a Firestore round-trip reordering the map doesn't read as dirty.
+function snapshotWinners() {
+  return JSON.stringify(Object.fromEntries(Object.entries(winnersForm.overrides).sort(([a], [b]) => a.localeCompare(b))))
+}
+const savedSnapshot = reactive({ lock: '', knockoutLock: '', scoring: '', props: '', winners: '' })
 
 const activeProps = computed(() => propsForm.items.filter(p => !p.archived))
 const archivedProps = computed(() => propsForm.items.filter(p => p.archived))
@@ -86,11 +98,31 @@ function loadFromConfig(data) {
 
 watch(() => configQuery.data.value, loadFromConfig, { immediate: true })
 
+// ── Prop winners (manual grading) ──────────────────────────────────────
+// liveData/propResults is the engine's merged output (auto + manual) — shown
+// read-only as "what's currently graded". config/propResults.overrides is
+// the editable manual input this section saves.
+const propResultsQuery = useQuery(propResultsQueryOptions())
+const overridesQuery = useQuery(propOverridesQueryOptions())
+
+const PLAYER_BY_ID = {}
+for (const [teamName, players] of Object.entries(ROSTERS)) {
+  for (const p of players) PLAYER_BY_ID[p.id] = { ...p, team: teamName }
+}
+
+function loadFromOverrides(data) {
+  winnersForm.overrides = JSON.parse(JSON.stringify(data?.overrides ?? {}))
+  savedSnapshot.winners = snapshotWinners()
+}
+
+watch(() => overridesQuery.data.value, loadFromOverrides, { immediate: true })
+
 const lockDirty = computed(() => snapshotLock() !== savedSnapshot.lock)
 const knockoutLockDirty = computed(() => snapshotKnockoutLock() !== savedSnapshot.knockoutLock)
 const scoringDirty = computed(() => snapshotScoring() !== savedSnapshot.scoring)
 const propsDirty = computed(() => snapshotProps() !== savedSnapshot.props)
-const anyDirty = computed(() => lockDirty.value || knockoutLockDirty.value || scoringDirty.value || propsDirty.value)
+const winnersDirty = computed(() => snapshotWinners() !== savedSnapshot.winners)
+const anyDirty = computed(() => lockDirty.value || knockoutLockDirty.value || scoringDirty.value || propsDirty.value || winnersDirty.value)
 
 // Custom confirm dialog (replaces window.confirm so it matches app styling).
 // confirmDiscard() resolves true/false once the user picks a button.
@@ -143,6 +175,15 @@ async function cancelProps() {
   rebuildCategoryLists()
   saveStatus.props = ''
   saveError.props = ''
+}
+
+async function cancelWinners() {
+  if (!winnersDirty.value) return
+  if (!(await confirmDiscard())) return
+  closeWinnerDialog()
+  loadFromOverrides(overridesQuery.data.value)
+  saveStatus.winners = ''
+  saveError.winners = ''
 }
 
 // Warn before leaving the page entirely (route change) with unsaved changes
@@ -235,6 +276,110 @@ function archiveDraft() {
   }
   draft.archived = true
   commitDialog()
+}
+
+// --- Prop-winner grading dialog: same draft-copy pattern as the prop
+// editor above — edits land in winnersForm.overrides only on OK.
+const winnerDialogPropId = ref(null)
+const winnerDraft = reactive({ winners: [], noWinner: false })
+const winnerPickerValue = ref('')
+
+const winnerDialogProp = computed(() => propsForm.items.find(p => p.id === winnerDialogPropId.value) ?? null)
+
+function openWinnerDialog(prop) {
+  const existing = winnersForm.overrides[prop.id]
+  winnerDraft.winners = [...(existing?.winners ?? [])]
+  winnerDraft.noWinner = !!existing?.noWinner
+  winnerPickerValue.value = ''
+  winnerDialogPropId.value = prop.id
+}
+
+function closeWinnerDialog() {
+  winnerDialogPropId.value = null
+}
+
+// The picker (PlayerSelect/CountrySelect) is add-only here: each selection is
+// appended to the draft winner list and the picker resets, so ties/multiple
+// winners (e.g. two hat-trick scorers) can all be entered.
+watch(winnerPickerValue, (id) => {
+  if (!id) return
+  if (!winnerDraft.winners.includes(id)) winnerDraft.winners.push(id)
+  winnerDraft.noWinner = false
+  winnerPickerValue.value = ''
+})
+
+function removeDraftWinner(id) {
+  winnerDraft.winners = winnerDraft.winners.filter(w => w !== id)
+}
+
+function commitWinnerDialog() {
+  const id = winnerDialogPropId.value
+  if (winnerDraft.noWinner) {
+    winnersForm.overrides[id] = { winners: [], noWinner: true }
+  } else if (winnerDraft.winners.length) {
+    winnersForm.overrides[id] = { winners: [...winnerDraft.winners] }
+  } else {
+    // No winners and not explicitly "no winner" — clear the override so the
+    // prop reverts to auto grading.
+    delete winnersForm.overrides[id]
+  }
+  closeWinnerDialog()
+}
+
+// Display helpers for the section rows + dialog. The engine's merged output
+// (liveData/propResults) is the graded truth; an unsaved draft override is
+// previewed in its place so the admin sees what Save will produce.
+function engineEntry(propId) {
+  return propResultsQuery.data.value?.results?.[propId] ?? null
+}
+
+function effectiveEntry(propId) {
+  const override = winnersForm.overrides[propId]
+  if (override && (override.noWinner || override.winners?.length)) return { ...override, source: 'manual' }
+  return engineEntry(propId)
+}
+
+function winnerMode(prop) {
+  const entry = effectiveEntry(prop.id)
+  if (!entry) return 'ungraded'
+  if (entry.source === 'manual') return 'manual'
+  return entry.noWinner || entry.winners?.length ? 'auto' : 'ungraded'
+}
+
+// { flag, name } for a winner entity id, resolved per the prop's pick type.
+function entityView(prop, id) {
+  if (prop.type === 'player') {
+    const p = PLAYER_BY_ID[id]
+    return { flag: TEAM_FLAG[p?.team] ?? '⚽', name: p?.name ?? '—' }
+  }
+  return { flag: TEAM_BY_ID[id]?.flag ?? '🏳️', name: TEAM_BY_ID[id]?.name ?? '—' }
+}
+
+function winnerSummary(prop) {
+  const entry = effectiveEntry(prop.id)
+  if (!entry) return []
+  if (entry.noWinner) return [{ flag: '🚫', name: 'No Team' }]
+  return (entry.winners ?? []).map((id) => entityView(prop, id))
+}
+
+async function saveWinners() {
+  saveStatus.winners = 'saving'
+  saveError.winners = ''
+  try {
+    // Full overwrite (not merge) so cleared overrides actually disappear;
+    // the prop engine listens to this doc and re-grades on every save.
+    await setDoc(doc(db, 'config', 'propResults'), { overrides: JSON.parse(JSON.stringify(winnersForm.overrides)) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.propOverrides })
+    // The engine recomputes liveData/propResults asynchronously — refetch it
+    // shortly so the section reflects the newly-graded winners without a
+    // manual reload. (Harmless if the engine was a no-op.)
+    setTimeout(() => queryClient.invalidateQueries({ queryKey: queryKeys.propResults }), 4000)
+    savedSnapshot.winners = snapshotWinners()
+    saveStatus.winners = 'saved'
+  } catch (e) {
+    saveStatus.winners = 'error'
+    saveError.winners = e?.message ?? 'Unknown error'
+  }
 }
 
 function invalidateConfig() {
@@ -573,6 +718,63 @@ async function saveProps() {
         <p v-if="saveStatus.props === 'saved'" class="text-[11px] text-emerald-400 mt-2">Saved</p>
         <p v-if="saveStatus.props === 'error'" class="text-[11px] text-red-400 mt-2">Failed to save{{ saveError.props ? `: ${saveError.props}` : '' }}</p>
       </section>
+
+      <!-- Prop winners (manual grading) -->
+      <section class="bg-court-800 border border-court-700 rounded-2xl p-4">
+        <h2 class="text-xs font-black tracking-[0.15em] text-white uppercase mb-1">Prop Winners</h2>
+        <p class="text-[11px] text-zinc-500 mb-3">
+          Auto-graded props re-resolve themselves after every match. Tap a prop to enter winners by hand —
+          a manual entry always overrides the auto result, and is the only way to grade props that can't be
+          computed from match data.
+        </p>
+
+        <div class="space-y-1.5">
+          <div
+            v-for="prop in activeProps" :key="prop.id"
+            @click="openWinnerDialog(prop)"
+            class="px-3 py-2 rounded-xl select-none cursor-pointer border bg-court-750 border-transparent hover:border-court-600"
+          >
+            <div class="flex items-center gap-2">
+              <span class="flex-1 text-xs font-medium text-white truncate">{{ prop.label }}</span>
+              <span
+                class="text-[9px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5 shrink-0"
+                :class="winnerMode(prop) === 'manual' ? 'text-amber-400 bg-amber-400/10' : winnerMode(prop) === 'auto' ? 'text-emerald-400 bg-emerald-400/10' : 'text-zinc-500 bg-court-900'"
+              >{{ winnerMode(prop) === 'manual' ? 'Manual' : winnerMode(prop) === 'auto' ? 'Auto' : 'Ungraded' }}</span>
+            </div>
+            <div v-if="winnerSummary(prop).length" class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+              <span v-for="(w, i) in winnerSummary(prop)" :key="i" class="flex items-center gap-1 text-[11px] text-zinc-300">
+                <span class="text-sm leading-none">{{ w.flag }}</span>
+                <span class="truncate">{{ w.name }}</span>
+              </span>
+            </div>
+            <p v-else class="text-[11px] text-zinc-600 italic mt-1">No winner yet</p>
+            <p v-if="winnerMode(prop) !== 'manual' && engineEntry(prop.id)?.unmatched?.length" class="text-[10px] text-amber-400/90 mt-1">
+              ⚠ Couldn't match to a roster player: {{ engineEntry(prop.id).unmatched.join(', ') }} — grade manually
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 mt-4">
+          <button
+            type="button"
+            @click="saveWinners"
+            :disabled="!winnersDirty"
+            class="px-4 py-2 rounded-lg bg-emerald-500 text-court-950 text-xs font-bold uppercase tracking-wider hover:bg-emerald-400 transition-colors disabled:opacity-40"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            @click="cancelWinners"
+            :disabled="!winnersDirty"
+            class="px-4 py-2 rounded-lg bg-court-700 text-zinc-300 text-xs font-bold uppercase tracking-wider hover:bg-court-600 transition-colors disabled:opacity-40"
+          >
+            Cancel
+          </button>
+        </div>
+        <p v-if="saveStatus.winners === 'saved'" class="text-[11px] text-emerald-400 mt-2">Saved — picks re-grade automatically in a few seconds</p>
+        <p v-if="saveStatus.winners === 'error'" class="text-[11px] text-red-400 mt-2">Failed to save{{ saveError.winners ? `: ${saveError.winners}` : '' }}</p>
+      </section>
     </div>
 
     <!-- Prop editor dialog -->
@@ -651,6 +853,90 @@ async function saveProps() {
           <button
             type="button"
             @click="closeDialog"
+            class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-court-700 hover:bg-court-600 text-white transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Prop-winner grading dialog -->
+    <div v-if="winnerDialogPropId && winnerDialogProp" class="fixed inset-0 z-[200] flex items-center justify-center p-4" @mousedown.self="closeWinnerDialog">
+      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+      <div class="relative w-full max-w-sm mx-auto bg-court-800 border border-court-700 rounded-2xl shadow-2xl shadow-black/60">
+        <div class="px-5 py-4 border-b border-court-700">
+          <h2 class="text-xs font-black tracking-[0.15em] text-white uppercase">Grade Prop</h2>
+          <p class="text-[11px] text-zinc-400 mt-0.5">{{ winnerDialogProp.label }}</p>
+        </div>
+
+        <div class="p-4 space-y-3">
+          <!-- What the engine currently resolves on its own -->
+          <div v-if="engineEntry(winnerDialogPropId)?.source === 'auto'" class="bg-court-900/60 border border-court-700/60 rounded-xl px-3 py-2">
+            <div class="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">Auto result</div>
+            <div v-if="engineEntry(winnerDialogPropId).noWinner" class="text-[11px] text-zinc-300">🚫 No Team</div>
+            <div v-else-if="engineEntry(winnerDialogPropId).winners?.length" class="flex flex-wrap gap-x-3 gap-y-0.5">
+              <span v-for="id in engineEntry(winnerDialogPropId).winners" :key="id" class="flex items-center gap-1 text-[11px] text-zinc-300">
+                <span class="text-sm leading-none">{{ entityView(winnerDialogProp, id).flag }}</span>
+                <span>{{ entityView(winnerDialogProp, id).name }}</span>
+              </span>
+            </div>
+            <p v-if="engineEntry(winnerDialogPropId).unmatched?.length" class="text-[10px] text-amber-400/90 mt-1">
+              ⚠ Unmatched: {{ engineEntry(winnerDialogPropId).unmatched.join(', ') }}
+            </p>
+            <p class="text-[10px] text-zinc-500 mt-1">Manual winners below override this.</p>
+          </div>
+
+          <!-- Manual winners -->
+          <div>
+            <span class="block text-[10px] text-zinc-500 mb-1">Manual winners{{ winnerDialogProp.type === 'player' ? ' (players)' : ' (teams)' }} — every listed entry counts as correct</span>
+            <div v-if="winnerDraft.winners.length" class="space-y-1.5 mb-2">
+              <div
+                v-for="id in winnerDraft.winners" :key="id"
+                class="flex items-center gap-2 bg-emerald-500/10 border border-emerald-400/25 rounded-xl px-3 py-2"
+              >
+                <span class="text-base leading-none shrink-0">{{ entityView(winnerDialogProp, id).flag }}</span>
+                <span class="flex-1 text-xs font-medium text-white truncate">{{ entityView(winnerDialogProp, id).name }}</span>
+                <button
+                  type="button"
+                  @click="removeDraftWinner(id)"
+                  aria-label="Remove winner"
+                  class="text-zinc-400 hover:text-red-400 transition-colors shrink-0"
+                >✕</button>
+              </div>
+            </div>
+            <PlayerSelect
+              v-if="winnerDialogProp.type === 'player'"
+              v-model="winnerPickerValue"
+              :position-filter="winnerDialogProp.positionFilter || null"
+              :max-age="winnerDialogProp.maxAge ?? null"
+            />
+            <CountrySelect v-else v-model="winnerPickerValue" placeholder="Add winning team…" />
+          </div>
+
+          <label class="flex items-center gap-2">
+            <input
+              v-model="winnerDraft.noWinner"
+              type="checkbox"
+              class="rounded border-court-700 bg-court-900"
+              @change="winnerDraft.noWinner && (winnerDraft.winners = [])"
+            />
+            <span class="text-[11px] text-zinc-400">No winner — {{ winnerDialogProp.allowNone ? 'a "No Team" pick is correct' : 'every pick is incorrect' }}</span>
+          </label>
+          <p class="text-[10px] text-zinc-500">Leaving this empty (no winners, box unchecked) reverts the prop to auto grading.</p>
+        </div>
+
+        <div class="flex items-center gap-2 px-4 pb-4">
+          <button
+            type="button"
+            @click="commitWinnerDialog"
+            class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white transition-colors"
+          >
+            OK
+          </button>
+          <button
+            type="button"
+            @click="closeWinnerDialog"
             class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-court-700 hover:bg-court-600 text-white transition-colors"
           >
             Cancel
