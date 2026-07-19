@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/vue-query'
 import { GROUPS, TEAM_FLAG, TEAM_BY_ID, FIFA_RANKING } from '../data.js'
 import { ROSTERS } from '../rosters.js'
 import { useScoring } from '../composables/useScoring.js'
-import { groupsQueryOptions, wildcardsQueryOptions, scoreQueryOptions, matchesQueryOptions, scoreboardQueryOptions } from '../queries.js'
+import { groupsQueryOptions, wildcardsQueryOptions, scoreQueryOptions, matchesQueryOptions, scoreboardQueryOptions, propResultsQueryOptions } from '../queries.js'
 import { isGroupStageComplete } from '../lib/tournament.js'
 import PropPointsBadge from './PropPointsBadge.vue'
 import KnockoutBracket from './KnockoutBracket.vue'
@@ -122,6 +122,52 @@ const wildcardPointsPossible = computed(() => {
 
 const wildcardPointsEarned = computed(() => scoreQuery.data.value?.breakdown?.wildcards ?? null)
 
+// Resolved prop winners from the backend prop engine — the same document
+// that drives breakdown.props, so ✓/✗ here always agrees with the points
+// actually credited. null until the engine has run once.
+const propResultsQuery = useQuery(propResultsQueryOptions())
+const propResults = computed(() => propResultsQuery.data.value?.results ?? null)
+
+// 'none' — the user never answered this prop (added after they submitted).
+// 'pending' — no winners resolved yet (or auto-resolution couldn't match the
+// leaders to roster ids), so correctness is unknowable; neutral styling.
+// 'correct'/'incorrect' — pick is/isn't among the resolved winners; a null
+// pick ("No Team") is correct exactly when the prop resolved to no winner.
+// Mirrors scorePropPicks in firebase/functions/lib/scoring.js.
+function propStatus(prop) {
+  const picks = componentProps.props
+  if (!picks || !(prop.id in picks) || picks[prop.id] === undefined) return 'none'
+  const entry = propResults.value?.[prop.id]
+  if (!entry || (!entry.noWinner && !entry.winners?.length)) return 'pending'
+  const picked = picks[prop.id]
+  const correct = entry.noWinner ? picked === null : picked != null && entry.winners.includes(picked)
+  return correct ? 'correct' : 'incorrect'
+}
+
+function propBorderClass(prop) {
+  const status = propStatus(prop)
+  if (status === 'correct') return 'border-emerald-500/40'
+  if (status === 'incorrect') return 'border-red-500/20'
+  return 'border-court-700'
+}
+
+// Earned/possible for one category's props, mirroring the wildcards header.
+// Possible counts every prop the user answered; earned sums the ones whose
+// status is 'correct' — the same rule the backend applies, over the same
+// propResults doc, so this always matches the credited breakdown.props.
+// null (rendered '–') until the prop engine has produced any results.
+function catPropPoints(cat) {
+  if (propResults.value == null) return null
+  let earned = 0
+  let possible = 0
+  for (const prop of cat.props) {
+    if (propStatus(prop) === 'none') continue
+    possible += Number(prop.points ?? 0)
+    if (propStatus(prop) === 'correct') earned += Number(prop.points ?? 0)
+  }
+  return { earned, possible }
+}
+
 // Whether this pick actually contains group predictions. A knockout-only
 // submission (BracketView writes picks/{uid} with just `knockout`) has no
 // `groups`, so the Group Standings card is hidden entirely rather than
@@ -238,11 +284,17 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
     <!-- Props — individual cards, grouped by category -->
     <template v-if="showGroupsProps && props">
       <section v-for="cat in propsByCategory" :key="cat.key">
-        <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase mb-4">{{ cat.label }}</h2>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-black tracking-[0.2em] text-white uppercase">{{ cat.label }}</h2>
+          <span class="text-[10px] font-mono tabular-nums" :class="catPropPoints(cat) === null ? 'text-zinc-500' : 'text-zinc-400'">
+            {{ catPropPoints(cat) === null ? '–' : `${catPropPoints(cat).earned}/${catPropPoints(cat).possible} pts` }}
+          </span>
+        </div>
         <div class="space-y-2">
           <div
             v-for="prop in cat.props" :key="prop.id"
-            class="bg-court-800 border border-court-700 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
+            class="bg-court-800 border rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
+            :class="propBorderClass(prop)"
           >
             <div class="min-w-0">
               <div class="text-[11px] text-zinc-400 mb-0.5">{{ prop.label }}</div>
@@ -258,6 +310,8 @@ defineExpose({ groupCardRefs, wildcardsSectionRef })
                 <template v-else>
                   <span>{{ props[prop.id] === null ? '🚫 No Team' : '—' }}</span>
                 </template>
+                <span v-if="propStatus(prop) === 'correct'" class="text-emerald-400 text-[10px] shrink-0">✓</span>
+                <span v-else-if="propStatus(prop) === 'incorrect'" class="text-red-400/70 text-[10px] shrink-0">✗</span>
               </div>
             </div>
             <PropPointsBadge :points="prop.points" class="shrink-0" />

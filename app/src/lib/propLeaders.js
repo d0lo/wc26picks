@@ -7,8 +7,11 @@
 //
 // These leaderboards are display-only: scoringPlays.scorer is a plain ESPN
 // display name, not linked to the stable roster player UUIDs picks are keyed
-// by, so there's no way to mark a user's own pick "correct" here — see
-// PicksSummary.vue, which intentionally leaves the Props section unstyled.
+// by, so pick correctness is never derived here. That job belongs to the
+// backend prop engine (firebase/functions/lib/props.js), which mirrors these
+// tallies, maps names to roster UUIDs via the players/ collection, and writes
+// the canonical winners to liveData/propResults — the doc PicksSummary.vue
+// styles ✓/✗ from, so styling always agrees with the points actually credited.
 
 const isGroupMatch = (m) => !!m.groupLetter
 
