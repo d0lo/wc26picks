@@ -108,29 +108,21 @@ const bracket = computed(() => {
   return result
 })
 
-// Bracket depth of each round, so a team's elimination can be compared against
-// the round of the slot it's being rendered in. `third` sorts after `final`
-// only so a 3rd-place-match loss never masks the earlier semifinal loss that's
-// the real exit (we keep the *earliest* knockout loss per team below).
-const ROUND_ORDER = { r32: 0, r16: 1, qf: 2, sf: 3, final: 4, third: 5 }
-
-// teamId → bracket depth of the EARLIEST knockout match it lost (its real exit
-// from the tournament). Losing a group game doesn't eliminate a team (it can
-// still advance as a runner-up or best third), so only bracket losses count —
-// `matches` holds group fixtures too, keyed without a knockout round. Tracking
-// the round (not just a boolean "is out") is what lets us strike a team only in
-// the slot where it actually went out and every later slot a pick projected it
-// into — never in an earlier slot it genuinely won on its way there.
-const eliminatedAtOrder = computed(() => {
-  const map = new Map()
+// Teams officially out of the tournament — they lost a real KNOCKOUT match.
+// Losing a group game doesn't eliminate a team (it can still advance as a
+// runner-up or best third), so only bracket losses count — `matches` holds
+// group fixtures too, keyed without a knockout round. This is a plain "is this
+// team out?" set; WHERE a team is struck is decided per-slot in rowClass from
+// the actual match shown there, not inferred from which round it exited (that
+// inference could disagree with a slot's own result and strike a game-winner).
+const eliminatedTeamIds = computed(() => {
+  const set = new Set()
   for (const m of props.matches ?? []) {
     if (!KNOCKOUT_ROUNDS.has(m.round)) continue
     const loser = matchLoser(m)
-    if (!loser) continue
-    const order = ROUND_ORDER[m.round] ?? Infinity
-    if (!map.has(loser) || order < map.get(loser)) map.set(loser, order)
+    if (loser) set.add(loser)
   }
-  return map
+  return set
 })
 
 // Every team the user picked to advance in ANY round. Because r16→final slots
@@ -163,37 +155,34 @@ function pointsFor(slotInfo) {
 function rowClass(slotInfo, teamId) {
   const isWinner = slotInfo.winner && teamId === slotInfo.winner
   const isFinal = slotInfo.round === 'final'
-  const isThird = slotInfo.round === 'third'
-  // Graded picks view: styling only ever marks up the team YOU picked to win a
-  // slot. The strike + red tracks live real results — your pick is crossed out
-  // once it's officially out (lost a real knockout match), in every later round
-  // you advanced it to, but not in a slot it actually won (it's eliminated from
-  // a *later* round, not this one). Teams you didn't pick stay plain.
+  // Whether this team is actually in the real match shown at this slot (a
+  // competitor of it, or its winner). If it is, it genuinely reached this round
+  // — so it must never be struck here, no matter what happens to it later. This
+  // real-presence check is the guard that keeps a game-winner (Belgium beating
+  // your USA pick 4–1 in the R16) from being crossed out.
+  const playedThisSlot = isWinner || !!slotInfo.match?.competitors?.some((c) => c.teamId === teamId)
+  // Graded picks view: styling marks up YOUR picks against live results — your
+  // pick shows green when it wins a slot, red-struck once it's out, and teams
+  // you never picked stay plain.
   if (props.picks) {
-    const elimOrder = teamId ? eliminatedAtOrder.value.get(teamId) : undefined
+    const isEliminated = teamId ? eliminatedTeamIds.value.has(teamId) : false
     const isPick = pickFor(slotInfo.round, slotInfo.slot) === teamId
     if (isPick) {
-      // A pick that WON this slot's real match shows green even if it's out of a
-      // later round; the elimination strike below only fires when it isn't the
-      // winner here, i.e. it went out at this round or earlier.
+      // Won this slot → green (amber in the final). Otherwise struck once it's
+      // out anywhere (it lost here, or earlier and never reached here); a pick
+      // still alive / not yet played stays plain white.
       if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
-      if (elimOrder !== undefined) return 'text-red-400 font-bold line-through'
+      if (isEliminated) return 'text-red-400 font-bold line-through'
       return 'text-white font-bold'
     }
-    // Not this slot's winner-pick, but a team YOU advanced sitting here as the
-    // projected opponent. Strike it red only when it's a GHOST at this slot —
-    // eliminated before this round, so it never actually reached the game shown
-    // here (e.g. Senegal, picked out of the R16, still drawn as your Spain
-    // pick's QF opponent after being knocked out in the R16). A team that DID
-    // reach this round stays plain: whether it won here and only fell later, or
-    // lost this very game as the opponent your pick correctly beat — that loss
-    // is your pick's success, not a broken projection. Hence strictly-before
-    // (`<`), not `<=`. The 3rd-place slot is fed by semifinal losers by design,
-    // so its arrival round is the SF. Base r32 seeds you never picked aren't in
-    // pickedTeamIds, so they stay plain regardless.
-    if (elimOrder !== undefined && pickedTeamIds.value.has(teamId)) {
-      const arrivalOrder = isThird ? ROUND_ORDER.sf : ROUND_ORDER[slotInfo.round]
-      if (elimOrder < arrivalOrder) return 'text-red-400 font-bold line-through'
+    // Opponent — the team your slot pick was projected to face. Strike it only
+    // when it's a GHOST here: not in the real match at this slot AND really out
+    // of the tournament — e.g. Senegal, drawn as your Spain pick's QF opponent
+    // after being knocked out in the R16, a game it never reached. A team that
+    // DID play this slot's match stays plain whether it won it (Belgium) or lost
+    // it as the opponent your pick beat (Germany) — it truly reached this round.
+    if (!playedThisSlot && isEliminated && pickedTeamIds.value.has(teamId)) {
+      return 'text-red-400 font-bold line-through'
     }
     return 'text-zinc-300'
   }
