@@ -26,6 +26,26 @@ import { getFirestore } from 'firebase-admin/firestore'
 import { fetchSummary } from '../firebase/functions/lib/espn.js'
 import { parseGroupLetter } from '../firebase/functions/lib/normalize.js'
 import { isGroupComplete } from '../firebase/functions/lib/tournament.js'
+import { TEAM_ID, GROUP_TEAMS } from '../app/src/data.js'
+
+// Primary derivation: a group-stage match's two competitors always belong to
+// the same group, and group membership is fixed and committed to source
+// (GROUP_TEAMS/TEAM_ID). This needs no network and — unlike ESPN's
+// altGameNote, which ESPN stops returning for long-finished events — cannot
+// go stale. Requires BOTH teams to map to the same group, so a knockout
+// rematch of same-group teams can't be mislabeled (knockout docs are skipped
+// by their `round` field anyway).
+const GROUP_BY_TEAM_ID = {}
+for (const [letter, names] of Object.entries(GROUP_TEAMS)) {
+  for (const name of names) GROUP_BY_TEAM_ID[TEAM_ID[name]] = letter
+}
+
+function letterFromCompetitors(match) {
+  const ids = (match.competitors ?? []).map((c) => c.teamId)
+  if (ids.length !== 2) return null
+  const [a, b] = ids.map((id) => GROUP_BY_TEAM_ID[id] ?? null)
+  return a && a === b ? a : null
+}
 
 if (!getApps().length) {
   initializeApp({
@@ -45,20 +65,27 @@ function legacyGroupLetter(summary) {
 }
 
 const matchesSnap = await db.collection('matches').get()
-const missing = matchesSnap.docs.filter((d) => !d.data().groupLetter)
+// Knockout docs legitimately have no groupLetter — identified by their
+// `round` field, they are not backfill candidates.
+const missing = matchesSnap.docs.filter((d) => !d.data().groupLetter && !d.data().round)
 
 let migrated = 0, unresolved = 0
 let batch = db.batch(); let batchCount = 0; const batches = []
 
 for (const doc of missing) {
   const eventId = doc.id
-  let letter = null
-  try {
-    const summary = await fetchSummary(eventId)
-    const altNote = summary?.header?.competitions?.[0]?.altGameNote
-    letter = parseGroupLetter(altNote) ?? legacyGroupLetter(summary)
-  } catch (err) {
-    console.warn(`  ! ${eventId}: summary fetch failed — ${err.message}`)
+  let letter = letterFromCompetitors(doc.data())
+  if (!letter) {
+    // Fallback only — ESPN stops returning altGameNote for long-finished
+    // events, so this path mostly exists for docs whose competitors weren't
+    // resolvable to our team UUIDs.
+    try {
+      const summary = await fetchSummary(eventId)
+      const altNote = summary?.header?.competitions?.[0]?.altGameNote
+      letter = parseGroupLetter(altNote) ?? legacyGroupLetter(summary)
+    } catch (err) {
+      console.warn(`  ! ${eventId}: summary fetch failed — ${err.message}`)
+    }
   }
 
   if (!letter) {
