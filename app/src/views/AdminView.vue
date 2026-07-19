@@ -928,7 +928,7 @@ async function saveProps() {
               class="rounded border-court-700 bg-court-900"
               @change="winnerDraft.noWinner && (winnerDraft.winners = [])"
             />
-            <span class="text-[11px] text-zinc-400">No winner — {{ winnerDialogProp.allowNone ? 'a "No Team" pick is correct' : 'every pick is incorrect' }}</span>
+            <span class="text-[11px] text-zinc-400">No winner — only a 🚫 "No Team" pick is graded correct</span>
           </label>
           <p class="text-[10px] text-zinc-500">Leaving this empty (no winners, box unchecked) reverts the prop to auto grading.</p>
         </div>
