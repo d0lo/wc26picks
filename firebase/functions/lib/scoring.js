@@ -101,6 +101,28 @@ export function scorePick(pick, groupsByLetter, advancing, scoring) {
   return { groups, wildcards }
 }
 
+// Total prop points for one pick against the resolved prop winners
+// (liveData/propResults.results, see lib/props.js computePropResults).
+// pickProps: picks/{uid}.props — { [propId]: playerUUID | teamUUID | null }
+// where null is a deliberate "No Team" answer (allowNone props), and an
+// absent id means the prop was never answered (added after submission).
+// catalog: config/public.scoring.props. A results entry with no winners and
+// no noWinner flag (auto-resolved leaders that couldn't be matched to roster
+// UUIDs) is treated as unresolved — nobody scores, nobody is marked wrong.
+export function scorePropPicks(pickProps, catalog, results) {
+  let total = 0
+  for (const prop of catalog ?? []) {
+    if (prop.archived) continue
+    const entry = results?.[prop.id]
+    if (!entry || (!entry.noWinner && !entry.winners?.length)) continue
+    if (!pickProps || !(prop.id in pickProps)) continue
+    const picked = pickProps[prop.id]
+    const correct = entry.noWinner ? picked === null : picked != null && entry.winners.includes(picked)
+    if (correct) total += Number(prop.points ?? 0)
+  }
+  return total
+}
+
 // Decides the winner of a finished knockout match. ESPN's `winner` flag is
 // the authoritative signal (it accounts for penalty shootouts, where the
 // score alone ends level) — score comparison is only a fallback for the

@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   scoreGroupPrediction,
+  scorePropPicks,
   rankThirdPlaceTeams,
   advancingThirdPlaceLetters,
   creditWildcardPicks,
@@ -180,4 +181,37 @@ test('sumKnockoutPoints returns null when nothing has been scored yet', () => {
 
 test('sumKnockoutPoints sums every scored slot across rounds, including zero-point slots', () => {
   assert.equal(sumKnockoutPoints({ r32: { 0: 1, 1: 0 }, r16: { 0: 2 } }), 3)
+})
+
+const PROP_CATALOG = [
+  { id: 'p1', key: 'goldenBoot', type: 'player', points: 5 },
+  { id: 'p2', key: 'mostGroupGoals', type: 'team', points: 3 },
+  { id: 'p3', key: 'cleanGroupTeam', type: 'team', allowNone: true, points: 5 },
+  { id: 'p4', key: 'oldProp', type: 'team', points: 9, archived: true },
+]
+
+test('scorePropPicks credits picks matching a resolved winner', () => {
+  const results = { p1: { winners: ['player-a', 'player-b'] }, p2: { winners: ['team-x'] } }
+  const pick = { p1: 'player-b', p2: 'team-y', p3: null }
+  assert.equal(scorePropPicks(pick, PROP_CATALOG, results), 5)
+})
+
+test('scorePropPicks credits a null pick only via noWinner', () => {
+  const noneWins = { p3: { winners: [], noWinner: true } }
+  assert.equal(scorePropPicks({ p3: null }, PROP_CATALOG, noneWins), 5)
+  assert.equal(scorePropPicks({ p3: 'team-x' }, PROP_CATALOG, noneWins), 0)
+  const teamWins = { p3: { winners: ['team-x'] } }
+  assert.equal(scorePropPicks({ p3: null }, PROP_CATALOG, teamWins), 0)
+})
+
+test('scorePropPicks treats an unresolved entry (no winners, no noWinner) as pending', () => {
+  const results = { p1: { winners: [], unmatched: ['Somebody'] } }
+  assert.equal(scorePropPicks({ p1: 'player-a' }, PROP_CATALOG, results), 0)
+})
+
+test('scorePropPicks ignores archived props and unanswered picks', () => {
+  const results = { p4: { winners: ['team-x'] }, p1: { winners: ['player-a'] } }
+  assert.equal(scorePropPicks({ p4: 'team-x' }, PROP_CATALOG, results), 0) // archived
+  assert.equal(scorePropPicks({}, PROP_CATALOG, results), 0)               // never answered
+  assert.equal(scorePropPicks(undefined, PROP_CATALOG, results), 0)        // knockout-only pick doc
 })
