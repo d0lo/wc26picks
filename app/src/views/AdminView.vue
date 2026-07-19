@@ -45,11 +45,25 @@ const saveError = reactive({ lock: '', knockoutLock: '', scoring: '', props: '',
 function snapshotLock() { return lockTimeInput.value }
 function snapshotKnockoutLock() { return knockoutLockInput.value }
 function snapshotScoring() { return JSON.stringify(scoringForm) }
-function snapshotProps() { return JSON.stringify(propsForm.items) }
-// Key-sorted so a Firestore round-trip reordering the map doesn't read as dirty.
-function snapshotWinners() {
-  return JSON.stringify(Object.fromEntries(Object.entries(winnersForm.overrides).sort(([a], [b]) => a.localeCompare(b))))
+// Snapshot the SAVE PAYLOAD (cleanProp-normalized), not the raw rows — a
+// Firestore round-trip reorders map keys and legacy docs carry stray/absent
+// fields, so raw-JSON comparison could read as "dirty" (enabling Save and
+// the discard prompt) when nothing was actually changed.
+function snapshotProps() { return JSON.stringify(propsForm.items.map(cleanProp)) }
+// Same idea for the winner overrides: reduce to the canonical shape the save
+// writes — sorted prop ids, fixed entry key order, empty entries dropped —
+// so a server round-trip can never differ from an unchanged form.
+function canonicalOverrides(overrides) {
+  const out = {}
+  for (const id of Object.keys(overrides ?? {}).sort()) {
+    const o = overrides[id]
+    if (!o) continue
+    if (o.noWinner) out[id] = { winners: [], noWinner: true }
+    else if (o.winners?.length) out[id] = { winners: [...o.winners] }
+  }
+  return out
 }
+function snapshotWinners() { return JSON.stringify(canonicalOverrides(winnersForm.overrides)) }
 const savedSnapshot = reactive({ lock: '', knockoutLock: '', scoring: '', props: '', winners: '' })
 
 const activeProps = computed(() => propsForm.items.filter(p => !p.archived))
@@ -111,17 +125,29 @@ for (const [teamName, players] of Object.entries(ROSTERS)) {
 }
 
 function loadFromOverrides(data) {
-  winnersForm.overrides = JSON.parse(JSON.stringify(data?.overrides ?? {}))
+  winnersForm.overrides = canonicalOverrides(data?.overrides)
   savedSnapshot.winners = snapshotWinners()
 }
 
-// Guarded so a background refetch (staleTime 0 + focus refetch, or another
-// writer touching config/propResults — e.g. force-prop-rescore.mjs poking
-// pokedAt) can't silently wipe unsaved grading edits; explicit Cancel is the
-// only path that discards a dirty form.
+// Baseline an empty-but-clean form until the real doc arrives, so the
+// pre-load state can never read as dirty.
+loadFromOverrides(null)
+
+// The grading rows/dialog stay disabled until the saved overrides have
+// actually loaded — otherwise a dialog opened during the initial fetch is
+// seeded from an empty form, and committing it (then saving) would silently
+// overwrite the manual winners already stored on the server.
+const winnersLoaded = ref(false)
+
+// Reloads are guarded two ways: never before the first real fetch resolves,
+// and never over unsaved edits (a background refetch — staleTime 0, focus
+// refetch, or another writer poking config/propResults — must not wipe a
+// dirty form; explicit Cancel is the only path that discards one).
 watch(() => overridesQuery.data.value, (data) => {
-  if (snapshotWinners() !== savedSnapshot.winners) return
+  if (data === undefined) return
+  if (winnersLoaded.value && snapshotWinners() !== savedSnapshot.winners) return
   loadFromOverrides(data)
+  winnersLoaded.value = true
 }, { immediate: true })
 
 const lockDirty = computed(() => snapshotLock() !== savedSnapshot.lock)
@@ -370,12 +396,13 @@ function winnerSummary(prop) {
 }
 
 async function saveWinners() {
+  if (!winnersLoaded.value) return
   saveStatus.winners = 'saving'
   saveError.winners = ''
   try {
     // Full overwrite (not merge) so cleared overrides actually disappear;
     // the prop engine listens to this doc and re-grades on every save.
-    await setDoc(doc(db, 'config', 'propResults'), { overrides: JSON.parse(JSON.stringify(winnersForm.overrides)) })
+    await setDoc(doc(db, 'config', 'propResults'), { overrides: canonicalOverrides(winnersForm.overrides) })
     queryClient.invalidateQueries({ queryKey: queryKeys.propOverrides })
     // The engine recomputes liveData/propResults asynchronously — refetch it
     // shortly so the section reflects the newly-graded winners without a
@@ -735,7 +762,8 @@ async function saveProps() {
           computed from match data.
         </p>
 
-        <div class="space-y-1.5">
+        <p v-if="!winnersLoaded" class="text-[11px] text-zinc-600 italic">Loading…</p>
+        <div v-else class="space-y-1.5">
           <div
             v-for="prop in activeProps" :key="prop.id"
             @click="openWinnerDialog(prop)"
@@ -928,7 +956,7 @@ async function saveProps() {
               class="rounded border-court-700 bg-court-900"
               @change="winnerDraft.noWinner && (winnerDraft.winners = [])"
             />
-            <span class="text-[11px] text-zinc-400">No winner — only a 🚫 "No Team" pick is graded correct</span>
+            <span class="text-[11px] text-zinc-400">No Winner</span>
           </label>
           <p class="text-[10px] text-zinc-500">Leaving this empty (no winners, box unchecked) reverts the prop to auto grading.</p>
         </div>
