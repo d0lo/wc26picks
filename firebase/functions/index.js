@@ -13,9 +13,11 @@ import {
   determineKnockoutWinner,
   scoreKnockoutSlot,
   scoreKnockout,
+  scorePropPicks,
 } from './lib/scoring.js'
+import { buildPlayerIndex, computePropResults } from './lib/props.js'
 import { ROUNDS } from './lib/bracket.js'
-import { isGroupComplete } from './lib/tournament.js'
+import { isGroupComplete, isGroupStageComplete } from './lib/tournament.js'
 import { applyBreakdownPatch } from './lib/firestoreScoring.js'
 import {
   utcDateString,
@@ -323,6 +325,94 @@ function arraysEqual(a, b) {
   return a.length === b.length && a.every((v, i) => v === b[i])
 }
 
+// Recomputes the canonical prop winners (liveData/propResults) fresh from
+// source data: the catalog + manual overrides + every match doc, with player
+// display names mapped to roster UUIDs via the seeded players/ collection.
+// Skips the write when nothing changed, so re-fires converge instead of
+// cascading into onPropResultsWrite rescores. Called from more than one
+// trigger (match completion, manual-override write, config retune) — safe
+// because every call recomputes from the same sources idempotently; there is
+// no partial/additive state for two invocations to race on. Returns the
+// freshly-computed results map so a caller that rescores right after (e.g.
+// onScoringConfigWrite) can use it directly instead of re-reading the doc.
+async function refreshPropResults() {
+  const [matchesSnap, playersSnap, groupsSnap, configSnap, overridesSnap, currentSnap] = await Promise.all([
+    db.collection('matches').get(),
+    db.collection('players').get(),
+    db.collection('groups').get(),
+    db.doc('config/public').get(),
+    db.doc('config/propResults').get(),
+    db.doc('liveData/propResults').get(),
+  ])
+  const catalog = configSnap.data()?.scoring?.props ?? []
+  if (playersSnap.empty) logger.warn('refreshPropResults: players/ collection is empty — player props cannot be auto-matched')
+
+  const results = computePropResults({
+    catalog,
+    // Doc id rides along as the eventId fallback (same shape the client's
+    // matchesQueryOptions produces for propLeaders.js).
+    matches: matchesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    playerIndex: buildPlayerIndex(playersSnap.docs.map((d) => d.data())),
+    groupsComplete: isGroupStageComplete(groupsSnap.docs.map((d) => d.data())),
+    overrides: overridesSnap.data()?.overrides,
+  })
+
+  if (!deepEqual(currentSnap.data()?.results ?? {}, results)) {
+    // Full set (no merge) so a prop whose entry disappeared — override
+    // cleared, prop archived — actually drops out instead of lingering.
+    await db.doc('liveData/propResults').set({ results, updatedAt: FieldValue.serverTimestamp() })
+  }
+  return results
+}
+
+// Fires on every matches/{eventId} write. Once a match finishes (group or
+// knockout — goals in either stage move goldenBoot & co.), recomputes the
+// prop winners. Gated first on the prop-relevant fields actually changing —
+// a zero-read check on the event payload — so idempotent re-writes of an
+// already-finished match (backfill scripts, re-fetched identical summaries)
+// don't each pay refreshPropResults' full matches+players collection read
+// just to conclude nothing moved.
+export const onMatchCompleteProps = onDocumentWritten('matches/{eventId}', async (event) => {
+  const before = event.data?.before?.data()
+  const after = event.data?.after?.data()
+  if (after?.status?.state !== 'post') return
+  if (
+    before?.status?.state === 'post' &&
+    deepEqual(before.scoringPlays, after.scoringPlays) &&
+    deepEqual(before.rosters, after.rosters) &&
+    deepEqual(before.teamStats, after.teamStats) &&
+    deepEqual(before.competitors, after.competitors)
+  ) return
+  await refreshPropResults()
+})
+
+// Fires when an admin saves manual prop winners (config/propResults, written
+// by the AdminView "Prop Winners" section — the only config doc a client can
+// write besides config/public, per the isAdmin rule). Manual entries take
+// precedence over auto-computed winners inside computePropResults.
+export const onPropOverridesWrite = onDocumentWritten('config/propResults', async () => {
+  await refreshPropResults()
+})
+
+// Fires on every liveData/propResults write. Sole owner of breakdown.props:
+// rescores every pick's prop total against the new winners. Gated on the
+// results actually changing so an updatedAt-only touch doesn't pay for a
+// full picks rescore.
+export const onPropResultsWrite = onDocumentWritten('liveData/propResults', async (event) => {
+  const before = event.data?.before?.data()
+  const after = event.data?.after?.data()
+  if (!after || deepEqual(before?.results ?? {}, after.results ?? {})) return
+
+  const [picksSnap, configSnap] = await Promise.all([db.collection('picks').get(), db.doc('config/public').get()])
+  const catalog = configSnap.data()?.scoring?.props ?? []
+  await Promise.all(
+    picksSnap.docs.map((picksDoc) => {
+      const points = scorePropPicks(picksDoc.data().props, catalog, after.results)
+      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ ...existing, props: points }))
+    })
+  )
+})
+
 // Winners of every finished knockout match, shaped { round: { slotIdx: winnerId } }
 // for scoreKnockout. Shared by the config-change and pick-change full rescores,
 // both of which re-derive a pick's whole knockout breakdown from scratch.
@@ -359,6 +449,15 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
   const after = event.data?.after?.data()
   if (!after || deepEqual(after.scoring, before?.scoring)) return
 
+  // Catalog edits can change the winners themselves (flipping a prop's
+  // `manual` flag drops its auto winners; archiving drops its entry), so the
+  // canonical results are refreshed first and the freshly-computed map is
+  // used directly below. If the refresh found changes it also wrote
+  // liveData/propResults, and the resulting onPropResultsWrite rescore is
+  // redundant with the one below — but both are idempotent full overwrites,
+  // so that costs a duplicate pass, not a wrong score.
+  const propResults = await refreshPropResults()
+
   const [groupsSnap, picksSnap, wildcardsSnap, matchesSnap] = await Promise.all([
     db.collection('groups').get(),
     db.collection('picks').get(),
@@ -381,13 +480,14 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
       const pick = picksDoc.data()
       const { groups, wildcards } = scorePick(pick, groupsByLetter, advancing, scoring)
       const knockout = scoreKnockout(pick.knockout, koWinners, scoring)
-      return applyBreakdownPatch(db, picksDoc.id, (existing) => ({ groups, wildcards, props: existing.props ?? 0, knockout }))
+      const props = scorePropPicks(pick.props, scoring.props, propResults)
+      return applyBreakdownPatch(db, picksDoc.id, () => ({ groups, wildcards, props, knockout }))
     })
   )
 })
 
 // Fires on every picks/{uid} write. A user editing their own picks — group
-// order, wildcard set, or knockout bracket — must have their score recomputed
+// order, wildcard set, prop answers, or knockout bracket — must have their score recomputed
 // right away. Every other trigger above only rescores in response to *results*
 // (a match finishing, standings shifting, point values being retuned); none of
 // them react to the picks themselves changing. Without this, a bracket edited
@@ -407,14 +507,16 @@ export const onPicksWrite = onDocumentWritten('picks/{uid}', async (event) => {
     before &&
     deepEqual(after.groups, before.groups) &&
     deepEqual(after.wildcards, before.wildcards) &&
-    deepEqual(after.knockout, before.knockout)
+    deepEqual(after.knockout, before.knockout) &&
+    deepEqual(after.props, before.props)
   ) return
 
-  const [groupsSnap, wildcardsSnap, matchesSnap, configSnap] = await Promise.all([
+  const [groupsSnap, wildcardsSnap, matchesSnap, configSnap, propResultsSnap] = await Promise.all([
     db.collection('groups').get(),
     db.doc('liveData/wildcards').get(),
     db.collection('matches').get(),
     db.doc('config/public').get(),
+    db.doc('liveData/propResults').get(),
   ])
   const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
   const advancing = new Set(wildcardsSnap.data()?.advancingLetters ?? [])
@@ -423,5 +525,6 @@ export const onPicksWrite = onDocumentWritten('picks/{uid}', async (event) => {
 
   const { groups, wildcards } = scorePick(after, groupsByLetter, advancing, scoring)
   const knockout = scoreKnockout(after.knockout, koWinners, scoring)
-  await applyBreakdownPatch(db, event.params.uid, (existing) => ({ groups, wildcards, props: existing.props ?? 0, knockout }))
+  const props = scorePropPicks(after.props, scoring.props, propResultsSnap.data()?.results ?? {})
+  await applyBreakdownPatch(db, event.params.uid, () => ({ groups, wildcards, props, knockout }))
 })

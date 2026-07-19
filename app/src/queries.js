@@ -19,6 +19,8 @@ export const queryKeys = {
   wildcards: ['liveData', 'wildcards'],
   matches: ['matches'],
   score: (uid) => ['score', uid],
+  propResults: ['liveData', 'propResults'],
+  propOverrides: ['config', 'propResults'],
 }
 
 // config/public shape:
@@ -269,6 +271,41 @@ export function matchesQueryOptions() {
     queryFn: async () => {
       const snap = await getDocs(collection(db, 'matches'))
       return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  }
+}
+
+// liveData/propResults — the canonical prop winners, recomputed by the prop
+// engine after every match completion / manual grading (see refreshPropResults
+// in firebase/functions/index.js). results: { [propId]: { winners, source,
+// noWinner?, unmatched? } }. Winners are pick-comparable ids (roster player
+// UUIDs / team UUIDs), so a pick is styled correct exactly when the backend
+// credited its points — never from a client-side recomputation that could
+// drift. null until the engine first runs.
+export function propResultsQueryOptions() {
+  return {
+    queryKey: queryKeys.propResults,
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, 'liveData', 'propResults'))
+      return snap.exists() ? snap.data() : null
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  }
+}
+
+// config/propResults — the admin's manual prop-winner overrides
+// (overrides: { [propId]: { winners, noWinner? } }), the input the engine
+// merges over its auto-computed winners. Read by AdminView only; admin-writable
+// under the existing config/{docId} isAdmin rule.
+export function propOverridesQueryOptions() {
+  return {
+    queryKey: queryKeys.propOverrides,
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, 'config', 'propResults'))
+      return snap.exists() ? snap.data() : null
     },
     staleTime: 0,
     refetchOnWindowFocus: true,

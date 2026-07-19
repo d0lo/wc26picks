@@ -7,16 +7,28 @@
 //
 // These leaderboards are display-only: scoringPlays.scorer is a plain ESPN
 // display name, not linked to the stable roster player UUIDs picks are keyed
-// by, so there's no way to mark a user's own pick "correct" here — see
-// PicksSummary.vue, which intentionally leaves the Props section unstyled.
+// by, so pick correctness is never derived here. That job belongs to the
+// backend prop engine (firebase/functions/lib/props.js), which mirrors these
+// tallies, maps names to roster UUIDs via the players/ collection, and writes
+// the canonical winners to liveData/propResults — the doc PicksSummary.vue
+// styles ✓/✗ from, so styling always agrees with the points actually credited.
 
 const isGroupMatch = (m) => !!m.groupLetter
+
+// Mirrors firebase/functions/lib/props.js: penalty-shootout kicks arrive as
+// scoringPlays (period 5) but aren't goals; own goals credit the benefiting
+// team's tally but never the player who scored them (FIFA excludes them from
+// the Golden Boot). Best-effort text match for own goals — ESPN doesn't flag
+// them structurally in our stored shape.
+const isShootoutPlay = (play) => play.period === 5
+const isOwnGoalPlay = (play) => /own[\s-]?goal/i.test(play.text ?? '')
+const countsForPlayerGoals = (play) => !!play.scorer && !isShootoutPlay(play) && !isOwnGoalPlay(play)
 
 function goldenBootLeaders(matches) {
   const byScorer = {}
   for (const m of matches) {
     for (const play of m.scoringPlays ?? []) {
-      if (!play.scorer) continue
+      if (!countsForPlayerGoals(play)) continue
       const key = `${play.scorer}|${play.teamId ?? ''}`
       byScorer[key] ??= { scorer: play.scorer, teamId: play.teamId ?? null, goals: 0 }
       byScorer[key].goals += 1
@@ -32,7 +44,7 @@ function mostGoalsLeaders(matches) {
   const byTeam = {}
   for (const m of matches) {
     for (const play of m.scoringPlays ?? []) {
-      if (!play.teamId) continue
+      if (!play.teamId || isShootoutPlay(play)) continue
       byTeam[play.teamId] = (byTeam[play.teamId] ?? 0) + 1
     }
   }
@@ -112,7 +124,7 @@ function hatTrickScorers(matches) {
   const byMatchScorer = {}
   for (const m of matches) {
     for (const play of m.scoringPlays ?? []) {
-      if (!play.scorer) continue
+      if (!countsForPlayerGoals(play)) continue
       const key = `${m.eventId ?? m.id}|${play.scorer}|${play.teamId ?? ''}`
       byMatchScorer[key] ??= { match: m, scorer: play.scorer, teamId: play.teamId ?? null, goals: 0 }
       byMatchScorer[key].goals += 1
