@@ -250,6 +250,26 @@ liveData/wildcards                written by Feature 2's onGroupsWrite
                                     fresh from `groups` on every group-stage match completion;
                                     the sole source other triggers read this ranking from
 
+liveData/propResults              written by the prop engine (refreshPropResults in
+  updatedAt: Timestamp              firebase/functions/index.js) after every match completion,
+  results: {                        manual grading save, or scoring-config change
+    [propId]: {                   keyed by config/public.scoring.props[].id
+      winners: string[]           pick-comparable ids (roster player UUIDs / team UUIDs) —
+                                    every listed id counts as correct (golf-style ties)
+      source: "auto" | "manual"   manual (admin override) always wins over auto
+      noWinner?: true             resolved as "nobody wins" — a null ("No Team") pick is correct
+      unmatched?: string[]        auto-resolved leader names that couldn't be matched to a
+                                    roster UUID — surfaced in AdminView so the admin grades by hand
+    }
+  }                               a prop with no entry (or winners empty and no noWinner) is
+                                    "pending": nobody scores, nobody is styled wrong
+
+config/propResults                admin-written manual prop-winner overrides (AdminView
+  overrides: { [propId]: { winners: string[], noWinner?: true } }
+                                  written by the "Prop Winners" admin section under the existing
+                                    config/{docId} isAdmin rule; the engine merges these over its
+                                    auto-computed winners, and an absent propId reverts to auto
+
 liveData/props                    written after each match completion by Feature 4
   updatedAt: Timestamp
   goldenBoot: PlayerStat[]        { playerId, name, team, goals } sorted desc
@@ -290,7 +310,12 @@ group: string   e.g. "Group A"
 
 - Cloud Firestore Trigger `onMatchComplete` (`matches/{eventId}`) — triggers on writes where `status.state === "post"`. Sole owner of `breakdown.groups[letter]`: recomputes that one group's score fresh from the **current** `groups/{letter}` standings (live/incremental — never gated on the group being fully finished) and overwrites `scores/{uid}.breakdown.groups[letter]` for every `picks/{uid}` document — a full idempotent overwrite, not additive, since the final two matches in a group always kick off together and finish moments apart, firing this trigger twice in quick succession for the same group. Also marks `groups/{letter}.complete = true` (only on the false→true transition) once all 6 of that group's matches are `"post"` per our own match-status records — a structural signal derived from data we authoritatively own, not ESPN's secondary `gamesPlayed` standings stat.
 - Cloud Firestore Trigger `onGroupsWrite` (`groups/{letter}`) — fires after every group-stage match completion (since `onMatchComplete`/`processMatchUpdate` always writes `groups/{letter}` alongside `matches/{eventId}`). Sole owner of `breakdown.wildcards`: recomputes the top-8 third-place ranking fresh from all 12 groups on every fire (so a result swing in one group can still bump a different group's third-place team in or out of the advancing set), compares it to the previously-stored canonical `liveData/wildcards.advancingLetters`, and only loops over every pick to rewrite `breakdown.wildcards` when that comparison shows the set actually changed — an unchanged ranking provably can't change any pick's score, so the rescore is skipped, not just the ranking.
-- Cloud Firestore Trigger `onScoringConfigWrite` (`config/public`) — fires when `scoring` values are retuned live. Does a full per-pick rescore of both `groups` and `wildcards` (a value change invalidates every previously-computed score, not just one group's), reading the advancing set from `liveData/wildcards` rather than recomputing it — one computation owner for the ranking across the whole engine.
+- Cloud Firestore Trigger `onScoringConfigWrite` (`config/public`) — fires when `scoring` values are retuned live. Does a full per-pick rescore of `groups`, `wildcards`, `props`, and `knockout` (a value change invalidates every previously-computed score, not just one group's), reading the advancing set from `liveData/wildcards` and the prop winners from `liveData/propResults` rather than recomputing them — one computation owner per derived dataset across the whole engine.
+- **Prop scoring** — three triggers around one canonical winners doc (`liveData/propResults`, shape above):
+  - `onMatchCompleteProps` (`matches/{eventId}`, state `post`) and `onPropOverridesWrite` (`config/propResults`) both call the shared `refreshPropResults()`: recompute every prop's winners fresh from all `matches/*` docs (auto resolvers in `lib/props.js`, mirroring `app/src/lib/propLeaders.js` tallies) merged under any admin manual overrides, then write `liveData/propResults` only if the results actually changed. Player display names from ESPN are mapped to the roster UUIDs picks store via the seeded `players/` collection (`lib/props.js` name matching); unmatched names are surfaced per-prop instead of guessed.
+  - `onPropResultsWrite` (`liveData/propResults`) — sole owner of `breakdown.props`: rescores every pick's prop total (`scorePropPicks` in `lib/scoring.js`) whenever the winners change.
+  - Auto-resolvable props: goldenBoot, mostAssists, hatTrickScorer, mostGroupGoals, mostYellowCards, cleanGroupTeam — live-incremental, all tied leaders count. Subjective awards (goldenGlove, goldenBall, youngPlayer, breakoutPlayer) only score via the AdminView "Prop Winners" manual grading; a catalog prop flagged `manual: true` also never auto-resolves.
+  - `scripts/force-prop-rescore.mjs` — pokes `config/propResults` to force a first computation/rescore right after the engine deploys (no match write needed).
 - Reads point values from `config/public.scoring` (see Scoring Configuration above) — `groupExact` for exact-position points, `perfectGroupBonus` for the all-4-correct bonus, `wildcard` for 3rd-place-advances picks. Never hardcode these.
 - Scoring logic lives in a shared, Firestore-free `lib/scoring.js` module so it can be unit tested independently; tournament-format structural helpers (`isGroupComplete`, `isGroupStageComplete`) live in `lib/tournament.js`; the shared `scores/{uid}` read-merge-write-transaction logic all three triggers use lives in `lib/firestoreScoring.js` (`applyBreakdownPatch`).
 - `scripts/backfill-match-group-letters.mjs` — idempotent one-time repair for any `matches/{eventId}` doc written before `groupLetter` was tracked; run once if production has pre-existing match data predating it.
