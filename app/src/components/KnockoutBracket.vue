@@ -124,6 +124,21 @@ const eliminatedTeamIds = computed(() => {
   return set
 })
 
+// Every team the user picked to advance in ANY round. Because r16→final slots
+// are all derived from prior-round picks (only r32 carries real seeds), a team
+// in this set that shows up as a later-round *opponent* — the team your slot
+// pick was projected to face — is itself one of your advancement picks, and is
+// struck the same way when it's eliminated (see rowClass). A base r32 seed you
+// never picked is absent here, so it stays plain.
+const pickedTeamIds = computed(() => {
+  const set = new Set()
+  if (!props.picks) return set
+  for (const round of ROUNDS) {
+    for (const teamId of props.picks[round] ?? []) if (teamId) set.add(teamId)
+  }
+  return set
+})
+
 function pickStatus(slotInfo) {
   if (!props.picks) return null
   const pick = pickFor(slotInfo.round, slotInfo.slot)
@@ -145,18 +160,21 @@ function rowClass(slotInfo, teamId) {
   // you advanced it to, but not in a slot it actually won (it's eliminated from
   // a *later* round, not this one). Teams you didn't pick stay plain.
   if (props.picks) {
+    const isEliminated = teamId && eliminatedTeamIds.value.has(teamId)
     const isPick = pickFor(slotInfo.round, slotInfo.slot) === teamId
     if (isPick) {
       if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
-      if (teamId && eliminatedTeamIds.value.has(teamId)) return 'text-red-400 font-bold line-through'
+      if (isEliminated) return 'text-red-400 font-bold line-through'
       return 'text-white font-bold'
     }
-    // Non-pick opponent (the team YOUR pick was projected to face here). Still
-    // strike it out once it's really out of the tournament, so an eliminated
-    // team you advanced as an opponent — e.g. Senegal reaching the QF vs your
-    // Spain pick — reads as gone, not still alive. Neutral zinc, not the red
-    // bold used for your own eliminated pick: no points of yours ride on it.
-    if (teamId && eliminatedTeamIds.value.has(teamId)) return 'text-zinc-500 line-through'
+    // Not this slot's winner-pick, but a team YOU advanced sitting here as the
+    // projected opponent — e.g. Senegal, whom you picked out of the R16 to face
+    // your Spain pick in the QF. Once it's really out of the tournament it can
+    // never reach this slot, so strike it in red exactly like your own dead
+    // slot pick: every team you advanced that's since been eliminated reads the
+    // same, whether it lost the game shown here or an earlier one. Base r32
+    // seeds you never picked aren't in pickedTeamIds, so they stay plain.
+    if (isEliminated && pickedTeamIds.value.has(teamId)) return 'text-red-400 font-bold line-through'
     return 'text-zinc-300'
   }
   // Stadium view (no picks): real-results styling — dim the loser of a decided
