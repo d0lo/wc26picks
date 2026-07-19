@@ -332,7 +332,9 @@ function arraysEqual(a, b) {
 // cascading into onPropResultsWrite rescores. Called from more than one
 // trigger (match completion, manual-override write, config retune) — safe
 // because every call recomputes from the same sources idempotently; there is
-// no partial/additive state for two invocations to race on.
+// no partial/additive state for two invocations to race on. Returns the
+// freshly-computed results map so a caller that rescores right after (e.g.
+// onScoringConfigWrite) can use it directly instead of re-reading the doc.
 async function refreshPropResults() {
   const [matchesSnap, playersSnap, groupsSnap, configSnap, overridesSnap, currentSnap] = await Promise.all([
     db.collection('matches').get(),
@@ -347,25 +349,40 @@ async function refreshPropResults() {
 
   const results = computePropResults({
     catalog,
-    matches: matchesSnap.docs.map((d) => d.data()),
+    // Doc id rides along as the eventId fallback (same shape the client's
+    // matchesQueryOptions produces for propLeaders.js).
+    matches: matchesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
     playerIndex: buildPlayerIndex(playersSnap.docs.map((d) => d.data())),
     groupsComplete: isGroupStageComplete(groupsSnap.docs.map((d) => d.data())),
     overrides: overridesSnap.data()?.overrides,
   })
 
-  if (deepEqual(currentSnap.data()?.results ?? {}, results)) return
-  // Full set (no merge) so a prop whose entry disappeared — override cleared,
-  // prop archived — actually drops out instead of lingering forever.
-  await db.doc('liveData/propResults').set({ results, updatedAt: FieldValue.serverTimestamp() })
+  if (!deepEqual(currentSnap.data()?.results ?? {}, results)) {
+    // Full set (no merge) so a prop whose entry disappeared — override
+    // cleared, prop archived — actually drops out instead of lingering.
+    await db.doc('liveData/propResults').set({ results, updatedAt: FieldValue.serverTimestamp() })
+  }
+  return results
 }
 
 // Fires on every matches/{eventId} write. Once a match finishes (group or
 // knockout — goals in either stage move goldenBoot & co.), recomputes the
-// prop winners. The heavy lifting happens in refreshPropResults, which
-// no-ops the write (and thus the downstream rescore) when the winners are
-// unchanged by this match.
+// prop winners. Gated first on the prop-relevant fields actually changing —
+// a zero-read check on the event payload — so idempotent re-writes of an
+// already-finished match (backfill scripts, re-fetched identical summaries)
+// don't each pay refreshPropResults' full matches+players collection read
+// just to conclude nothing moved.
 export const onMatchCompleteProps = onDocumentWritten('matches/{eventId}', async (event) => {
-  if (event.data?.after?.data()?.status?.state !== 'post') return
+  const before = event.data?.before?.data()
+  const after = event.data?.after?.data()
+  if (after?.status?.state !== 'post') return
+  if (
+    before?.status?.state === 'post' &&
+    deepEqual(before.scoringPlays, after.scoringPlays) &&
+    deepEqual(before.rosters, after.rosters) &&
+    deepEqual(before.teamStats, after.teamStats) &&
+    deepEqual(before.competitors, after.competitors)
+  ) return
   await refreshPropResults()
 })
 
@@ -434,19 +451,18 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
 
   // Catalog edits can change the winners themselves (flipping a prop's
   // `manual` flag drops its auto winners; archiving drops its entry), so the
-  // canonical results doc must refresh before this rescore reads it. If the
-  // refresh finds changes it also writes liveData/propResults, and the
-  // resulting onPropResultsWrite rescore is redundant with the one below —
-  // but both are idempotent full overwrites, so that costs a duplicate pass,
-  // not a wrong score.
-  await refreshPropResults()
+  // canonical results are refreshed first and the freshly-computed map is
+  // used directly below. If the refresh found changes it also wrote
+  // liveData/propResults, and the resulting onPropResultsWrite rescore is
+  // redundant with the one below — but both are idempotent full overwrites,
+  // so that costs a duplicate pass, not a wrong score.
+  const propResults = await refreshPropResults()
 
-  const [groupsSnap, picksSnap, wildcardsSnap, matchesSnap, propResultsSnap] = await Promise.all([
+  const [groupsSnap, picksSnap, wildcardsSnap, matchesSnap] = await Promise.all([
     db.collection('groups').get(),
     db.collection('picks').get(),
     db.doc('liveData/wildcards').get(),
     db.collection('matches').get(),
-    db.doc('liveData/propResults').get(),
   ])
   const groupsByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.data()?.entries ?? []]))
   // Reuses onGroupsWrite's already-computed advancing set instead of
@@ -454,7 +470,6 @@ export const onScoringConfigWrite = onDocumentWritten('config/public', async (ev
   // ranking across the whole engine.
   const advancing = new Set(wildcardsSnap.data()?.advancingLetters ?? [])
   const scoring = after.scoring ?? {}
-  const propResults = propResultsSnap.data()?.results ?? {}
 
   // Winners of every finished knockout match, so a knockout point-value change
   // rescores the bracket too (not just groups/wildcards).

@@ -108,10 +108,7 @@ function wildcardStatus(letter) {
 }
 
 function wildcardBorderClass(letter) {
-  const status = wildcardStatus(letter)
-  if (status === 'correct') return 'border-emerald-500/40'
-  if (status === 'incorrect') return 'border-red-500/20'
-  return 'border-court-700'
+  return statusBorderClass(wildcardStatus(letter))
 }
 
 const wildcardPointsPossible = computed(() => {
@@ -129,26 +126,34 @@ const propResultsQuery = useQuery(propResultsQueryOptions())
 const propResults = computed(() => propResultsQuery.data.value?.results ?? null)
 
 // 'none' — the user never answered this prop (added after they submitted).
-// 'pending' — no winners resolved yet (or auto-resolution couldn't match the
-// leaders to roster ids), so correctness is unknowable; neutral styling.
+// 'pending' — no winners resolved yet, OR the auto resolution has leader
+// names it couldn't match to roster ids (the unmatched co-leader might be
+// the very player this user picked), so correctness is unknowable; neutral.
 // 'correct'/'incorrect' — pick is/isn't among the resolved winners; a null
-// pick ("No Team") is correct exactly when the prop resolved to no winner.
-// Mirrors scorePropPicks in firebase/functions/lib/scoring.js.
+// pick ("No Team") is correct only when a prop that offers it (allowNone)
+// resolved to no winner. Mirrors isPropEntryResolved/isPropPickCorrect in
+// firebase/functions/lib/scoring.js — the exact rule that credits points.
 function propStatus(prop) {
   const picks = componentProps.props
   if (!picks || !(prop.id in picks) || picks[prop.id] === undefined) return 'none'
   const entry = propResults.value?.[prop.id]
-  if (!entry || (!entry.noWinner && !entry.winners?.length)) return 'pending'
+  const resolved = entry && !entry.unmatched?.length && (entry.noWinner || entry.winners?.length)
+  if (!resolved) return 'pending'
   const picked = picks[prop.id]
-  const correct = entry.noWinner ? picked === null : picked != null && entry.winners.includes(picked)
+  const correct = entry.noWinner ? picked === null && !!prop.allowNone : picked != null && entry.winners.includes(picked)
   return correct ? 'correct' : 'incorrect'
 }
 
-function propBorderClass(prop) {
-  const status = propStatus(prop)
+// Same status→border mapping the wildcard cards use — kept as one helper so
+// the two sections can't drift apart on what correct/incorrect looks like.
+function statusBorderClass(status) {
   if (status === 'correct') return 'border-emerald-500/40'
   if (status === 'incorrect') return 'border-red-500/20'
   return 'border-court-700'
+}
+
+function propBorderClass(prop) {
+  return statusBorderClass(propStatus(prop))
 }
 
 // Earned/possible for one category's props, mirroring the wildcards header.

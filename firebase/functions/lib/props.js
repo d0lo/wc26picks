@@ -87,11 +87,31 @@ function leaders(entries, metric) {
   return max > 0 ? entries.filter((e) => e[metric] === max) : []
 }
 
+// Penalty-shootout kicks arrive as scoringPlays too (period 5) but aren't
+// goals — they'd inflate every goal tally the moment a knockout match goes
+// to penalties. Excluded from BOTH player and team tallies.
+export function isShootoutPlay(play) {
+  return play.period === 5
+}
+
+// Own goals credit the BENEFITING team (so they count for team goal
+// tallies) but never the player who scored them — FIFA excludes own goals
+// from the Golden Boot. ESPN doesn't flag them structurally in our stored
+// shape, so this is a best-effort text match; anything it misses is fixable
+// via the admin manual override.
+export function isOwnGoalPlay(play) {
+  return /own[\s-]?goal/i.test(play.text ?? '')
+}
+
+function countsForPlayerGoals(play) {
+  return !!play.scorer && !isShootoutPlay(play) && !isOwnGoalPlay(play)
+}
+
 function goldenBootWinners(matches) {
   const byScorer = {}
   for (const m of matches) {
     for (const play of m.scoringPlays ?? []) {
-      if (!play.scorer) continue
+      if (!countsForPlayerGoals(play)) continue
       const key = `${play.scorer}|${play.teamId ?? ''}`
       byScorer[key] ??= { name: play.scorer, teamId: play.teamId ?? null, goals: 0 }
       byScorer[key].goals += 1
@@ -122,8 +142,11 @@ function hatTrickWinners(matches) {
   const byMatchScorer = {}
   for (const m of matches) {
     for (const play of m.scoringPlays ?? []) {
-      if (!play.scorer) continue
-      const key = `${m.eventId ?? ''}|${play.scorer}|${play.teamId ?? ''}`
+      if (!countsForPlayerGoals(play)) continue
+      // Falls back to the Firestore doc id (mirroring propLeaders.js's
+      // m.eventId ?? m.id) so a doc missing the eventId field can't collapse
+      // two matches into one bucket and mint a phantom hat trick.
+      const key = `${m.eventId ?? m.id ?? ''}|${play.scorer}|${play.teamId ?? ''}`
       byMatchScorer[key] ??= { name: play.scorer, teamId: play.teamId ?? null, goals: 0 }
       byMatchScorer[key].goals += 1
     }
@@ -146,7 +169,7 @@ function mostGoalsTeamWinners(matches) {
   const byTeam = {}
   for (const m of matches) {
     for (const play of m.scoringPlays ?? []) {
-      if (!play.teamId) continue
+      if (!play.teamId || isShootoutPlay(play)) continue
       byTeam[play.teamId] = (byTeam[play.teamId] ?? 0) + 1
     }
   }

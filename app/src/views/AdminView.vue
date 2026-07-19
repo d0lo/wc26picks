@@ -115,7 +115,14 @@ function loadFromOverrides(data) {
   savedSnapshot.winners = snapshotWinners()
 }
 
-watch(() => overridesQuery.data.value, loadFromOverrides, { immediate: true })
+// Guarded so a background refetch (staleTime 0 + focus refetch, or another
+// writer touching config/propResults — e.g. force-prop-rescore.mjs poking
+// pokedAt) can't silently wipe unsaved grading edits; explicit Cancel is the
+// only path that discards a dirty form.
+watch(() => overridesQuery.data.value, (data) => {
+  if (snapshotWinners() !== savedSnapshot.winners) return
+  loadFromOverrides(data)
+}, { immediate: true })
 
 const lockDirty = computed(() => snapshotLock() !== savedSnapshot.lock)
 const knockoutLockDirty = computed(() => snapshotKnockoutLock() !== savedSnapshot.knockoutLock)

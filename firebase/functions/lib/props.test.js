@@ -182,3 +182,42 @@ test('props with no auto resolver (subjective awards) stay ungraded until a manu
   const results = computePropResults({ catalog: CATALOG, matches, playerIndex: INDEX, groupsComplete: false })
   assert.equal(results['prop-ball'], undefined)
 })
+
+test('shootout kicks (period 5) count for no goal tally', () => {
+  const matches = [
+    { eventId: 'm1', scoringPlays: [
+      goal('Lionel Messi', 'arg'),
+      { scorer: 'Kylian Mbappé', teamId: 'fra', period: 2 },
+      { scorer: 'Kylian Mbappé', teamId: 'fra', period: 5 }, // shootout kick
+      { scorer: 'Kylian Mbappé', teamId: 'fra', period: 5 },
+    ] },
+  ]
+  const results = computePropResults({ catalog: CATALOG, matches, playerIndex: INDEX, groupsComplete: false })
+  // 1 real goal each — tied, both lead; without the filter Mbappé would be sole leader on 3
+  assert.deepEqual([...results['prop-boot'].winners].sort(), ['p-mbappe', 'p-messi'])
+  assert.deepEqual([...results['prop-goals'].winners].sort(), ['arg', 'fra'])
+  assert.equal(results['prop-hat'], undefined) // 1 goal + 2 shootout kicks is not a hat trick
+})
+
+test('own goals count for the benefiting team but never the player', () => {
+  const matches = [
+    { eventId: 'm1', scoringPlays: [
+      { scorer: 'Lionel Messi', teamId: 'arg', period: 1, text: 'Own Goal - Lionel Messi' },
+      goal('Kylian Mbappé', 'fra'),
+    ] },
+  ]
+  const results = computePropResults({ catalog: CATALOG, matches, playerIndex: INDEX, groupsComplete: false })
+  assert.deepEqual(results['prop-boot'].winners, ['p-mbappe']) // OG excluded from Golden Boot
+  assert.deepEqual([...results['prop-goals'].winners].sort(), ['arg', 'fra']) // both teams on 1 goal
+})
+
+test('hat-trick tallies fall back to the doc id when eventId is missing', () => {
+  // Two different matches missing eventId — 2 goals in each must NOT merge
+  // into a phantom 4-goal "hat trick".
+  const matches = [
+    { id: 'doc1', scoringPlays: [goal('Lionel Messi', 'arg'), goal('Lionel Messi', 'arg')] },
+    { id: 'doc2', scoringPlays: [goal('Lionel Messi', 'arg'), goal('Lionel Messi', 'arg')] },
+  ]
+  const results = computePropResults({ catalog: CATALOG, matches, playerIndex: INDEX, groupsComplete: false })
+  assert.equal(results['prop-hat'], undefined)
+})

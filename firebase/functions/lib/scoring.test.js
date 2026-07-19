@@ -215,3 +215,17 @@ test('scorePropPicks ignores archived props and unanswered picks', () => {
   assert.equal(scorePropPicks({}, PROP_CATALOG, results), 0)               // never answered
   assert.equal(scorePropPicks(undefined, PROP_CATALOG, results), 0)        // knockout-only pick doc
 })
+
+test('scorePropPicks treats an entry with unmatched leader names as pending even when other winners matched', () => {
+  // The unmatched name may be a tied co-leader — nobody scores until the
+  // admin resolves it, so pickers of the unmatched player are not marked wrong.
+  const results = { p1: { winners: ['player-a'], unmatched: ['Somebody Else'] } }
+  assert.equal(scorePropPicks({ p1: 'player-a' }, PROP_CATALOG, results), 0)
+})
+
+test('scorePropPicks noWinner credits null picks only on allowNone props', () => {
+  // p1 has no allowNone — a legacy null (prop saved as unanswered) must not
+  // score when the admin grades the prop as nobody-wins.
+  const results = { p1: { winners: [], noWinner: true } }
+  assert.equal(scorePropPicks({ p1: null }, PROP_CATALOG, results), 0)
+})
