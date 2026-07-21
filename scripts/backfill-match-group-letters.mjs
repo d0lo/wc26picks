@@ -24,7 +24,7 @@
 import { initializeApp, getApps, applicationDefault } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 import { fetchSummary } from '../firebase/functions/lib/espn.js'
-import { parseGroupLetter } from '../firebase/functions/lib/normalize.js'
+import { parseGroupLetter, knockoutRoundSlot } from '../firebase/functions/lib/normalize.js'
 import { isGroupComplete } from '../firebase/functions/lib/tournament.js'
 import { TEAM_ID, GROUP_TEAMS } from '../app/src/data.js'
 
@@ -37,7 +37,13 @@ import { TEAM_ID, GROUP_TEAMS } from '../app/src/data.js'
 // by their `round` field anyway).
 const GROUP_BY_TEAM_ID = {}
 for (const [letter, names] of Object.entries(GROUP_TEAMS)) {
-  for (const name of names) GROUP_BY_TEAM_ID[TEAM_ID[name]] = letter
+  for (const name of names) {
+    // A GROUP_TEAMS/TEAM_ID name drift would otherwise register the letter
+    // under the key "undefined", which a doc with unresolvable competitors
+    // could then confidently (and wrongly) match.
+    if (!TEAM_ID[name]) throw new Error(`GROUP_TEAMS name "${name}" has no TEAM_ID entry`)
+    GROUP_BY_TEAM_ID[TEAM_ID[name]] = letter
+  }
 }
 
 function letterFromCompetitors(match) {
@@ -66,8 +72,12 @@ function legacyGroupLetter(summary) {
 
 const matchesSnap = await db.collection('matches').get()
 // Knockout docs legitimately have no groupLetter — identified by their
-// `round` field, they are not backfill candidates.
-const missing = matchesSnap.docs.filter((d) => !d.data().groupLetter && !d.data().round)
+// `round` field OR by their event id appearing in the knockout slot map
+// (processMatchUpdate stores round: null when an event id is missing from
+// EVENT_SLOT_MAP, and a knockout rematch of two same-group teams would
+// otherwise satisfy the team-membership derivation and be mislabeled as a
+// group match).
+const missing = matchesSnap.docs.filter((d) => !d.data().groupLetter && !d.data().round && !knockoutRoundSlot(d.id))
 
 let migrated = 0, unresolved = 0
 let batch = db.batch(); let batchCount = 0; const batches = []

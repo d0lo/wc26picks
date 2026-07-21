@@ -478,7 +478,10 @@ async function saveScoring() {
 // scratch with only the fields that apply to its type, rather than just
 // patching points/maxAge onto whatever shape the row happened to have.
 function cleanProp(p) {
-  const base = { id: p.id, key: p.key ?? '', label: p.label, hint: p.hint ?? '', type: p.type, category: p.category, points: Number(p.points) }
+  // `|| 0` (not just Number()) so a malformed/blank points value can't become
+  // NaN — NaN survives a save but JSON-serializes to null, which would make
+  // the cleaned-snapshot dirty check disagree with itself after a Cancel.
+  const base = { id: p.id, key: p.key ?? '', label: p.label, hint: p.hint ?? '', type: p.type, category: p.category, points: Number(p.points) || 0 }
   if (p.archived) base.archived = true
   if (p.manual) base.manual = true
   if (p.type === 'player') {
@@ -762,7 +765,10 @@ async function saveProps() {
           computed from match data.
         </p>
 
-        <p v-if="!winnersLoaded" class="text-[11px] text-zinc-600 italic">Loading…</p>
+        <p v-if="!winnersLoaded && overridesQuery.isError" class="text-[11px] text-red-400">
+          Failed to load saved winners{{ overridesQuery.error?.message ? `: ${overridesQuery.error.message}` : '' }} — refocus or reload to retry
+        </p>
+        <p v-else-if="!winnersLoaded" class="text-[11px] text-zinc-600 italic">Loading…</p>
         <div v-else class="space-y-1.5">
           <div
             v-for="prop in activeProps" :key="prop.id"

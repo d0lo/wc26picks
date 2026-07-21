@@ -1,6 +1,6 @@
 /**
  * repair-group-complete-flags.mjs — Diagnose + repair the inputs the prop
- * engine's cleanGroupTeam auto-grading depends on, then force a re-grade.
+ * engine's cleanGroupTeam auto-grading depends on.
  *
  * cleanGroupTeam resolves in two ways (lib/props.js):
  *   - winners: teams with all 3 group games played (groupLetter-tagged, post)
@@ -12,25 +12,31 @@
  *     and the prop sits "Ungraded" forever.
  *
  * This script:
- *   1. prints, per group: match-doc counts (tagged/post), the complete flag,
+ *   1. aborts if any match doc has neither groupLetter nor round — run
+ *      scripts/backfill-match-group-letters.mjs first, otherwise the flags
+ *      (and any re-grade) would be derived from known-incomplete tagging;
+ *   2. prints, per group: match-doc counts (tagged/post), the complete flag,
  *      and each team's played/conceded tally (the clean-sheet evidence);
- *   2. sets groups/{letter}.complete = true where our own match records show
- *      all 6 matches post — same rule markGroupCompleteIfDecided applies
- *      (onGroupsWrite ignores these writes post-group-stage, so no cascade);
- *   3. flags suspect match docs (no groupLetter AND no knockout round) that
- *      would need scripts/backfill-match-group-letters.mjs first;
- *   4. deletes liveData/propResults and pokes config/propResults so the
- *      deployed engine recomputes winners under the repaired flags and
- *      rescores every pick (same mechanism as force-prop-rescore.mjs).
+ *   3. sets groups/{letter}.complete = true wherever isGroupComplete — the
+ *      exact rule markGroupCompleteIfDecided applies, imported from the same
+ *      module — says the group is done. (These writes fire onGroupsWrite,
+ *      which no-ops behind its isGroupStageOver date gate once the group
+ *      stage is over — the only period this repair is meant for.)
  *
- * Idempotent — safe to re-run.
+ * It does NOT force a re-grade: after repairing, run
+ * scripts/force-prop-rescore.mjs (it owns the poke protocol and its
+ * deploy-ordering caveats) so the engine recomputes winners under the
+ * repaired flags and rescores every pick.
+ *
+ * Idempotent — safe to re-run; a run with nothing to repair changes nothing.
  *
  * Usage:
  *   GOOGLE_APPLICATION_CREDENTIALS=path/to/serviceAccount.json node scripts/repair-group-complete-flags.mjs
  */
 
 import { initializeApp, getApps, applicationDefault } from 'firebase-admin/app'
-import { getFirestore, FieldValue } from 'firebase-admin/firestore'
+import { getFirestore } from 'firebase-admin/firestore'
+import { isGroupComplete } from '../firebase/functions/lib/tournament.js'
 
 if (!getApps().length) {
   initializeApp({
@@ -53,10 +59,11 @@ const groupByLetter = Object.fromEntries(groupsSnap.docs.map((d) => [d.id, d.dat
 
 const untagged = matches.filter((m) => !m.groupLetter && !m.round)
 if (untagged.length) {
-  console.log(`⚠ ${untagged.length} match doc(s) have neither groupLetter nor round — run scripts/backfill-match-group-letters.mjs first: ${untagged.map((m) => m.id).join(', ')}`)
+  console.error(`✗ ${untagged.length} match doc(s) have neither groupLetter nor round — run scripts/backfill-match-group-letters.mjs first, then re-run this script: ${untagged.map((m) => m.id).join(', ')}`)
+  process.exit(1)
 }
 
-console.log('\nPer-group state (tagged matches / post / complete flag):')
+console.log('Per-group state (tagged matches / post / complete flag):')
 let repaired = 0
 for (const letter of LETTERS) {
   const group = matches.filter((m) => m.groupLetter === letter)
@@ -80,18 +87,17 @@ for (const letter of LETTERS) {
 
   console.log(`  ${letter}: ${group.length} tagged, ${post.length} post, complete=${complete}${clean.length ? ` — CLEAN SHEETS: ${clean.map(([id]) => id).join(', ')}` : ''}`)
 
-  if (post.length === 6 && !complete) {
+  if (isGroupComplete(group) && !complete) {
     await db.doc(`groups/${letter}`).set({ complete: true }, { merge: true })
     repaired += 1
-    console.log(`  ✓ set groups/${letter}.complete = true (all 6 matches post per our own records)`)
+    console.log(`  ✓ set groups/${letter}.complete = true (isGroupComplete per our own match records)`)
   }
 }
 
 const entry = propResultsSnap.data()?.results
 console.log(`\nCurrent liveData/propResults prop entries: ${entry ? Object.keys(entry).length : '(doc missing)'}`)
 console.log(`Repaired complete flags: ${repaired}`)
-
-await db.doc('liveData/propResults').delete()
-await db.doc('config/propResults').set({ pokedAt: FieldValue.serverTimestamp() }, { merge: true })
-console.log('✓ deleted liveData/propResults and poked config/propResults — the engine will re-grade all props and rescore every pick')
+if (repaired > 0) {
+  console.log('→ now run scripts/force-prop-rescore.mjs so the engine re-grades props under the repaired flags')
+}
 process.exit(0)
