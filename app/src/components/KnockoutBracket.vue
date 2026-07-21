@@ -155,12 +155,6 @@ function pointsFor(slotInfo) {
 function rowClass(slotInfo, teamId) {
   const isWinner = slotInfo.winner && teamId === slotInfo.winner
   const isFinal = slotInfo.round === 'final'
-  // Whether this team is actually in the real match shown at this slot (a
-  // competitor of it, or its winner). If it is, it genuinely reached this round
-  // — so it must never be struck here, no matter what happens to it later. This
-  // real-presence check is the guard that keeps a game-winner (Belgium beating
-  // your USA pick 4–1 in the R16) from being crossed out.
-  const playedThisSlot = isWinner || !!slotInfo.match?.competitors?.some((c) => c.teamId === teamId)
   // Graded picks view: styling marks up YOUR picks against live results — your
   // pick shows green when it wins a slot, red-struck once it's out, and teams
   // you never picked stay plain.
@@ -176,13 +170,17 @@ function rowClass(slotInfo, teamId) {
       return 'text-white font-bold'
     }
     // Opponent — the team your slot pick was projected to face. Strike it only
-    // when it's a GHOST here: not in the real match at this slot AND really out
-    // of the tournament — e.g. Senegal, drawn as your Spain pick's QF opponent
-    // after being knocked out in the R16, a game it never reached. A team that
-    // DID play this slot's match stays plain whether it won it (Belgium) or lost
-    // it as the opponent your pick beat (Germany) — it truly reached this round.
-    if (!playedThisSlot && isEliminated && pickedTeamIds.value.has(teamId)) {
-      return 'text-red-400 font-bold line-through'
+    // when it's a GHOST here: really out of the tournament AND not actually in
+    // the real match shown at this slot (its winner or a competitor of it), so
+    // it never reached this game — e.g. Senegal, drawn as your Spain pick's QF
+    // opponent after being knocked out in the R16. A team that DID play this
+    // slot's match stays plain whether it won it (Belgium) or lost it as the
+    // opponent your pick beat (Germany) — it truly reached this round. The
+    // real-presence check is the guard that keeps a game-winner from being
+    // crossed out.
+    if (isEliminated && pickedTeamIds.value.has(teamId)) {
+      const playedThisSlot = isWinner || !!slotInfo.match?.competitors?.some((c) => c.teamId === teamId)
+      if (!playedThisSlot) return 'text-red-400 font-bold line-through'
     }
     return 'text-zinc-300'
   }
