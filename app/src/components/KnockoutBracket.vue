@@ -109,17 +109,33 @@ const bracket = computed(() => {
 })
 
 // Teams officially out of the tournament — they lost a real KNOCKOUT match.
-// This is the live-results source of truth for striking a team out wherever it
-// appears in the bracket, independent of anyone's picks. Group-stage matches
-// are excluded: losing a group game doesn't eliminate a team (it can still
-// advance as a runner-up or best third), so only losses in a bracket round
-// count — `matches` holds group fixtures too, keyed without a knockout round.
+// Losing a group game doesn't eliminate a team (it can still advance as a
+// runner-up or best third), so only bracket losses count — `matches` holds
+// group fixtures too, keyed without a knockout round. This is a plain "is this
+// team out?" set; WHERE a team is struck is decided per-slot in rowClass from
+// the actual match shown there, not inferred from which round it exited (that
+// inference could disagree with a slot's own result and strike a game-winner).
 const eliminatedTeamIds = computed(() => {
   const set = new Set()
   for (const m of props.matches ?? []) {
     if (!KNOCKOUT_ROUNDS.has(m.round)) continue
     const loser = matchLoser(m)
     if (loser) set.add(loser)
+  }
+  return set
+})
+
+// Every team the user picked to advance in ANY round. Because r16→final slots
+// are all derived from prior-round picks (only r32 carries real seeds), a team
+// in this set that shows up as a later-round *opponent* — the team your slot
+// pick was projected to face — is itself one of your advancement picks, and is
+// struck the same way when it's eliminated (see rowClass). A base r32 seed you
+// never picked is absent here, so it stays plain.
+const pickedTeamIds = computed(() => {
+  const set = new Set()
+  if (!props.picks) return set
+  for (const round of ROUNDS) {
+    for (const teamId of props.picks[round] ?? []) if (teamId) set.add(teamId)
   }
   return set
 })
@@ -139,17 +155,32 @@ function pointsFor(slotInfo) {
 function rowClass(slotInfo, teamId) {
   const isWinner = slotInfo.winner && teamId === slotInfo.winner
   const isFinal = slotInfo.round === 'final'
-  // Graded picks view: styling only ever marks up the team YOU picked to win a
-  // slot. The strike + red tracks live real results — your pick is crossed out
-  // once it's officially out (lost a real knockout match), in every later round
-  // you advanced it to, but not in a slot it actually won (it's eliminated from
-  // a *later* round, not this one). Teams you didn't pick stay plain.
+  // Graded picks view: styling marks up YOUR picks against live results — your
+  // pick shows green when it wins a slot, red-struck once it's out, and teams
+  // you never picked stay plain.
   if (props.picks) {
+    const isEliminated = teamId ? eliminatedTeamIds.value.has(teamId) : false
     const isPick = pickFor(slotInfo.round, slotInfo.slot) === teamId
     if (isPick) {
+      // Won this slot → green (amber in the final). Otherwise struck once it's
+      // out anywhere (it lost here, or earlier and never reached here); a pick
+      // still alive / not yet played stays plain white.
       if (isWinner) return isFinal ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'
-      if (teamId && eliminatedTeamIds.value.has(teamId)) return 'text-red-400 font-bold line-through'
+      if (isEliminated) return 'text-red-400 font-bold line-through'
       return 'text-white font-bold'
+    }
+    // Opponent — the team your slot pick was projected to face. Strike it only
+    // when it's a GHOST here: really out of the tournament AND not actually in
+    // the real match shown at this slot (its winner or a competitor of it), so
+    // it never reached this game — e.g. Senegal, drawn as your Spain pick's QF
+    // opponent after being knocked out in the R16. A team that DID play this
+    // slot's match stays plain whether it won it (Belgium) or lost it as the
+    // opponent your pick beat (Germany) — it truly reached this round. The
+    // real-presence check is the guard that keeps a game-winner from being
+    // crossed out.
+    if (isEliminated && pickedTeamIds.value.has(teamId)) {
+      const playedThisSlot = isWinner || !!slotInfo.match?.competitors?.some((c) => c.teamId === teamId)
+      if (!playedThisSlot) return 'text-red-400 font-bold line-through'
     }
     return 'text-zinc-300'
   }
